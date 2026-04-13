@@ -1,0 +1,11 @@
+.DS_Store
+.gradle/
+build/
+out/
+*.class
+tmp/
+*.rom
+*.tap
+*.tzx
+*.z80
+*.sna
