@@ -3,7 +3,10 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":machine-radio86rk"))
     implementation(project(":machine-spectrum"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
 }
 
 application {

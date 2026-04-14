@@ -1,9 +1,12 @@
 package dev.z8emu.machine.spectrum.model;
 
+import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import java.util.Arrays;
 
 public record SpectrumModelConfig(
         String modelName,
+        long cpuClockHz,
+        int frameTStates,
         int romBankCount,
         int ramBankCount,
         int slotSize,
@@ -43,6 +46,8 @@ public record SpectrumModelConfig(
     public static SpectrumModelConfig spectrum48k() {
         return new SpectrumModelConfig(
                 "ZX Spectrum 48K",
+                3_500_000L,
+                SpectrumUlaDevice.T_STATES_PER_FRAME,
                 1,
                 3,
                 16 * 1024,
@@ -60,6 +65,8 @@ public record SpectrumModelConfig(
     public static SpectrumModelConfig spectrum128() {
         return new SpectrumModelConfig(
                 "ZX Spectrum 128",
+                3_500_000L,
+                SpectrumUlaDevice.T_STATES_PER_FRAME,
                 2,
                 8,
                 16 * 1024,
