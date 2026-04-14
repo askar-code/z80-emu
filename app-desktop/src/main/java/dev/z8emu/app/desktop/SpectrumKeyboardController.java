@@ -35,6 +35,11 @@ final class SpectrumKeyboardController implements KeyEventDispatcher, AutoClosea
             return false;
         }
 
+        if (event.getKeyCode() == KeyEvent.VK_META) {
+            lastEvent = event.getID() == KeyEvent.KEY_RELEASED ? "host:Cmd-up" : "host:Cmd-down";
+            return true;
+        }
+
         if (handleHostTypedCharacter(event)) {
             return true;
         }
@@ -55,6 +60,10 @@ final class SpectrumKeyboardController implements KeyEventDispatcher, AutoClosea
     private boolean handleHostTypedCharacter(KeyEvent event) {
         if (event.getID() != KeyEvent.KEY_TYPED) {
             return false;
+        }
+
+        if (event.isMetaDown()) {
+            return true;
         }
 
         char character = event.getKeyChar();
@@ -85,34 +94,31 @@ final class SpectrumKeyboardController implements KeyEventDispatcher, AutoClosea
     }
 
     private boolean handleHostAction(KeyEvent event) {
-        if (event.getID() != KeyEvent.KEY_PRESSED) {
+        boolean commandDown = event.isMetaDown();
+        if (!commandDown) {
             return false;
         }
 
-        boolean commandDown = event.isMetaDown();
         return switch (event.getKeyCode()) {
             case KeyEvent.VK_P -> {
-                if (!commandDown) {
-                    yield false;
+                if (event.getID() == KeyEvent.KEY_RELEASED) {
+                    hostActions.toggleTapePlayback();
+                    lastEvent = "host:Cmd+P";
                 }
-                hostActions.toggleTapePlayback();
-                lastEvent = "host:Cmd+P";
                 yield true;
             }
             case KeyEvent.VK_R -> {
-                if (!commandDown) {
-                    yield false;
+                if (event.getID() == KeyEvent.KEY_RELEASED) {
+                    hostActions.rewindTape();
+                    lastEvent = "host:Cmd+R";
                 }
-                hostActions.rewindTape();
-                lastEvent = "host:Cmd+R";
                 yield true;
             }
             case KeyEvent.VK_S -> {
-                if (!commandDown) {
-                    yield false;
+                if (event.getID() == KeyEvent.KEY_RELEASED) {
+                    hostActions.stopTape();
+                    lastEvent = "host:Cmd+S";
                 }
-                hostActions.stopTape();
-                lastEvent = "host:Cmd+S";
                 yield true;
             }
             default -> false;
@@ -139,7 +145,7 @@ final class SpectrumKeyboardController implements KeyEventDispatcher, AutoClosea
 
         switch (keyCode) {
             case KeyEvent.VK_SHIFT -> keys.add(key(0, 0));
-            case KeyEvent.VK_CONTROL, KeyEvent.VK_ALT, KeyEvent.VK_ALT_GRAPH, KeyEvent.VK_META -> keys.add(key(7, 1));
+            case KeyEvent.VK_CONTROL, KeyEvent.VK_ALT, KeyEvent.VK_ALT_GRAPH -> keys.add(key(7, 1));
             case KeyEvent.VK_ENTER -> keys.add(key(6, 0));
             case KeyEvent.VK_SPACE -> keys.add(key(7, 0));
 

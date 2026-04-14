@@ -44,7 +44,7 @@ Initial Gradle modules:
 
 - `:emu-platform`
 - `:cpu-z80`
-- `:machine-spectrum48k`
+- `:machine-spectrum`
 - `:app-desktop`
 
 Planned later:

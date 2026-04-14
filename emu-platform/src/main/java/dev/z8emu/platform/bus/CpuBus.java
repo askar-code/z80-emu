@@ -15,6 +15,10 @@ public interface CpuBus {
 
     void writePort(int port, int value);
 
+    default void writePort(int port, int value, int phaseTStates) {
+        writePort(port, value);
+    }
+
     int acknowledgeInterrupt();
 
     void onRefresh(int irValue);

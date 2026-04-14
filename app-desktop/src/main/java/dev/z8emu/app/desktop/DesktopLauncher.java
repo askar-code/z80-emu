@@ -1,16 +1,19 @@
 package dev.z8emu.app.desktop;
 
+import dev.z8emu.machine.spectrum.SpectrumMachine;
+import dev.z8emu.machine.spectrum128k.Spectrum128Machine;
 import dev.z8emu.machine.spectrum48k.Spectrum48kMachine;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
-import dev.z8emu.machine.spectrum48k.tape.TapLoader;
 import dev.z8emu.machine.spectrum48k.tape.TapeFile;
+import dev.z8emu.machine.spectrum48k.tape.TapeLoaders;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -27,7 +30,6 @@ public final class DesktopLauncher {
     private static final long NANOS_PER_SECOND = 1_000_000_000L;
     private static final long CPU_CLOCK_HZ = 3_500_000L;
     private static final int NORMAL_FRAMES_PER_SLICE = 1;
-    private static final int TURBO_TAPE_FRAMES_PER_SLICE = 32;
     private static final long FRAME_DURATION_NANOS =
             (SpectrumUlaDevice.T_STATES_PER_FRAME * NANOS_PER_SECOND) / CPU_CLOCK_HZ;
 
@@ -36,7 +38,7 @@ public final class DesktopLauncher {
 
     public static void main(String[] args) throws IOException {
         LaunchConfig config = createLaunchConfig(args);
-        Spectrum48kMachine machine = new Spectrum48kMachine(config.romImage());
+        SpectrumMachine machine = createMachine(config);
 
         if (config.demoMode()) {
             seedDemoScreen(machine);
@@ -50,13 +52,13 @@ public final class DesktopLauncher {
             return new LaunchConfig("demo", new byte[Spectrum48kMemoryMap.ROM_SIZE], true, null);
         }
         if (args.length > 2) {
-            throw new IllegalArgumentException("Usage: DesktopLauncher [48.rom] [tape.tap]");
+            throw new IllegalArgumentException("Usage: DesktopLauncher [48.rom] [tape.tap|tape.tzx]");
         }
 
         Path romPath = Path.of(args[0]).toAbsolutePath().normalize();
         byte[] romImage = Files.readAllBytes(romPath);
-        if (romImage.length != Spectrum48kMemoryMap.ROM_SIZE) {
-            throw new IllegalArgumentException("Spectrum 48K ROM must be exactly 16 KB: " + romPath);
+        if (romImage.length != Spectrum48kMemoryMap.ROM_SIZE && romImage.length != Spectrum128Machine.ROM_IMAGE_SIZE) {
+            throw new IllegalArgumentException("Spectrum ROM must be exactly 16 KB or 32 KB: " + romPath);
         }
 
         LoadedTape loadedTape = args.length == 2 ? loadTape(args[1]) : null;
@@ -65,20 +67,20 @@ public final class DesktopLauncher {
 
     private static LoadedTape loadTape(String rawPath) throws IOException {
         Path tapePath = Path.of(rawPath).toAbsolutePath().normalize();
-        String filename = tapePath.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (!filename.endsWith(".tap")) {
-            throw new IllegalArgumentException("Only .tap is currently supported: " + tapePath);
-        }
-
-        TapeFile tapeFile;
-        try (var input = Files.newInputStream(tapePath)) {
-            tapeFile = TapLoader.load(input);
-        }
-
+        TapeFile tapeFile = TapeLoaders.load(tapePath);
         return new LoadedTape(tapePath.toString(), tapeFile);
     }
 
-    private static void openWindow(Spectrum48kMachine machine, LaunchConfig config) {
+    private static SpectrumMachine createMachine(LaunchConfig config) {
+        if (config.demoMode()) {
+            return new Spectrum48kMachine(config.romImage());
+        }
+        return config.romImage().length == Spectrum128Machine.ROM_IMAGE_SIZE
+                ? new Spectrum128Machine(config.romImage())
+                : new Spectrum48kMachine(config.romImage());
+    }
+
+    private static void openWindow(SpectrumMachine machine, LaunchConfig config) {
         SpectrumDisplayPanel panel = new SpectrumDisplayPanel();
         JFrame frame = new JFrame();
         if (config.loadedTape() != null) {
@@ -159,7 +161,7 @@ public final class DesktopLauncher {
         runner.start();
     }
 
-    private static BeeperAudioEngine tryStartAudio(Spectrum48kMachine machine) {
+    private static BeeperAudioEngine tryStartAudio(SpectrumMachine machine) {
         try {
             return BeeperAudioEngine.start(machine.board().beeper());
         } catch (LineUnavailableException unavailable) {
@@ -169,7 +171,7 @@ public final class DesktopLauncher {
     }
 
     private static void runMachineLoop(
-            Spectrum48kMachine machine,
+            SpectrumMachine machine,
             SpectrumDisplayPanel panel,
             JFrame frame,
             LaunchConfig config,
@@ -184,9 +186,12 @@ public final class DesktopLauncher {
             try {
                 if (failure == null && !config.demoMode()) {
                     int framesPerSlice = machine.board().tape().isPlaying()
-                            ? TURBO_TAPE_FRAMES_PER_SLICE
+                            ? tapeFramesPerSlice()
                             : NORMAL_FRAMES_PER_SLICE;
                     for (int frameIndex = 0; frameIndex < framesPerSlice; frameIndex++) {
+                        if (frameIndex > 0 && !machine.board().tape().isPlaying()) {
+                            break;
+                        }
                         hostKeyTyper.tick();
                         long targetTState = machine.currentTState() + SpectrumUlaDevice.T_STATES_PER_FRAME;
                         while (machine.currentTState() < targetTState) {
@@ -201,16 +206,21 @@ public final class DesktopLauncher {
 
             panel.present(machine.board().renderVideoFrame());
             Throwable currentFailure = failure;
-            SwingUtilities.invokeLater(() -> {
-                panel.repaint();
-                frame.setTitle(buildTitle(machine, config, keyboardController.lastEvent(), currentFailure));
-            });
+            boolean immediatePaint = !tapeTurboEnabled();
+            if (immediatePaint) {
+                invokeUiUpdate(panel, frame, machine, config, keyboardController.lastEvent(), currentFailure);
+            } else {
+                SwingUtilities.invokeLater(() -> {
+                    panel.repaint();
+                    frame.setTitle(buildTitle(machine, config, keyboardController.lastEvent(), currentFailure));
+                });
+            }
 
             if (failure != null) {
                 return;
             }
 
-            if (!machine.board().tape().isPlaying()) {
+            if (!machine.board().tape().isPlaying() || !tapeTurboEnabled()) {
                 nextFrameDeadline += FRAME_DURATION_NANOS;
                 long remaining = nextFrameDeadline - System.nanoTime();
                 if (remaining > 0) {
@@ -225,13 +235,16 @@ public final class DesktopLauncher {
         }
     }
 
-    private static String buildTitle(Spectrum48kMachine machine, LaunchConfig config, String lastKeyEvent, Throwable failure) {
-        String base = "z8-emu Spectrum 48K";
+    private static String buildTitle(SpectrumMachine machine, LaunchConfig config, String lastKeyEvent, Throwable failure) {
+        String base = "z8-emu " + machine.board().modelConfig().modelName();
         String status = "source=" + config.sourceLabel()
                 + "  pc=0x" + hex16(machine.cpu().registers().pc())
                 + "  t=" + machine.currentTState()
                 + "  frame=" + machine.board().ula().frameCounter()
                 + "  tape=" + tapeStatus(machine, config)
+                + "  rom=" + machine.board().machineState().selectedRomIndex()
+                + "  bank=" + machine.board().machineState().topRamBankIndex()
+                + "  screen=" + machine.board().machineState().activeScreenBankIndex()
                 + "  " + loaderStatus(machine)
                 + "  key=" + lastKeyEvent
                 + "  host=[symbols direct, Cmd+P play/pause, Cmd+R rewind, Cmd+S stop]";
@@ -244,8 +257,8 @@ public final class DesktopLauncher {
         return base + "  " + status + "  stopped: " + message;
     }
 
-    private static void seedDemoScreen(Spectrum48kMachine machine) {
-        machine.board().ula().writePortFe(0x03, machine.board().beeper());
+    private static void seedDemoScreen(SpectrumMachine machine) {
+        machine.board().ula().writePortFe(0x03, machine.currentTState(), machine.board().beeper());
 
         for (int y = 0; y < SpectrumUlaDevice.DISPLAY_HEIGHT; y++) {
             int rowBase = 0x4000
@@ -275,7 +288,7 @@ public final class DesktopLauncher {
     }
 
     private static void writeFailureReport(
-            Spectrum48kMachine machine,
+            SpectrumMachine machine,
             LaunchConfig config,
             String lastKeyEvent,
             Throwable failure
@@ -325,7 +338,7 @@ public final class DesktopLauncher {
         }
     }
 
-    private static String tapeStatus(Spectrum48kMachine machine, LaunchConfig config) {
+    private static String tapeStatus(SpectrumMachine machine, LaunchConfig config) {
         if (config.loadedTape() == null) {
             return "none";
         }
@@ -333,11 +346,13 @@ public final class DesktopLauncher {
         String state = machine.board().tape().isPlaying()
                 ? "play"
                 : (machine.board().tape().isAtEnd() ? "eof" : "stop");
-        String speed = machine.board().tape().isPlaying() ? "turbo" : "idle";
+        String speed = machine.board().tape().isPlaying()
+                ? (tapeTurboEnabled() ? "turbo" : "real")
+                : "idle";
         return state + ":" + machine.board().tape().currentBlockIndex() + "/" + machine.board().tape().totalBlocks() + ":" + speed;
     }
 
-    private static String loaderStatus(Spectrum48kMachine machine) {
+    private static String loaderStatus(SpectrumMachine machine) {
         int pc = machine.cpu().registers().pc();
         String loader = switch (pc) {
             case 0x0556 -> "LD_BYTES";
@@ -365,7 +380,7 @@ public final class DesktopLauncher {
         return "%02X".formatted(value & 0xFF);
     }
 
-    private static boolean queueHostCharacter(Spectrum48kMachine machine, char character) {
+    private static boolean queueHostCharacter(SpectrumMachine machine, char character) {
         HostKeyTyper typer = HostKeyTyper.get(machine);
         return switch (character) {
             case '"' -> {
@@ -464,22 +479,50 @@ public final class DesktopLauncher {
         };
     }
 
+    private static void invokeUiUpdate(
+            SpectrumDisplayPanel panel,
+            JFrame frame,
+            SpectrumMachine machine,
+            LaunchConfig config,
+            String lastKeyEvent,
+            Throwable failure
+    ) {
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                frame.setTitle(buildTitle(machine, config, lastKeyEvent, failure));
+                panel.paintImmediately(0, 0, panel.getWidth(), panel.getHeight());
+            });
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (InvocationTargetException invocationFailure) {
+            throw new IllegalStateException("Failed to update Swing UI", invocationFailure.getCause());
+        }
+    }
+
+    private static int tapeFramesPerSlice() {
+        return Math.max(1, Integer.getInteger("z8emu.tapeTurboFrames", 1));
+    }
+
+    private static boolean tapeTurboEnabled() {
+        return tapeFramesPerSlice() > 1;
+    }
+
     private static final class HostKeyTyper {
         private static final int FRAMES_PER_PRESS = 3;
         private static final int FRAMES_PER_GAP = 2;
-        private static final java.util.Map<Spectrum48kMachine, HostKeyTyper> INSTANCES = new java.util.WeakHashMap<>();
+        private static final java.util.Map<SpectrumMachine, HostKeyTyper> INSTANCES = new java.util.WeakHashMap<>();
 
-        private final Spectrum48kMachine machine;
+        private final SpectrumMachine machine;
         private final Queue<QueuedChord> queue = new ArrayDeque<>();
         private QueuedChord activeKey;
         private int framesRemaining;
         private boolean pressPhase = true;
 
-        private HostKeyTyper(Spectrum48kMachine machine) {
+        private HostKeyTyper(SpectrumMachine machine) {
             this.machine = machine;
         }
 
-        static synchronized HostKeyTyper get(Spectrum48kMachine machine) {
+        static synchronized HostKeyTyper get(SpectrumMachine machine) {
             return INSTANCES.computeIfAbsent(machine, HostKeyTyper::new);
         }
 

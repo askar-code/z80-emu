@@ -17,6 +17,8 @@ public final class Z80Cpu implements Cpu {
     private static final int INDEX_NONE = 0;
     private static final int INDEX_IX = 1;
     private static final int INDEX_IY = 2;
+    private static final int IN_IMMEDIATE_PHASE_TSTATES = Integer.getInteger("z8emu.inPortPhaseImmediate", 7);
+    private static final int IN_C_PHASE_TSTATES = Integer.getInteger("z8emu.inPortPhaseC", 8);
 
     private final CpuBus bus;
     private final Z80Registers registers = new Z80Registers();
@@ -66,6 +68,8 @@ public final class Z80Cpu implements Cpu {
             tStates = serviceNonMaskableInterrupt();
         } else if (pendingInterrupt && registers.iff1() && interruptEnableDelay == 0) {
             tStates = serviceMaskableInterrupt();
+        } else if (halted && pendingInterrupt) {
+            tStates = releaseHaltOnIgnoredMaskableInterrupt();
         } else if (halted) {
             tStates = executeHaltCycle();
         } else {
@@ -86,6 +90,15 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int executeHaltCycle() {
+        bus.fetchOpcode(registers.pc());
+        registers.onInstructionFetch();
+        bus.onRefresh(registers.ir());
+        return 4;
+    }
+
+    private int releaseHaltOnIgnoredMaskableInterrupt() {
+        pendingInterrupt = false;
+        halted = false;
         bus.fetchOpcode(registers.pc());
         registers.onInstructionFetch();
         bus.onRefresh(registers.ir());
@@ -960,19 +973,19 @@ public final class Z80Cpu implements Cpu {
     private int inImmediateAccumulator() {
         int portLow = fetchImmediate8();
         int port = ((registers.a() & 0xFF) << 8) | portLow;
-        registers.setA(bus.readPort(port, 7) & 0xFF);
+        registers.setA(bus.readPort(port, IN_IMMEDIATE_PHASE_TSTATES) & 0xFF);
         return 11;
     }
 
     private int outImmediateAccumulator() {
         int portLow = fetchImmediate8();
         int port = ((registers.a() & 0xFF) << 8) | portLow;
-        bus.writePort(port, registers.a());
+        bus.writePort(port, registers.a(), 7);
         return 11;
     }
 
     private int inRegisterFromPortC(int registerCode) {
-        int value = bus.readPort(registers.bc(), 8) & 0xFF;
+        int value = bus.readPort(registers.bc(), IN_C_PHASE_TSTATES) & 0xFF;
         writeRegisterOperand(registerCode, value);
         setInFlags(value);
         return 12;
@@ -980,7 +993,7 @@ public final class Z80Cpu implements Cpu {
 
     private int outRegisterToPortC(int registerCode) {
         int value = registerCode == 6 ? 0 : readRegisterOperand(registerCode);
-        bus.writePort(registers.bc(), value);
+        bus.writePort(registers.bc(), value, 8);
         return 12;
     }
 

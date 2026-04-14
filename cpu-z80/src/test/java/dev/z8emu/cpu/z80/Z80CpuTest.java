@@ -150,6 +150,25 @@ class Z80CpuTest {
     }
 
     @Test
+    void haltReleasesOnMaskableInterruptEvenWhenInterruptsAreDisabled() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0x76, 0x00);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(4, cpu.runInstruction());
+        assertTrue(cpu.isHalted());
+        assertEquals(0x0001, cpu.registers().pc());
+
+        cpu.requestMaskableInterrupt();
+
+        assertEquals(4, cpu.runInstruction());
+        assertFalse(cpu.isHalted());
+        assertEquals(0x0001, cpu.registers().pc());
+        assertFalse(cpu.registers().iff1());
+    }
+
+    @Test
     void pushPopCallRetAndRstUseStackCorrectly() {
         TestBus bus = new TestBus();
         bus.load(

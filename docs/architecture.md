@@ -119,7 +119,7 @@ Initial physical modules:
   Shared contracts, time model, machine runtime, routing helpers, snapshots, common test support.
 - `:cpu-z80`
   Z80 core only.
-- `:machine-spectrum48k`
+- `:machine-spectrum`
   Spectrum board, memory map, ULA model, keyboard, tape, beeper, ROM loading.
 - `:app-desktop`
   Window, input mapping, frame presentation, audio output, file dialogs, snapshots.
@@ -284,7 +284,7 @@ The architecture must allow the board to model known Spectrum details such as:
 - line timing based on fixed `t-state` counts
 - refresh-visible behavior important for edge cases
 
-Those machine rules belong in `:machine-spectrum48k`, not in `:cpu-z80`.
+Those machine rules belong in `:machine-spectrum`, not in `:cpu-z80`.
 
 ## Radio-86RK Compatibility Impact
 

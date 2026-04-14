@@ -33,6 +33,14 @@ public final class FrameBuffer {
         Arrays.fill(pixels, argb);
     }
 
+    public void fillRow(int y, int argb) {
+        if (y < 0 || y >= height) {
+            return;
+        }
+
+        Arrays.fill(pixels, y * width, (y + 1) * width, argb);
+    }
+
     public void setPixel(int x, int y, int argb) {
         if (x < 0 || x >= width || y < 0 || y >= height) {
             return;
