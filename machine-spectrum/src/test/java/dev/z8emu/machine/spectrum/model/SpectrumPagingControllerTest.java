@@ -55,4 +55,21 @@ class SpectrumPagingControllerTest {
         assertSame(memory.romBank(0), memory.addressSpace().bankAtSlot(0));
         assertSame(memory.ramBank(0), memory.addressSpace().bankAtSlot(3));
     }
+
+    @Test
+    void mirrorsPagingValueIntoBankmSystemVariable() {
+        SpectrumModelConfig config = SpectrumModelConfig.spectrum128();
+        SpectrumMachineState state = new SpectrumMachineState(config);
+        Spectrum48kMemoryMap memory = new Spectrum48kMemoryMap(
+                config,
+                state,
+                new byte[Spectrum48kMemoryMap.ROM_SIZE],
+                new byte[Spectrum48kMemoryMap.ROM_SIZE]
+        );
+        SpectrumPagingController controller = new SpectrumPagingController(config, state, memory);
+
+        controller.handlePortWrite(0x7FFD, 0x1B);
+
+        assertEquals(0x1B, memory.read(0x5B5C));
+    }
 }

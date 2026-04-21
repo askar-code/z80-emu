@@ -85,6 +85,17 @@ class Spectrum48kMachineTest {
     }
 
     @Test
+    void portFeReadUsesIssue3StyleDefaultBitsFromLastOutput() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+
+        machine.board().ula().writePortFe(0x00, 0, machine.board().beeper());
+        assertEquals(0xBF, machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape()));
+
+        machine.board().ula().writePortFe(0x10, 0, machine.board().beeper());
+        assertEquals(0xFF, machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape()));
+    }
+
+    @Test
     void frameBoundaryRaisesMaskableInterruptRequest() {
         Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
 
@@ -147,11 +158,27 @@ class Spectrum48kMachineTest {
 
         machine.board().tape().load(TapLoader.load(new ByteArrayInputStream(tap)));
         machine.board().tape().play();
+        machine.board().ula().writePortFe(0x00, 0, machine.board().beeper());
 
         machine.board().onTStatesElapsed(1000, 1000);
         int read = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
 
-        assertEquals(0xBF, read, "Tape EAR input should pull bit 6 low during the first half of a pilot pulse");
+        assertEquals(0xFF, read, "Tape EAR input should XOR bit 6 against the current port FE default value");
+    }
+
+    @Test
+    void loadedButStoppedTapeDoesNotDriveEarBit() throws Exception {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        byte[] tap = {
+                0x03, 0x00,
+                0x00, 0x00, 0x00
+        };
+
+        machine.board().tape().load(TapLoader.load(new ByteArrayInputStream(tap)));
+
+        int read = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+
+        assertEquals(0xFF, read);
     }
 
     @Test
@@ -185,16 +212,99 @@ class Spectrum48kMachineTest {
     }
 
     @Test
-    void enteringPauseAfterDataDoesNotForceAnExtraEarTransition() {
+    void standardHeaderPauseKeepsCurrentLevelForPauseLeadIn() {
         Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
         machine.board().tape().load(new TapeFile(List.of(
-                TapeBlock.dataBlock(new int[0], 5, 5, 1, 100, new byte[]{(byte) 0x80})
+                TapeBlock.dataBlock(standardHeaderPulses(), 855, 1_710, 8, 100, new byte[19])
         )));
 
         machine.board().tape().play();
-        machine.board().onTStatesElapsed(10, 10);
+        machine.board().onTStatesElapsed(18_000_000, 18_000_000);
 
-        assertEquals(0xBF, machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape()));
+        int pauseLeadIn = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+        machine.board().onTStatesElapsed(3_500, 3_500);
+        int pauseSettled = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+
+        assertEquals(pauseLeadIn, pauseSettled);
+    }
+
+    @Test
+    void standardDataPauseDoesNotInsertCustomLeadInEdge() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        byte[] data = new byte[64];
+        data[0] = (byte) 0xFF;
+        machine.board().tape().load(new TapeFile(List.of(
+                TapeBlock.dataBlock(standardDataPulses(), 855, 1_710, 8, 100, data)
+        )));
+
+        machine.board().tape().play();
+        machine.board().onTStatesElapsed(18_000_000, 18_000_000);
+
+        int pauseLeadIn = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+        machine.board().onTStatesElapsed(3_500, 3_500);
+        int pauseSettled = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+
+        assertEquals(pauseLeadIn, pauseSettled);
+    }
+
+    @Test
+    void pauseBlockKeepsLowLevelWhenThereWasNoPriorPulse() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        machine.board().tape().load(new TapeFile(List.of(
+                TapeBlock.pauseBlock(2, false)
+        )));
+
+        machine.board().tape().play();
+
+        assertEquals(0xFF, machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape()));
+
+        machine.board().onTStatesElapsed(3_500, 3_500);
+
+        assertEquals(0xFF, machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape()));
+    }
+
+    @Test
+    void customTimedDataPauseKeepsCurrentLevelUntilBlockBoundary() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        machine.board().tape().load(new TapeFile(List.of(
+                TapeBlock.dataBlock(new int[0], 4, 8, 1, 100, new byte[]{(byte) 0x80})
+        )));
+
+        machine.board().tape().play();
+        machine.board().onTStatesElapsed(16, 16);
+
+        int pauseLeadIn = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+
+        machine.board().onTStatesElapsed(3_500, 3_500);
+
+        int pauseSettled = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
+
+        assertEquals(pauseLeadIn, pauseSettled);
+    }
+
+    @Test
+    void explicitPlayStartsTapeWithoutEarSamplingBurst() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        machine.board().tape().load(new TapeFile(List.of(
+                TapeBlock.dataBlock(new int[]{5, 5, 5}, 5, 5, 1, 0, new byte[]{(byte) 0x80})
+        )));
+
+        machine.board().tape().play();
+
+        assertEquals(true, machine.board().tape().isPlaying());
+    }
+
+    @Test
+    void explicitPlayDoesNotDependOnKeyboardReleaseState() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        machine.board().tape().load(new TapeFile(List.of(
+                TapeBlock.dataBlock(new int[]{5, 5, 5}, 5, 5, 1, 0, new byte[]{(byte) 0x80})
+        )));
+        machine.board().keyboard().setKeyPressed(6, 0, true);
+
+        machine.board().tape().play();
+
+        assertEquals(true, machine.board().tape().isPlaying());
     }
 
     private int sampleLevel(int portFeValue) {
@@ -204,5 +314,25 @@ class Spectrum48kMachineTest {
         machine.board().beeper().onTStatesElapsed(3_500);
         machine.board().beeper().drainAudio(pcm, 0, pcm.length);
         return (pcm[1] << 8) | (pcm[0] & 0xFF);
+    }
+
+    private int[] standardHeaderPulses() {
+        int[] pulses = new int[8_065];
+        for (int i = 0; i < 8_063; i++) {
+            pulses[i] = 2_168;
+        }
+        pulses[8_063] = 667;
+        pulses[8_064] = 735;
+        return pulses;
+    }
+
+    private int[] standardDataPulses() {
+        int[] pulses = new int[3_225];
+        for (int i = 0; i < 3_223; i++) {
+            pulses[i] = 2_168;
+        }
+        pulses[3_223] = 667;
+        pulses[3_224] = 735;
+        return pulses;
     }
 }

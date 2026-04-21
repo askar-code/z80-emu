@@ -1,15 +1,11 @@
 package dev.z8emu.machine.radio86rk;
 
 import dev.z8emu.cpu.i8080.I8080Cpu;
-import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
 import dev.z8emu.platform.machine.BoardBackedMachine;
 import dev.z8emu.platform.machine.MachineRuntime;
 import dev.z8emu.platform.time.TStateCounter;
 
 public final class Radio86Machine implements BoardBackedMachine<Radio86Board> {
-    public static final long CPU_CLOCK_HZ = 16_000_000L / 9L;
-    public static final int FRAME_T_STATES = Radio86VideoDevice.T_STATES_PER_FRAME;
-
     private final Radio86Board board;
     private final I8080Cpu cpu;
     private final MachineRuntime runtime;
@@ -49,5 +45,13 @@ public final class Radio86Machine implements BoardBackedMachine<Radio86Board> {
 
     public I8080Cpu cpu() {
         return cpu;
+    }
+
+    public long cpuClockHz() {
+        return board.modelConfig().cpuClockHz();
+    }
+
+    public int frameTStates() {
+        return board.modelConfig().frameTStates();
     }
 }

@@ -90,11 +90,11 @@ class Radio86MachineTest {
 
         assertEquals(0x44, machine.board().cpuBus().readMemory(0xC001));
 
-        machine.board().onTStatesElapsed(Radio86Machine.FRAME_T_STATES - 1, Radio86Machine.FRAME_T_STATES - 1);
+        machine.board().onTStatesElapsed(machine.frameTStates() - 1, machine.frameTStates() - 1);
         assertEquals(0, machine.board().video().frameCounter());
         assertEquals(0x44, machine.board().cpuBus().readMemory(0xC001));
 
-        machine.board().onTStatesElapsed(1, Radio86Machine.FRAME_T_STATES);
+        machine.board().onTStatesElapsed(1, machine.frameTStates());
         assertEquals(1, machine.board().video().frameCounter());
         assertEquals(0x64, machine.board().cpuBus().readMemory(0xC001));
         assertEquals(0x44, machine.board().cpuBus().readMemory(0xC001));
@@ -137,7 +137,7 @@ class Radio86MachineTest {
         int cursorY = Radio86VideoDevice.CELL_HEIGHT - 1;
         assertEquals(0xFFA0A0A0, visibleFrame.pixels()[(cursorY * visibleFrame.width()) + cursorX]);
 
-        machine.board().onTStatesElapsed(Radio86Machine.FRAME_T_STATES * 7, Radio86Machine.FRAME_T_STATES * 7L);
+        machine.board().onTStatesElapsed(machine.frameTStates() * 7, machine.frameTStates() * 7L);
         FrameBuffer hiddenFrame = machine.board().renderVideoFrame();
         assertEquals(0xFF000000, hiddenFrame.pixels()[(cursorY * hiddenFrame.width()) + cursorX]);
     }
@@ -147,7 +147,7 @@ class Radio86MachineTest {
         Radio86Machine machine = new Radio86Machine(new byte[Radio86Memory.ROM_SIZE_2K]);
 
         initializeVideo(machine);
-        machine.board().onTStatesElapsed(Radio86Machine.FRAME_T_STATES, Radio86Machine.FRAME_T_STATES);
+        machine.board().onTStatesElapsed(machine.frameTStates(), machine.frameTStates());
 
         assertEquals(0x64, machine.board().cpuBus().readMemory(0xC001));
         assertEquals(false, machine.board().consumeMaskableInterrupt());

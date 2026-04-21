@@ -5,6 +5,7 @@ import dev.z8emu.platform.device.TimedDevice;
 import dev.z8emu.platform.video.FrameBuffer;
 
 public final class SpectrumUlaDevice implements TimedDevice {
+    private static final Integer FORCED_FLOATING_BUS_VALUE = Integer.getInteger("z8emu.forceFloatingBusValue");
     public static final int T_STATES_PER_FRAME = 69_888;
     public static final int SCANLINES_PER_FRAME = 312;
     public static final int DISPLAY_WIDTH = 256;
@@ -15,10 +16,9 @@ public final class SpectrumUlaDevice implements TimedDevice {
     public static final int BORDER_BOTTOM = 56;
     public static final int FRAME_WIDTH = BORDER_LEFT + DISPLAY_WIDTH + BORDER_RIGHT;
     public static final int FRAME_HEIGHT = BORDER_TOP + DISPLAY_HEIGHT + BORDER_BOTTOM;
-    private static final int T_STATES_PER_SCANLINE = T_STATES_PER_FRAME / SCANLINES_PER_FRAME;
-    private static final int VISIBLE_START_SCANLINE = (SCANLINES_PER_FRAME - FRAME_HEIGHT) / 2;
+    private static final int FLOATING_BUS_DISPLAY_START_48K = 14_347;
+    private static final int FLOATING_BUS_DISPLAY_START_128K = 14_368;
     private static final int VISIBLE_T_STATES_PER_LINE = FRAME_WIDTH / 2;
-    private static final int VISIBLE_START_T_STATE = (T_STATES_PER_SCANLINE - VISIBLE_T_STATES_PER_LINE) / 2;
     private static final int INITIAL_EVENT_CAPACITY = 256;
 
     private static final int[] NORMAL_PALETTE = {
@@ -44,6 +44,7 @@ public final class SpectrumUlaDevice implements TimedDevice {
     };
 
     private int borderColor;
+    private int portFeDefaultValue = 0xFF;
     private long elapsedTStates;
     private long frameCounter;
     private int lastRefreshAddress;
@@ -55,16 +56,45 @@ public final class SpectrumUlaDevice implements TimedDevice {
     private int[] completedFrameEventColors = new int[INITIAL_EVENT_CAPACITY];
     private int completedFrameEventCount;
     private final FrameBuffer frameBuffer = new FrameBuffer(FRAME_WIDTH, FRAME_HEIGHT);
+    private final int frameTStates;
+    private final int scanlinesPerFrame;
+    private final int tStatesPerScanline;
+    private final int visibleStartScanline;
+    private final int visibleStartTState;
+    private final int floatingBusDisplayStartTState;
+
+    public SpectrumUlaDevice() {
+        this(T_STATES_PER_FRAME, SCANLINES_PER_FRAME);
+    }
+
+    public SpectrumUlaDevice(int frameTStates, int scanlinesPerFrame) {
+        if (frameTStates <= 0) {
+            throw new IllegalArgumentException("frameTStates must be positive");
+        }
+        if (scanlinesPerFrame <= 0) {
+            throw new IllegalArgumentException("scanlinesPerFrame must be positive");
+        }
+
+        this.frameTStates = frameTStates;
+        this.scanlinesPerFrame = scanlinesPerFrame;
+        this.tStatesPerScanline = frameTStates / scanlinesPerFrame;
+        this.visibleStartScanline = (scanlinesPerFrame - FRAME_HEIGHT) / 2;
+        this.visibleStartTState = (tStatesPerScanline - VISIBLE_T_STATES_PER_LINE) / 2;
+        this.floatingBusDisplayStartTState = frameTStates == 70_908
+                ? FLOATING_BUS_DISPLAY_START_128K
+                : FLOATING_BUS_DISPLAY_START_48K;
+    }
 
     public int readPortFe(int port, KeyboardMatrixDevice keyboard, TapeDevice tape) {
-        int value = keyboard.readSelectedRows(port);
+        int value = portFeDefaultValue & keyboard.readSelectedRows(port);
         return tape.applyEarBitToPortRead(value);
     }
 
     public void writePortFe(int value, long eventTState, BeeperDevice beeper) {
         syncToTState(eventTState);
         borderColor = value & 0x07;
-        appendBorderEvent((int) (elapsedTStates % T_STATES_PER_FRAME), borderColor);
+        portFeDefaultValue = (value & 0x10) != 0 ? 0xFF : 0xBF;
+        appendBorderEvent((int) (elapsedTStates % frameTStates), borderColor);
         beeper.writeFromPortFe(value);
     }
 
@@ -136,9 +166,48 @@ public final class SpectrumUlaDevice implements TimedDevice {
         return frameBuffer;
     }
 
+    public int readFloatingBus(SpectrumDisplayMemory memory, long currentTState) {
+        if (FORCED_FLOATING_BUS_VALUE != null) {
+            return FORCED_FLOATING_BUS_VALUE & 0xFF;
+        }
+        int frameOffset = Math.floorMod((int) (currentTState % frameTStates), frameTStates);
+        int screenOffset = frameOffset - floatingBusDisplayStartTState;
+        if (screenOffset < 0) {
+            return 0xFF;
+        }
+
+        int scanline = screenOffset / tStatesPerScanline;
+        if (scanline < 0 || scanline >= DISPLAY_HEIGHT) {
+            return 0xFF;
+        }
+
+        int lineOffset = screenOffset % tStatesPerScanline;
+        if (lineOffset < 0 || lineOffset >= 128) {
+            return 0xFF;
+        }
+
+        int fetchGroup = lineOffset >>> 3;
+        int fetchSlot = lineOffset & 0x07;
+        int columnByte = fetchGroup * 2;
+        int pixelRowBase = 0x4000
+                | ((scanline & 0xC0) << 5)
+                | ((scanline & 0x07) << 8)
+                | ((scanline & 0x38) << 2);
+        int attributeRowBase = 0x5800 + ((scanline >>> 3) * 32);
+
+        return switch (fetchSlot) {
+            case 0 -> memory.readDisplayMemory(pixelRowBase + columnByte);
+            case 1 -> memory.readDisplayMemory(attributeRowBase + columnByte);
+            case 2 -> memory.readDisplayMemory(pixelRowBase + columnByte + 1);
+            case 3 -> memory.readDisplayMemory(attributeRowBase + columnByte + 1);
+            default -> 0xFF;
+        };
+    }
+
     @Override
     public void reset() {
         borderColor = 0;
+        portFeDefaultValue = 0xFF;
         elapsedTStates = 0;
         frameCounter = 0;
         lastRefreshAddress = 0;
@@ -159,12 +228,12 @@ public final class SpectrumUlaDevice implements TimedDevice {
         }
 
         while (elapsedTStates < targetTState) {
-            int frameOffset = (int) (elapsedTStates % T_STATES_PER_FRAME);
-            int remainingInFrame = T_STATES_PER_FRAME - frameOffset;
+            int frameOffset = (int) (elapsedTStates % frameTStates);
+            int remainingInFrame = frameTStates - frameOffset;
             int chunk = (int) Math.min(targetTState - elapsedTStates, remainingInFrame);
             elapsedTStates += chunk;
 
-            if (((int) (elapsedTStates % T_STATES_PER_FRAME)) == 0) {
+            if (((int) (elapsedTStates % frameTStates)) == 0) {
                 completeCurrentFrame();
                 frameCounter++;
                 pendingMaskableInterrupt = true;
@@ -187,11 +256,11 @@ public final class SpectrumUlaDevice implements TimedDevice {
         int[] pixels = frameBuffer.pixels();
 
         for (int y = 0; y < FRAME_HEIGHT; y++) {
-            int scanline = VISIBLE_START_SCANLINE + y;
+            int scanline = visibleStartScanline + y;
             int rowBase = y * FRAME_WIDTH;
             for (int x = 0; x < FRAME_WIDTH; x++) {
-                int frameTState = (scanline * T_STATES_PER_SCANLINE)
-                        + VISIBLE_START_T_STATE
+                int frameTState = (scanline * tStatesPerScanline)
+                        + visibleStartTState
                         + (x >>> 1);
                 while (eventIndex + 1 < eventCount && eventTimes[eventIndex + 1] <= frameTState) {
                     eventIndex++;

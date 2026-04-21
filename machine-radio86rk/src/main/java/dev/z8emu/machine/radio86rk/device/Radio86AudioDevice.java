@@ -1,8 +1,9 @@
 package dev.z8emu.machine.radio86rk.device;
 
+import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.device.TimedDevice;
 
-public final class Radio86AudioDevice implements TimedDevice {
+public final class Radio86AudioDevice implements TimedDevice, PcmMonoSource {
     public static final int SAMPLE_RATE = 44_100;
 
     private static final boolean MONITOR_TAPE_OUTPUT = Boolean.getBoolean("z8emu.radioTapeMonitorAudio");
@@ -33,13 +34,18 @@ public final class Radio86AudioDevice implements TimedDevice {
     }
 
     public synchronized int drainAudio(byte[] target, int offset, int length) {
-        int copied = Math.min(length, bufferedBytes);
+        int copied = Math.min(length, bufferedBytes) & ~0x01;
         for (int i = 0; i < copied; i++) {
             target[offset + i] = audioBuffer[readIndex];
             readIndex = (readIndex + 1) % audioBuffer.length;
         }
         bufferedBytes -= copied;
         return copied;
+    }
+
+    @Override
+    public int sampleRate() {
+        return SAMPLE_RATE;
     }
 
     public synchronized int availableAudioBytes() {
@@ -93,16 +99,19 @@ public final class Radio86AudioDevice implements TimedDevice {
     }
 
     private void writeSample(short sample) {
-        writeByte((byte) (sample & 0xFF));
-        writeByte((byte) ((sample >>> 8) & 0xFF));
+        ensureCapacityForSample();
+        writeByteUnchecked((byte) (sample & 0xFF));
+        writeByteUnchecked((byte) ((sample >>> 8) & 0xFF));
     }
 
-    private void writeByte(byte value) {
-        if (bufferedBytes == audioBuffer.length) {
+    private void ensureCapacityForSample() {
+        while (bufferedBytes > audioBuffer.length - BYTES_PER_SAMPLE) {
             readIndex = (readIndex + 1) % audioBuffer.length;
             bufferedBytes--;
         }
+    }
 
+    private void writeByteUnchecked(byte value) {
         audioBuffer[writeIndex] = value;
         writeIndex = (writeIndex + 1) % audioBuffer.length;
         bufferedBytes++;

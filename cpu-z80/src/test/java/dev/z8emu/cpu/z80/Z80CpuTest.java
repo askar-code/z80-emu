@@ -1,6 +1,8 @@
 package dev.z8emu.cpu.z80;
 
 import dev.z8emu.platform.bus.CpuBus;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -409,6 +411,368 @@ class Z80CpuTest {
     }
 
     @Test
+    void repeatedBlockInstructionsAdvanceRForEachRepeat() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x3E, 0x30,
+                0xED, 0x4F,
+                0x21, 0x02, 0x40,
+                0x11, 0x12, 0x40,
+                0x01, 0x03, 0x00,
+                0xED, 0xB8,
+                0xAF,
+                0xED, 0x5F
+        );
+        bus.load(0x4000, 0x11, 0x22, 0x33);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        while (cpu.registers().pc() != 0x0010) {
+            cpu.runInstruction();
+        }
+
+        assertEquals(0x3A, cpu.registers().r(), "LDDR with 3 iterations should advance R on each repeated ED fetch");
+        assertEquals(9, cpu.runInstruction());
+        assertEquals(0x3C, cpu.registers().a(), "LD A,R should observe the advanced refresh register");
+    }
+
+    @Test
+    void ldirRepeatsOneIterationPerRunInstruction() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x21, 0x00, 0x40,
+                0x11, 0x00, 0x50,
+                0x01, 0x03, 0x00,
+                0xED, 0xB0
+        );
+        bus.load(0x4000, 0x11, 0x22, 0x33);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(10, cpu.runInstruction());
+
+        assertEquals(21, cpu.runInstruction());
+        assertEquals(0x0009, cpu.registers().pc());
+        assertEquals(0x4001, cpu.registers().hl());
+        assertEquals(0x5001, cpu.registers().de());
+        assertEquals(0x0002, cpu.registers().bc());
+        assertEquals(0x11, bus.read(0x5000));
+
+        assertEquals(21, cpu.runInstruction());
+        assertEquals(0x0009, cpu.registers().pc());
+        assertEquals(0x4002, cpu.registers().hl());
+        assertEquals(0x5002, cpu.registers().de());
+        assertEquals(0x0001, cpu.registers().bc());
+        assertEquals(0x22, bus.read(0x5001));
+
+        assertEquals(16, cpu.runInstruction());
+        assertEquals(0x000B, cpu.registers().pc());
+        assertEquals(0x4003, cpu.registers().hl());
+        assertEquals(0x5003, cpu.registers().de());
+        assertEquals(0x0000, cpu.registers().bc());
+        assertEquals(0x33, bus.read(0x5002));
+    }
+
+    @Test
+    void waitStateCallbacksReceiveInstructionPhaseInsteadOfOnlyAccumulatedWaits() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x32, 0x34, 0x12,
+                0xDB, 0xFE
+        );
+        bus.setWaitStates(2, 1, 3, 4, 0);
+        bus.setPortValue(0x55FE, 0xA5);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setA(0x55);
+
+        assertEquals(20, cpu.runInstruction());
+        assertEquals(List.of(0), bus.fetchOpcodeWaitPhases());
+        assertEquals(List.of(6, 10), bus.readMemoryWaitPhases());
+        assertEquals(List.of(14), bus.writeMemoryWaitPhases());
+
+        assertEquals(18, cpu.runInstruction());
+        assertEquals(List.of(0, 0), bus.fetchOpcodeWaitPhases());
+        assertEquals(List.of(6, 10, 6), bus.readMemoryWaitPhases());
+        assertEquals(List.of(10), bus.readPortWaitPhases());
+        assertEquals(0xA5, cpu.registers().a());
+    }
+
+    @Test
+    void indexedCbPrefixAdvancesRByTwoOnly() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0xFD, 0xCB, 0x02, 0xDE
+        );
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setIy(0x4000);
+        bus.writeMemory(0x4002, 0x00);
+
+        assertEquals(23, cpu.runInstruction());
+        assertEquals(0x02, cpu.registers().r(), "FD CB d op should advance R by 2 fetches only");
+        assertEquals(0x08, bus.read(0x4002), "SET 3,(IY+2) should modify the indexed byte");
+    }
+
+    @Test
+    void bitInstructionDoesNotModifyMemory() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x21, 0x00, 0x40,
+                0xCB, 0x7E
+        );
+        bus.writeMemory(0x4000, 0x11);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        cpu.runInstruction();
+        assertEquals(0x11, bus.read(0x4000));
+
+        assertEquals(12, cpu.runInstruction());
+        assertEquals(0x11, bus.read(0x4000), "BIT 7,(HL) must not alter the memory byte");
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_Z), "Bit 7 of 0x11 is clear so Z should be set");
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_H));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_N));
+    }
+
+    @Test
+    void edPrefixSupportsOutdAndOtdr() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x21, 0x02, 0x40,
+                0x01, 0x03, 0x10,
+                0xED, 0xAB,
+                0xED, 0xBB
+        );
+        bus.writeMemory(0x4000, 0x11);
+        bus.writeMemory(0x4001, 0x22);
+        bus.writeMemory(0x4002, 0x33);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(10, cpu.runInstruction());
+
+        assertEquals(16, cpu.runInstruction());
+        assertEquals(0x1003, bus.lastPortWritePort());
+        assertEquals(0x33, bus.lastPortWriteValue());
+        assertEquals(0x4001, cpu.registers().hl());
+        assertEquals(0x0F03, cpu.registers().bc());
+
+        for (int iteration = 0; iteration < 14; iteration++) {
+            assertEquals(21, cpu.runInstruction());
+            assertEquals(0x0008, cpu.registers().pc());
+        }
+
+        assertEquals(16, cpu.runInstruction());
+        assertEquals(0x0103, bus.lastPortWritePort());
+        assertEquals(0x00, bus.lastPortWriteValue());
+        assertEquals(0x3FF2, cpu.registers().hl());
+        assertEquals(0x0003, cpu.registers().bc());
+        assertEquals(0x000A, cpu.registers().pc());
+    }
+
+    @Test
+    void undocumentedEd70AndEd71BehaveLikeInFlagsAndOutZero() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x01, 0x34, 0x12,
+                0xED, 0x70,
+                0xED, 0x71
+        );
+        bus.setPortValue(0x1234, 0xA5);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setA(0x77);
+
+        assertEquals(10, cpu.runInstruction());
+
+        assertEquals(12, cpu.runInstruction());
+        assertEquals(0x77, cpu.registers().a(), "ED70 should not modify A");
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_S));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_Z));
+
+        assertEquals(12, cpu.runInstruction());
+        assertEquals(0x1234, bus.lastPortWritePort());
+        assertEquals(0x00, bus.lastPortWriteValue());
+    }
+
+    @Test
+    void undocumentedEdHolesActAsEightTStateNops() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0xED, 0x00,
+                0xED, 0x77,
+                0xED, 0x80,
+                0xED, 0xFF
+        );
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setAf(0x1234);
+        cpu.registers().setBc(0x5678);
+        cpu.registers().setDe(0x9ABC);
+        cpu.registers().setHl(0xDEF0);
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x0002, cpu.registers().pc());
+        assertEquals(0x02, cpu.registers().r());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x0004, cpu.registers().pc());
+        assertEquals(0x04, cpu.registers().r());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x0006, cpu.registers().pc());
+        assertEquals(0x06, cpu.registers().r());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x0008, cpu.registers().pc());
+        assertEquals(0x08, cpu.registers().r());
+
+        assertEquals(0x1234, cpu.registers().af());
+        assertEquals(0x5678, cpu.registers().bc());
+        assertEquals(0x9ABC, cpu.registers().de());
+        assertEquals(0xDEF0, cpu.registers().hl());
+    }
+
+    @Test
+    void undocumentedIndexHighLowRegisterOpsWork() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0xDD, 0x21, 0x34, 0x12,
+                0xFD, 0x21, 0x78, 0x56,
+                0xDD, 0x44,
+                0xDD, 0x6F,
+                0xFD, 0x7C,
+                0xFD, 0x65,
+                0xDD, 0xAC,
+                0xDD, 0xAD
+        );
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(14, cpu.runInstruction());
+        assertEquals(14, cpu.runInstruction());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x12, cpu.registers().b());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x1200, cpu.registers().ix());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x56, cpu.registers().a());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x7878, cpu.registers().iy(), "FD 65 should copy IYL into IYH");
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x44, cpu.registers().a());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x44, cpu.registers().a());
+    }
+
+    @Test
+    void undocumentedSllOpcodesSetBitZero() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x06, 0x81,
+                0xCB, 0x30,
+                0x21, 0x00, 0x40,
+                0x36, 0x81,
+                0xDD, 0x21, 0x00, 0x40,
+                0xDD, 0xCB, 0x00, 0x36
+        );
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(7, cpu.runInstruction());
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x03, cpu.registers().b());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_C));
+
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(14, cpu.runInstruction());
+        assertEquals(23, cpu.runInstruction());
+        assertEquals(0x03, bus.read(0x4000));
+    }
+
+    @Test
+    void undocumentedEdAliasesMapToDocumentedBehavior() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x3E, 0x01,
+                0xED, 0x4C,
+                0xED, 0x6E,
+                0xED, 0x76,
+                0xED, 0x7E
+        );
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(7, cpu.runInstruction());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0xFF, cpu.registers().a(), "ED4C should behave like NEG");
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0, cpu.registers().interruptMode());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(1, cpu.registers().interruptMode());
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(2, cpu.registers().interruptMode());
+    }
+
+    @Test
+    void ldiSetsUndocumentedFlagBitsFromAccumulatorPlusTransferredByte() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x21, 0x00, 0x40,
+                0x11, 0x00, 0x50,
+                0x01, 0x02, 0x00,
+                0x3E, 0x17,
+                0xED, 0xA0
+        );
+        bus.writeMemory(0x4000, 0x2A);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(10, cpu.runInstruction());
+        assertEquals(7, cpu.runInstruction());
+        assertEquals(16, cpu.runInstruction());
+
+        assertEquals(0x2A, bus.read(0x5000));
+        assertEquals(0x4001, cpu.registers().hl());
+        assertEquals(0x5001, cpu.registers().de());
+        assertEquals(0x0001, cpu.registers().bc());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_5), "Bit 5 should come from A + transferred byte");
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_3), "Bit 3 should come from A + transferred byte");
+    }
+
+    @Test
     void accumulatorControlInstructionsUpdateFlagsAsExpected() {
         TestBus bus = new TestBus();
         bus.load(
@@ -509,7 +873,24 @@ class Z80CpuTest {
         cpu.registers().setDe(0x5000);
         cpu.registers().setBc(0x0003);
 
-        assertEquals(58, cpu.runInstruction());
+        assertEquals(21, cpu.runInstruction());
+        assertEquals(0x0000, cpu.registers().pc());
+        assertEquals(0x11, bus.read(0x5000));
+        assertEquals(0x4001, cpu.registers().hl());
+        assertEquals(0x5001, cpu.registers().de());
+        assertEquals(0x0002, cpu.registers().bc());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+
+        assertEquals(21, cpu.runInstruction());
+        assertEquals(0x0000, cpu.registers().pc());
+        assertEquals(0x22, bus.read(0x5001));
+        assertEquals(0x4002, cpu.registers().hl());
+        assertEquals(0x5002, cpu.registers().de());
+        assertEquals(0x0001, cpu.registers().bc());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+
+        assertEquals(16, cpu.runInstruction());
+        assertEquals(0x0002, cpu.registers().pc());
         assertEquals(0x11, bus.read(0x5000));
         assertEquals(0x22, bus.read(0x5001));
         assertEquals(0x33, bus.read(0x5002));
@@ -523,11 +904,19 @@ class Z80CpuTest {
         cpu.registers().setBc(0x0003);
         cpu.registers().setPc(0x0002);
 
-        assertEquals(37, cpu.runInstruction());
+        assertEquals(21, cpu.runInstruction());
+        assertEquals(0x0002, cpu.registers().pc());
+        assertEquals(0x6001, cpu.registers().hl());
+        assertEquals(0x0002, cpu.registers().bc());
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_Z));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+
+        assertEquals(16, cpu.runInstruction());
         assertEquals(0x6002, cpu.registers().hl());
         assertEquals(0x0001, cpu.registers().bc());
         assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_Z));
         assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+        assertEquals(0x0004, cpu.registers().pc());
     }
 
     @Test
@@ -802,6 +1191,16 @@ class Z80CpuTest {
         private int interruptVector = 0xFF;
         private int lastPortWritePort = -1;
         private int lastPortWriteValue = -1;
+        private final List<Integer> fetchOpcodeWaitPhases = new ArrayList<>();
+        private final List<Integer> readMemoryWaitPhases = new ArrayList<>();
+        private final List<Integer> writeMemoryWaitPhases = new ArrayList<>();
+        private final List<Integer> readPortWaitPhases = new ArrayList<>();
+        private final List<Integer> writePortWaitPhases = new ArrayList<>();
+        private int fetchOpcodeWaitStates;
+        private int readMemoryWaitStates;
+        private int writeMemoryWaitStates;
+        private int readPortWaitStates;
+        private int writePortWaitStates;
 
         void load(int address, int... values) {
             for (int i = 0; i < values.length; i++) {
@@ -825,9 +1224,45 @@ class Z80CpuTest {
             return lastPortWriteValue;
         }
 
+        void setWaitStates(
+                int fetchOpcodeWaitStates,
+                int readMemoryWaitStates,
+                int writeMemoryWaitStates,
+                int readPortWaitStates,
+                int writePortWaitStates
+        ) {
+            this.fetchOpcodeWaitStates = fetchOpcodeWaitStates;
+            this.readMemoryWaitStates = readMemoryWaitStates;
+            this.writeMemoryWaitStates = writeMemoryWaitStates;
+            this.readPortWaitStates = readPortWaitStates;
+            this.writePortWaitStates = writePortWaitStates;
+        }
+
+        List<Integer> fetchOpcodeWaitPhases() {
+            return List.copyOf(fetchOpcodeWaitPhases);
+        }
+
+        List<Integer> readMemoryWaitPhases() {
+            return List.copyOf(readMemoryWaitPhases);
+        }
+
+        List<Integer> writeMemoryWaitPhases() {
+            return List.copyOf(writeMemoryWaitPhases);
+        }
+
+        List<Integer> readPortWaitPhases() {
+            return List.copyOf(readPortWaitPhases);
+        }
+
         @Override
         public int fetchOpcode(int address) {
             return read(address);
+        }
+
+        @Override
+        public int fetchOpcodeWaitStates(int address, int phaseTStates) {
+            fetchOpcodeWaitPhases.add(phaseTStates);
+            return fetchOpcodeWaitStates;
         }
 
         @Override
@@ -836,8 +1271,20 @@ class Z80CpuTest {
         }
 
         @Override
+        public int readMemoryWaitStates(int address, int phaseTStates) {
+            readMemoryWaitPhases.add(phaseTStates);
+            return readMemoryWaitStates;
+        }
+
+        @Override
         public void writeMemory(int address, int value) {
             memory[address & 0xFFFF] = (byte) value;
+        }
+
+        @Override
+        public int writeMemoryWaitStates(int address, int value, int phaseTStates) {
+            writeMemoryWaitPhases.add(phaseTStates);
+            return writeMemoryWaitStates;
         }
 
         @Override
@@ -846,9 +1293,21 @@ class Z80CpuTest {
         }
 
         @Override
+        public int readPortWaitStates(int port, int phaseTStates) {
+            readPortWaitPhases.add(phaseTStates);
+            return readPortWaitStates;
+        }
+
+        @Override
         public void writePort(int port, int value) {
             lastPortWritePort = port & 0xFFFF;
             lastPortWriteValue = value & 0xFF;
+        }
+
+        @Override
+        public int writePortWaitStates(int port, int value, int phaseTStates) {
+            writePortWaitPhases.add(phaseTStates);
+            return writePortWaitStates;
         }
 
         @Override

@@ -9,6 +9,7 @@ import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
+import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.machine.MachineBoard;
 import dev.z8emu.platform.time.TStateCounter;
@@ -35,7 +36,7 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         this.pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
         this.keyboard = new KeyboardMatrixDevice();
         this.beeper = new BeeperDevice();
-        this.tape = new TapeDevice();
+        this.tape = new TapeDevice(modelConfig.cpuClockHz(), true);
         this.ula = new SpectrumUlaDevice();
         this.bus = new Spectrum48kBus(clock, memory, pagingController, ula, keyboard, beeper, tape);
     }
@@ -77,6 +78,12 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         return beeper;
     }
 
+    @Override
+    public PcmMonoSource audio() {
+        return beeper;
+    }
+
+    @Override
     public SpectrumUlaDevice ula() {
         return ula;
     }

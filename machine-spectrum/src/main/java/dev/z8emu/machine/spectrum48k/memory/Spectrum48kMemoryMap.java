@@ -110,6 +110,25 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
         this.writeListener = writeListener;
     }
 
+    public boolean isContendedAddress(int address) {
+        int normalized = address & 0xFFFF;
+        if (normalized < 0x4000) {
+            return false;
+        }
+
+        if (!config.pagingSupported()) {
+            return normalized < 0x8000;
+        }
+
+        int slot = normalized / ROM_SIZE;
+        return switch (slot) {
+            case 1 -> isContendedBank(config.fixedLowerRamBankIndex());
+            case 2 -> isContendedBank(config.fixedMiddleRamBankIndex());
+            case 3 -> isContendedBank(state.topRamBankIndex());
+            default -> false;
+        };
+    }
+
     @Override
     public int readDisplayMemory(int address) {
         int normalized = address & 0xFFFF;
@@ -119,6 +138,10 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
 
         int offset = normalized - 0x4000;
         return ramBanks[state.activeScreenBankIndex()].read(offset);
+    }
+
+    private boolean isContendedBank(int bankIndex) {
+        return (bankIndex & 0x01) != 0;
     }
 
     @FunctionalInterface

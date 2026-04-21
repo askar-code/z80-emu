@@ -128,7 +128,7 @@ final class Radio86MonitorDriver {
 
     private void runFrames(int frames) {
         for (int frameIndex = 0; frameIndex < frames; frameIndex++) {
-            long targetTState = machine.currentTState() + Radio86Machine.FRAME_T_STATES;
+            long targetTState = machine.currentTState() + machine.frameTStates();
             while (machine.currentTState() < targetTState) {
                 machine.runInstruction();
                 steps++;

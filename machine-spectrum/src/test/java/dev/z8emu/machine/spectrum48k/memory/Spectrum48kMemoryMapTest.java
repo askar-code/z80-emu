@@ -7,7 +7,9 @@ import dev.z8emu.platform.memory.ReadOnlyMemoryBank;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class Spectrum48kMemoryMapTest {
@@ -49,5 +51,39 @@ class Spectrum48kMemoryMapTest {
         memory.write(0xC000, 0x5A);
 
         assertEquals(0x5A, memory.read(0x8000), "Top slot should follow the machine state mapping");
+    }
+
+    @Test
+    void marksOnlyLower16kRamAsContendedOn48kModel() {
+        SpectrumModelConfig config = SpectrumModelConfig.spectrum48k();
+        SpectrumMachineState state = new SpectrumMachineState(config);
+        Spectrum48kMemoryMap memory = new Spectrum48kMemoryMap(config, state, new byte[Spectrum48kMemoryMap.ROM_SIZE]);
+
+        assertFalse(memory.isContendedAddress(0x0000));
+        assertTrue(memory.isContendedAddress(0x4000));
+        assertTrue(memory.isContendedAddress(0x7FFF));
+        assertFalse(memory.isContendedAddress(0x8000));
+        assertFalse(memory.isContendedAddress(0xC000));
+    }
+
+    @Test
+    void marksOddBanksAsContendedOn128kModel() {
+        SpectrumModelConfig config = SpectrumModelConfig.spectrum128();
+        SpectrumMachineState state = new SpectrumMachineState(config);
+        Spectrum48kMemoryMap memory = new Spectrum48kMemoryMap(
+                config,
+                state,
+                new byte[Spectrum48kMemoryMap.ROM_SIZE],
+                new byte[Spectrum48kMemoryMap.ROM_SIZE]
+        );
+
+        assertTrue(memory.isContendedAddress(0x4000), "Bank 5 screen RAM should be contended");
+        assertFalse(memory.isContendedAddress(0x8000), "Bank 2 should be uncontended");
+        assertFalse(memory.isContendedAddress(0xC000), "Default top bank 0 should be uncontended");
+
+        state.setTopRamBankIndex(7);
+        memory.applyState();
+
+        assertTrue(memory.isContendedAddress(0xC000), "Paged-in bank 7 should be contended");
     }
 }

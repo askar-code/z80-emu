@@ -1,7 +1,8 @@
-package dev.z8emu.machine.spectrum48k;
+package dev.z8emu.machine.spectrum128k;
 
 import dev.z8emu.machine.spectrum.model.SpectrumPagingController;
 import dev.z8emu.machine.spectrum.model.SpectrumContentionModel;
+import dev.z8emu.machine.spectrum128k.device.Ay38912Device;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
@@ -11,11 +12,15 @@ import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
-public final class Spectrum48kBus implements CpuBus {
-    private static final int CONTENTION_START_48K = 14_335;
-    private static final int T_STATES_PER_SCANLINE_48K = 224;
+public final class Spectrum128Bus implements CpuBus {
+    private static final int CONTENTION_START_128K = 14_361;
+    private static final int T_STATES_PER_SCANLINE_128K = 228;
     private static final int PORT_FE_SAMPLE_OFFSET_TSTATES =
             Integer.getInteger("z8emu.portFeSampleOffsetTStates", 0);
+    private static final int AY_REGISTER_PORT_MASK = 0xC002;
+    private static final int AY_REGISTER_PORT_VALUE = 0xC000;
+    private static final int AY_DATA_PORT_MASK = 0xC002;
+    private static final int AY_DATA_PORT_VALUE = 0x8000;
 
     private final TStateCounter clock;
     private final Spectrum48kMemoryMap memory;
@@ -24,16 +29,18 @@ public final class Spectrum48kBus implements CpuBus {
     private final KeyboardMatrixDevice keyboard;
     private final BeeperDevice beeper;
     private final TapeDevice tape;
+    private final Ay38912Device ay;
     private final SpectrumContentionModel contentionModel;
 
-    public Spectrum48kBus(
+    public Spectrum128Bus(
             TStateCounter clock,
             Spectrum48kMemoryMap memory,
             SpectrumPagingController pagingController,
             SpectrumUlaDevice ula,
             KeyboardMatrixDevice keyboard,
             BeeperDevice beeper,
-            TapeDevice tape
+            TapeDevice tape,
+            Ay38912Device ay
     ) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.memory = Objects.requireNonNull(memory, "memory");
@@ -42,10 +49,11 @@ public final class Spectrum48kBus implements CpuBus {
         this.keyboard = Objects.requireNonNull(keyboard, "keyboard");
         this.beeper = Objects.requireNonNull(beeper, "beeper");
         this.tape = Objects.requireNonNull(tape, "tape");
+        this.ay = Objects.requireNonNull(ay, "ay");
         this.contentionModel = new SpectrumContentionModel(
-                SpectrumUlaDevice.T_STATES_PER_FRAME,
-                CONTENTION_START_48K,
-                T_STATES_PER_SCANLINE_48K
+                70_908,
+                CONTENTION_START_128K,
+                T_STATES_PER_SCANLINE_128K
         );
     }
 
@@ -84,6 +92,9 @@ public final class Spectrum48kBus implements CpuBus {
         if ((port & 0xFF) == 0xFE) {
             return ula.readPortFe(port, keyboard, tape);
         }
+        if (isAyRegisterPort(port)) {
+            return ay.readSelectedRegister();
+        }
 
         return ula.readFloatingBus(memory, clock.value());
     }
@@ -97,6 +108,9 @@ public final class Spectrum48kBus implements CpuBus {
                     + PORT_FE_SAMPLE_OFFSET_TSTATES;
             tape.syncToTState(sampleTime);
             return ula.readPortFe(port, keyboard, tape);
+        }
+        if (isAyRegisterPort(port)) {
+            return ay.readSelectedRegister();
         }
 
         return ula.readFloatingBus(memory, clock.value() + Math.max(0, phaseTStates) + readPortWaitStates(port, phaseTStates));
@@ -115,6 +129,14 @@ public final class Spectrum48kBus implements CpuBus {
         if ((port & 0xFF) == 0xFE) {
             long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
             ula.writePortFe(value, eventTime, beeper);
+            return;
+        }
+        if (isAyRegisterPort(port)) {
+            ay.selectRegister(value);
+            return;
+        }
+        if (isAyDataPort(port)) {
+            ay.writeSelectedRegister(value);
         }
     }
 
@@ -142,5 +164,13 @@ public final class Spectrum48kBus implements CpuBus {
     public int currentTState() {
         long tState = clock.value();
         return tState > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tState;
+    }
+
+    private boolean isAyRegisterPort(int port) {
+        return (port & AY_REGISTER_PORT_MASK) == AY_REGISTER_PORT_VALUE;
+    }
+
+    private boolean isAyDataPort(int port) {
+        return (port & AY_DATA_PORT_MASK) == AY_DATA_PORT_VALUE;
     }
 }

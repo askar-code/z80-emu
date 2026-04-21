@@ -7,13 +7,34 @@ import java.util.Arrays;
 
 public final class TapeDevice implements TimedDevice {
     private static final int EAR_BIT_MASK = 0x40;
-    private static final int INITIAL_EAR_ON_PORT_FE = 0xBF;
+    private static final boolean TOGGLE_EAR_AT_DATA_BLOCK_START =
+            Boolean.getBoolean("z8emu.tapeDataBlockInitialEdge")
+                    && !Boolean.getBoolean("z8emu.tapeDataBlockNoInitialEdge");
+    private static final double TSTATE_SCALE = Double.parseDouble(System.getProperty("z8emu.tapeTStateScale", "1.0"));
+    private static final boolean INVERT_EAR_INPUT = Boolean.getBoolean("z8emu.invertTapeEar");
+    private static final int MAX_PAUSE_MS = Integer.getInteger("z8emu.maxTapePauseMs", Integer.MAX_VALUE);
+    private static final boolean SKIP_DATA_BLOCK_PAUSES = Boolean.getBoolean("z8emu.skipDataBlockPauses");
 
+    private final long cpuClockHz;
+    private final boolean stopTapeIf48kModeEnabled;
     private TapeFile tapeFile;
     private boolean playing;
     private int blockIndex;
     private TapeBlockRuntime runtime;
     private long elapsedTStates;
+
+    public TapeDevice() {
+        this(3_500_000L, true);
+    }
+
+    public TapeDevice(boolean stopTapeIf48kModeEnabled) {
+        this(3_500_000L, stopTapeIf48kModeEnabled);
+    }
+
+    public TapeDevice(long cpuClockHz, boolean stopTapeIf48kModeEnabled) {
+        this.cpuClockHz = cpuClockHz;
+        this.stopTapeIf48kModeEnabled = stopTapeIf48kModeEnabled;
+    }
 
     public synchronized void load(TapeFile tapeFile) {
         this.tapeFile = tapeFile;
@@ -50,6 +71,13 @@ public final class TapeDevice implements TimedDevice {
             return null;
         }
         return Arrays.copyOf(tapeFile.blocks().get(blockIndex).data(), tapeFile.blocks().get(blockIndex).data().length);
+    }
+
+    public synchronized TapeBlock debugBlock(int index) {
+        if (tapeFile == null || index < 0 || index >= tapeFile.blocks().size()) {
+            return null;
+        }
+        return tapeFile.blocks().get(index);
     }
 
     public synchronized boolean earHigh() {
@@ -113,10 +141,14 @@ public final class TapeDevice implements TimedDevice {
     }
 
     public synchronized int applyEarBitToPortRead(int portValue) {
-        if (runtime != null && runtime.earHigh()) {
-            return portValue & ~EAR_BIT_MASK;
+        boolean earSignalHigh = playing && runtime != null && runtime.earHigh();
+        if (INVERT_EAR_INPUT) {
+            earSignalHigh = !earSignalHigh;
         }
-        return portValue | EAR_BIT_MASK;
+        if (earSignalHigh) {
+            return portValue ^ EAR_BIT_MASK;
+        }
+        return portValue;
     }
 
     @Override
@@ -153,7 +185,9 @@ public final class TapeDevice implements TimedDevice {
     }
 
     private void moveToNextBlock() {
-        boolean stopAfterBlock = runtime != null && runtime.stopTapeAfterBlock();
+        boolean stopAfterBlock = runtime != null
+                && (runtime.stopTapeAfterBlock()
+                || (stopTapeIf48kModeEnabled && runtime.stopTapeIf48kMode()));
         boolean nextEarLevel = runtime != null && runtime.earHigh();
         blockIndex++;
         if (tapeFile == null || blockIndex >= tapeFile.blocks().size()) {
@@ -174,7 +208,7 @@ public final class TapeDevice implements TimedDevice {
         runtime = tapeFile == null || tapeFile.blocks().isEmpty() ? null : new TapeBlockRuntime(tapeFile.blocks().get(0), false);
     }
 
-    private static final class TapeBlockRuntime {
+    private final class TapeBlockRuntime {
         private static final int STATE_PREFIX = 0;
         private static final int STATE_DATA = 1;
         private static final int STATE_PAUSE = 2;
@@ -235,6 +269,10 @@ public final class TapeDevice implements TimedDevice {
             return block.stopTapeAfterBlock();
         }
 
+        boolean stopTapeIf48kMode() {
+            return block.stopTapeIf48kMode();
+        }
+
         boolean finished() {
             return state == STATE_FINISHED;
         }
@@ -260,7 +298,7 @@ public final class TapeDevice implements TimedDevice {
                     earHigh = !earHigh;
                     pulseIndex++;
                     if (pulseIndex < block.prefixPulseLengthsTStates().length) {
-                        stateRemaining = block.prefixPulseLengthsTStates()[pulseIndex];
+                        stateRemaining = scaleDurationTStates(block.prefixPulseLengthsTStates()[pulseIndex]);
                     } else if (block.hasData()) {
                         state = STATE_DATA;
                         setupCurrentBitPulse();
@@ -296,12 +334,23 @@ public final class TapeDevice implements TimedDevice {
         }
 
         private void setupCurrentBitPulse() {
-            stateRemaining = currentBitPulseLength();
+            stateRemaining = scaleDurationTStates(currentBitPulseLength());
         }
 
         private void enterPause() {
+            if (SKIP_DATA_BLOCK_PAUSES && block.hasData() && isCustomTimedDataBlock()) {
+                state = STATE_FINISHED;
+                stateRemaining = 0;
+                return;
+            }
+            int effectivePauseMillis = effectivePauseMillis(block.pauseAfterMillis());
+            if (effectivePauseMillis <= 0) {
+                state = STATE_FINISHED;
+                stateRemaining = 0;
+                return;
+            }
             state = STATE_PAUSE;
-            stateRemaining = pauseDurationTStates(block.pauseAfterMillis());
+            stateRemaining = pauseDurationTStates(effectivePauseMillis);
         }
 
         private int currentBitPulseLength() {
@@ -315,7 +364,10 @@ public final class TapeDevice implements TimedDevice {
         }
 
         private int pauseDurationTStates(int pauseMillis) {
-            return (int) ((pauseMillis / 1000.0) * 3_500_000);
+            if (pauseMillis <= 0) {
+                return 0;
+            }
+            return scaleDurationTStates((int) Math.round((pauseMillis / 1000.0) * cpuClockHz));
         }
 
         private void initializeState(boolean initialEarHigh) {
@@ -327,13 +379,15 @@ public final class TapeDevice implements TimedDevice {
             if (block.hasPrefixPulses()) {
                 state = STATE_PREFIX;
                 earHigh = !earHigh;
-                stateRemaining = block.prefixPulseLengthsTStates()[0];
+                stateRemaining = scaleDurationTStates(block.prefixPulseLengthsTStates()[0]);
                 return;
             }
 
             if (block.hasData()) {
                 state = STATE_DATA;
-                earHigh = !earHigh;
+                if (TOGGLE_EAR_AT_DATA_BLOCK_START) {
+                    earHigh = !earHigh;
+                }
                 setupCurrentBitPulse();
                 return;
             }
@@ -345,6 +399,21 @@ public final class TapeDevice implements TimedDevice {
 
             state = STATE_FINISHED;
             stateRemaining = 0;
+        }
+
+        private int scaleDurationTStates(int durationTStates) {
+            if (durationTStates <= 0) {
+                return durationTStates;
+            }
+            return Math.max(1, (int) Math.round(durationTStates * TSTATE_SCALE));
+        }
+
+        private boolean isCustomTimedDataBlock() {
+            return block.zeroBitPulseLengthTStates() != 855 || block.oneBitPulseLengthTStates() != 1_710;
+        }
+
+        private int effectivePauseMillis(int pauseMillis) {
+            return Math.min(pauseMillis, MAX_PAUSE_MS);
         }
     }
 

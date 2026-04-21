@@ -17,22 +17,33 @@ public final class TzxLoader {
         validateHeader(cursor);
 
         List<TapeBlock> blocks = new ArrayList<>();
+        List<Integer> pendingPrefixPulses = new ArrayList<>();
         while (cursor.hasRemaining()) {
             int blockId = cursor.readU8();
             switch (blockId) {
-                case 0x10 -> blocks.add(readStandardSpeedData(cursor));
-                case 0x11 -> blocks.add(readTurboSpeedData(cursor));
-                case 0x12 -> blocks.add(readPureTone(cursor));
-                case 0x13 -> blocks.add(readPulseSequence(cursor));
-                case 0x14 -> blocks.add(readPureData(cursor));
-                case 0x20 -> blocks.add(readPause(cursor));
+                case 0x10 -> {
+                    flushPendingPrefixPulses(blocks, pendingPrefixPulses);
+                    blocks.add(readStandardSpeedData(cursor));
+                }
+                case 0x11 -> {
+                    flushPendingPrefixPulses(blocks, pendingPrefixPulses);
+                    blocks.add(readTurboSpeedData(cursor));
+                }
+                case 0x12 -> appendPulses(pendingPrefixPulses, readPureTone(cursor));
+                case 0x13 -> appendPulses(pendingPrefixPulses, readPulseSequence(cursor));
+                case 0x14 -> blocks.add(readPureData(cursor, pendingPrefixPulses));
+                case 0x20 -> {
+                    flushPendingPrefixPulses(blocks, pendingPrefixPulses);
+                    blocks.add(readPause(cursor));
+                }
                 case 0x21 -> cursor.skip(cursor.readU8());
                 case 0x22 -> {
                     // Group end has no payload.
                 }
                 case 0x2A -> {
+                    flushPendingPrefixPulses(blocks, pendingPrefixPulses);
                     cursor.skip(4);
-                    blocks.add(TapeBlock.pauseBlock(0, true));
+                    blocks.add(TapeBlock.stopTapeIf48kModeBlock());
                 }
                 case 0x30 -> cursor.skip(cursor.readU8());
                 case 0x31 -> {
@@ -49,6 +60,7 @@ public final class TzxLoader {
                 default -> throw new IOException("Unsupported TZX block 0x%02X".formatted(blockId));
             }
         }
+        flushPendingPrefixPulses(blocks, pendingPrefixPulses);
 
         return new TapeFile(List.copyOf(blocks));
     }
@@ -103,30 +115,32 @@ public final class TzxLoader {
         );
     }
 
-    private static TapeBlock readPureTone(Cursor cursor) throws IOException {
+    private static int[] readPureTone(Cursor cursor) throws IOException {
         int pulseLength = cursor.readU16();
         int pulseCount = cursor.readU16();
-        return TapeBlock.dataBlock(repeatPulse(pulseLength, pulseCount), 0, 0, 0, 0, new byte[0]);
+        return repeatPulse(pulseLength, pulseCount);
     }
 
-    private static TapeBlock readPulseSequence(Cursor cursor) throws IOException {
+    private static int[] readPulseSequence(Cursor cursor) throws IOException {
         int count = cursor.readU8();
         int[] pulses = new int[count];
         for (int i = 0; i < count; i++) {
             pulses[i] = cursor.readU16();
         }
-        return TapeBlock.dataBlock(pulses, 0, 0, 0, 0, new byte[0]);
+        return pulses;
     }
 
-    private static TapeBlock readPureData(Cursor cursor) throws IOException {
+    private static TapeBlock readPureData(Cursor cursor, List<Integer> pendingPrefixPulses) throws IOException {
         int zeroBitPulseLength = cursor.readU16();
         int oneBitPulseLength = cursor.readU16();
         int usedBitsInLastByte = normalizeUsedBits(cursor.readU8());
         int pauseAfterMillis = cursor.readU16();
         int length = cursor.readU24();
         byte[] data = cursor.readBytes(length);
+        int[] prefixPulses = toIntArray(pendingPrefixPulses);
+        pendingPrefixPulses.clear();
         return TapeBlock.dataBlock(
-                new int[0],
+                prefixPulses,
                 zeroBitPulseLength,
                 oneBitPulseLength,
                 usedBitsInLastByte,
@@ -165,6 +179,28 @@ public final class TzxLoader {
 
     private static int normalizeUsedBits(int usedBitsInLastByte) {
         return usedBitsInLastByte == 0 ? 8 : usedBitsInLastByte;
+    }
+
+    private static void appendPulses(List<Integer> pendingPrefixPulses, int[] pulses) {
+        for (int pulse : pulses) {
+            pendingPrefixPulses.add(pulse);
+        }
+    }
+
+    private static void flushPendingPrefixPulses(List<TapeBlock> blocks, List<Integer> pendingPrefixPulses) {
+        if (pendingPrefixPulses.isEmpty()) {
+            return;
+        }
+        blocks.add(TapeBlock.dataBlock(toIntArray(pendingPrefixPulses), 0, 0, 0, 0, new byte[0]));
+        pendingPrefixPulses.clear();
+    }
+
+    private static int[] toIntArray(List<Integer> values) {
+        int[] pulses = new int[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            pulses[i] = values.get(i);
+        }
+        return pulses;
     }
 
     private static final class Cursor {

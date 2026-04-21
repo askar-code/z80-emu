@@ -28,14 +28,17 @@ final class SpectrumDesktopRunner {
         private final DesktopLaunchConfig config;
         private final SpectrumDisplayPanel panel = new SpectrumDisplayPanel();
         private final HostKeyTyper hostKeyTyper;
+        private final SpectrumAutostartRunRescue autostartRunRescue = new SpectrumAutostartRunRescue();
 
         private SpectrumKeyboardController keyboardController;
-        private BeeperAudioEngine audioEngine;
+        private PcmMonoAudioEngine audioEngine;
+        private final SpectrumStartupTapeAutoplay startupTapeAutoplay;
 
         private Session(SpectrumMachine machine, DesktopLaunchConfig config) {
             this.machine = machine;
             this.config = config;
             this.hostKeyTyper = HostKeyTyper.get(machine);
+            this.startupTapeAutoplay = new SpectrumStartupTapeAutoplay(machine, config, hostKeyTyper);
         }
 
         @Override
@@ -58,6 +61,7 @@ final class SpectrumDesktopRunner {
                             if (!machine.board().tape().isLoaded()) {
                                 return;
                             }
+                            startupTapeAutoplay.cancel();
                             if (machine.board().tape().isPlaying()) {
                                 machine.board().tape().stop();
                             } else {
@@ -67,15 +71,18 @@ final class SpectrumDesktopRunner {
 
                         @Override
                         public void rewindTape() {
+                            startupTapeAutoplay.cancel();
                             machine.board().tape().rewind();
                         }
 
                         @Override
                         public void stopTape() {
+                            startupTapeAutoplay.cancel();
                             machine.board().tape().stop();
                         }
                     }
             );
+            startupTapeAutoplay.armIfNeeded();
             audioEngine = tryStartAudio(machine);
         }
 
@@ -137,8 +144,10 @@ final class SpectrumDesktopRunner {
                     break;
                 }
                 hostKeyTyper.tick();
+                startupTapeAutoplay.tick();
                 long targetTState = machine.currentTState() + machine.board().modelConfig().frameTStates();
                 while (machine.currentTState() < targetTState) {
+                    autostartRunRescue.tick(machine);
                     machine.runInstruction();
                 }
             }
@@ -178,9 +187,9 @@ final class SpectrumDesktopRunner {
         }
     }
 
-    private static BeeperAudioEngine tryStartAudio(SpectrumMachine machine) {
+    private static PcmMonoAudioEngine tryStartAudio(SpectrumMachine machine) {
         try {
-            return BeeperAudioEngine.start(machine.board().beeper());
+            return PcmMonoAudioEngine.start(machine.board().audio(), "spectrum-audio");
         } catch (LineUnavailableException unavailable) {
             System.err.println("Audio disabled: " + unavailable.getMessage());
             return null;
@@ -391,7 +400,7 @@ final class SpectrumDesktopRunner {
         return "%04X".formatted(value & 0xFFFF);
     }
 
-    private static final class HostKeyTyper {
+    static final class HostKeyTyper {
         private static final int FRAMES_PER_PRESS = 3;
         private static final int FRAMES_PER_GAP = 2;
         private static final java.util.Map<SpectrumMachine, HostKeyTyper> INSTANCES = new java.util.WeakHashMap<>();
@@ -411,7 +420,11 @@ final class SpectrumDesktopRunner {
         }
 
         synchronized void queueChord(int[][] keys) {
-            queue.add(new QueuedChord(keys));
+            queueChord(keys, FRAMES_PER_PRESS, FRAMES_PER_GAP);
+        }
+
+        synchronized void queueChord(int[][] keys, int pressFrames, int gapFrames) {
+            queue.add(new QueuedChord(keys, Math.max(1, pressFrames), Math.max(0, gapFrames)));
         }
 
         synchronized void tick() {
@@ -422,7 +435,7 @@ final class SpectrumDesktopRunner {
             if (activeKey == null) {
                 activeKey = queue.poll();
                 pressPhase = true;
-                framesRemaining = FRAMES_PER_PRESS;
+                framesRemaining = activeKey.pressFrames();
                 setChordState(activeKey, true);
                 return;
             }
@@ -435,7 +448,7 @@ final class SpectrumDesktopRunner {
             if (pressPhase) {
                 setChordState(activeKey, false);
                 pressPhase = false;
-                framesRemaining = FRAMES_PER_GAP;
+                framesRemaining = activeKey.gapFrames();
             } else {
                 activeKey = null;
             }
@@ -447,7 +460,7 @@ final class SpectrumDesktopRunner {
             }
         }
 
-        private record QueuedChord(int[][] keys) {
+        private record QueuedChord(int[][] keys, int pressFrames, int gapFrames) {
         }
     }
 }

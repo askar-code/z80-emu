@@ -17,8 +17,6 @@ public final class Z80Cpu implements Cpu {
     private static final int INDEX_NONE = 0;
     private static final int INDEX_IX = 1;
     private static final int INDEX_IY = 2;
-    private static final int IN_IMMEDIATE_PHASE_TSTATES = Integer.getInteger("z8emu.inPortPhaseImmediate", 7);
-    private static final int IN_C_PHASE_TSTATES = Integer.getInteger("z8emu.inPortPhaseC", 8);
 
     private final CpuBus bus;
     private final Z80Registers registers = new Z80Registers();
@@ -27,6 +25,8 @@ public final class Z80Cpu implements Cpu {
     private boolean pendingInterrupt;
     private boolean pendingNmi;
     private int interruptEnableDelay;
+    private int extraTStatesThisInstruction;
+    private int instructionPhaseTStates;
 
     public Z80Cpu(CpuBus bus) {
         this.bus = Objects.requireNonNull(bus, "bus");
@@ -62,26 +62,36 @@ public final class Z80Cpu implements Cpu {
 
     @Override
     public int runInstruction() {
+        extraTStatesThisInstruction = 0;
+        instructionPhaseTStates = 0;
         int tStates;
 
-        if (pendingNmi) {
-            tStates = serviceNonMaskableInterrupt();
-        } else if (pendingInterrupt && registers.iff1() && interruptEnableDelay == 0) {
-            tStates = serviceMaskableInterrupt();
-        } else if (halted && pendingInterrupt) {
-            tStates = releaseHaltOnIgnoredMaskableInterrupt();
-        } else if (halted) {
-            tStates = executeHaltCycle();
-        } else {
-            tStates = executeOpcode(fetchOpcode());
+        try {
+            if (pendingNmi) {
+                tStates = serviceNonMaskableInterrupt();
+            } else if (pendingInterrupt && registers.iff1() && interruptEnableDelay == 0) {
+                tStates = serviceMaskableInterrupt();
+            } else if (halted && pendingInterrupt) {
+                tStates = releaseHaltOnIgnoredMaskableInterrupt();
+            } else if (halted) {
+                tStates = executeHaltCycle();
+            } else {
+                tStates = executeOpcode(fetchOpcode());
+            }
+        } catch (UnsupportedOperationException unsupported) {
+            logUnsupportedOpcode(unsupported);
+            throw unsupported;
         }
 
         applyDeferredInterruptEnable();
-        return tStates;
+        return tStates + extraTStatesThisInstruction;
     }
 
     private int fetchOpcode() {
         int opcodeAddress = registers.pc();
+        int waitStates = bus.fetchOpcodeWaitStates(opcodeAddress, instructionPhaseTStates);
+        extraTStatesThisInstruction += waitStates;
+        instructionPhaseTStates += 4 + waitStates;
         int opcode = bus.fetchOpcode(opcodeAddress) & 0xFF;
         registers.onInstructionFetch();
         registers.incrementPc(1);
@@ -286,7 +296,8 @@ public final class Z80Cpu implements Cpu {
 
         if (opcode == 0xCB) {
             int displacement = relativeOffset(fetchImmediate8());
-            int cbOpcode = fetchOpcode();
+            int cbOpcode = readMemory8(registers.pc());
+            registers.incrementPc(1);
             return prefixCost + executeIndexedCbPrefix(indexMode, displacement, cbOpcode);
         }
 
@@ -457,7 +468,8 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int executeEdPrefix(int opcode) {
-        return switch (opcode & 0xFF) {
+        int normalized = opcode & 0xFF;
+        return switch (normalized) {
             case 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x78 -> inRegisterFromPortC((opcode >>> 3) & 0x07);
             case 0x41, 0x49, 0x51, 0x59, 0x61, 0x69, 0x79 -> outRegisterToPortC((opcode >>> 3) & 0x07);
             case 0x42, 0x52, 0x62, 0x72 -> sbcHl(getRegisterPair((opcode >>> 4) & 0x03));
@@ -475,18 +487,52 @@ public final class Z80Cpu implements Cpu {
             case 0x5F -> ldAFromR();
             case 0x67 -> rrd();
             case 0x6F -> rld();
+            case 0x70 -> inFlagsOnlyFromPortC();
+            case 0x71 -> outZeroToPortC();
             case 0xA0 -> ldi();
             case 0xA1 -> cpi();
+            case 0xA2 -> ini();
+            case 0xA3 -> outi();
             case 0xA8 -> ldd();
             case 0xA9 -> cpd();
+            case 0xAA -> ind();
+            case 0xAB -> outd();
             case 0xB0 -> ldir();
             case 0xB1 -> cpir();
+            case 0xB2 -> inir();
+            case 0xB3 -> otir();
             case 0xB8 -> lddr();
             case 0xB9 -> cpdr();
-            default -> throw new UnsupportedOperationException(
-                    "ED opcode 0x%02X is not implemented yet".formatted(opcode & 0xFF)
-            );
+            case 0xBA -> indr();
+            case 0xBB -> otdr();
+            default -> {
+                if (isUndocumentedEdNoOp(normalized)) {
+                    yield 8;
+                }
+                throw new UnsupportedOperationException(
+                        "ED opcode 0x%02X is not implemented yet".formatted(normalized)
+                );
+            }
         };
+    }
+
+    private boolean isUndocumentedEdNoOp(int opcode) {
+        if (opcode <= 0x3F) {
+            return true;
+        }
+        if (opcode >= 0xC0) {
+            return true;
+        }
+        if (opcode >= 0x80 && opcode <= 0xBF) {
+            return switch (opcode) {
+                case 0xA0, 0xA1, 0xA2, 0xA3,
+                        0xA8, 0xA9, 0xAA, 0xAB,
+                        0xB0, 0xB1, 0xB2, 0xB3,
+                        0xB8, 0xB9, 0xBA, 0xBB -> false;
+                default -> true;
+            };
+        }
+        return opcode == 0x77 || opcode == 0x7F;
     }
 
     private int loadRegisterPairImmediate(int pairCode) {
@@ -973,27 +1019,38 @@ public final class Z80Cpu implements Cpu {
     private int inImmediateAccumulator() {
         int portLow = fetchImmediate8();
         int port = ((registers.a() & 0xFF) << 8) | portLow;
-        registers.setA(bus.readPort(port, IN_IMMEDIATE_PHASE_TSTATES) & 0xFF);
+        registers.setA(readPort8(port));
         return 11;
     }
 
     private int outImmediateAccumulator() {
         int portLow = fetchImmediate8();
         int port = ((registers.a() & 0xFF) << 8) | portLow;
-        bus.writePort(port, registers.a(), 7);
+        writePort8(port, registers.a());
         return 11;
     }
 
     private int inRegisterFromPortC(int registerCode) {
-        int value = bus.readPort(registers.bc(), IN_C_PHASE_TSTATES) & 0xFF;
+        int value = readPort8(registers.bc());
         writeRegisterOperand(registerCode, value);
+        setInFlags(value);
+        return 12;
+    }
+
+    private int inFlagsOnlyFromPortC() {
+        int value = readPort8(registers.bc());
         setInFlags(value);
         return 12;
     }
 
     private int outRegisterToPortC(int registerCode) {
         int value = registerCode == 6 ? 0 : readRegisterOperand(registerCode);
-        bus.writePort(registers.bc(), value, 8);
+        writePort8(registers.bc(), value);
+        return 12;
+    }
+
+    private int outZeroToPortC() {
+        writePort8(registers.bc(), 0);
         return 12;
     }
 
@@ -1003,13 +1060,12 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int ldir() {
-        int iterations = 0;
-        do {
-            blockTransfer(true);
-            iterations++;
-        } while (registers.bc() != 0);
-
-        return blockRepeatTiming(iterations);
+        blockTransfer(true);
+        if (registers.bc() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
     }
 
     private int ldd() {
@@ -1018,13 +1074,12 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int lddr() {
-        int iterations = 0;
-        do {
-            blockTransfer(false);
-            iterations++;
-        } while (registers.bc() != 0);
-
-        return blockRepeatTiming(iterations);
+        blockTransfer(false);
+        if (registers.bc() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
     }
 
     private int cpi() {
@@ -1033,14 +1088,12 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int cpir() {
-        int iterations = 0;
-        boolean matched;
-        do {
-            matched = blockCompare(true);
-            iterations++;
-        } while (!matched && registers.bc() != 0);
-
-        return blockRepeatTiming(iterations);
+        boolean matched = blockCompare(true);
+        if (!matched && registers.bc() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
     }
 
     private int cpd() {
@@ -1049,14 +1102,68 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int cpdr() {
-        int iterations = 0;
-        boolean matched;
-        do {
-            matched = blockCompare(false);
-            iterations++;
-        } while (!matched && registers.bc() != 0);
+        boolean matched = blockCompare(false);
+        if (!matched && registers.bc() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
+    }
 
-        return blockRepeatTiming(iterations);
+    private int ini() {
+        blockInput(true);
+        return 16;
+    }
+
+    private int ind() {
+        blockInput(false);
+        return 16;
+    }
+
+    private int outi() {
+        blockOutput(true);
+        return 16;
+    }
+
+    private int outd() {
+        blockOutput(false);
+        return 16;
+    }
+
+    private int inir() {
+        blockInput(true);
+        if (registers.b() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
+    }
+
+    private int indr() {
+        blockInput(false);
+        if (registers.b() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
+    }
+
+    private int otir() {
+        blockOutput(true);
+        if (registers.b() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
+    }
+
+    private int otdr() {
+        blockOutput(false);
+        if (registers.b() != 0) {
+            registers.incrementPc(-2);
+            return 21;
+        }
+        return 16;
     }
 
     private int executeAluOperation(int operation, int value, int tStates) {
@@ -1228,6 +1335,9 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int readMemory8(int address) {
+        int waitStates = bus.readMemoryWaitStates(address, instructionPhaseTStates);
+        extraTStatesThisInstruction += waitStates;
+        instructionPhaseTStates += 3 + waitStates;
         return bus.readMemory(address) & 0xFF;
     }
 
@@ -1238,12 +1348,60 @@ public final class Z80Cpu implements Cpu {
     }
 
     private void writeMemory8(int address, int value) {
-        bus.writeMemory(address, value & 0xFF);
+        int normalized = value & 0xFF;
+        int waitStates = bus.writeMemoryWaitStates(address, normalized, instructionPhaseTStates);
+        extraTStatesThisInstruction += waitStates;
+        instructionPhaseTStates += 3 + waitStates;
+        bus.writeMemory(address, normalized);
     }
 
     private void writeMemory16(int address, int value) {
         writeMemory8(address, value);
         writeMemory8(address + 1, value >>> 8);
+    }
+
+    private void logUnsupportedOpcode(UnsupportedOperationException unsupported) {
+        int pc = registers.pc();
+        StringBuilder bytesAroundPc = new StringBuilder();
+        for (int address = pc - 8; address <= pc + 8; address++) {
+            int normalized = address & 0xFFFF;
+            if (bytesAroundPc.length() > 0) {
+                bytesAroundPc.append(' ');
+            }
+            bytesAroundPc.append(hex16(normalized))
+                    .append(':')
+                    .append(hex8(bus.readMemory(normalized)));
+        }
+
+        System.err.println("Unsupported opcode trap");
+        System.err.println("message=" + unsupported.getMessage());
+        System.err.println("pc=0x" + hex16(pc));
+        System.err.println("sp=0x" + hex16(registers.sp()));
+        System.err.println("af=0x" + hex16(registers.af()));
+        System.err.println("bc=0x" + hex16(registers.bc()));
+        System.err.println("de=0x" + hex16(registers.de()));
+        System.err.println("hl=0x" + hex16(registers.hl()));
+        System.err.println("ix=0x" + hex16(registers.ix()));
+        System.err.println("iy=0x" + hex16(registers.iy()));
+        System.err.println("i=0x" + hex8(registers.i()));
+        System.err.println("r=0x" + hex8(registers.r()));
+        System.err.println("iff1=" + registers.iff1());
+        System.err.println("iff2=" + registers.iff2());
+        System.err.println("im=" + registers.interruptMode());
+        System.err.println("halted=" + halted);
+        System.err.println("pendingInterrupt=" + pendingInterrupt);
+        System.err.println("pendingNmi=" + pendingNmi);
+        System.err.println("extraTStatesThisInstruction=" + extraTStatesThisInstruction);
+        System.err.println("busTState=" + bus.currentTState());
+        System.err.println("bytesAroundPc=" + bytesAroundPc);
+    }
+
+    private static String hex8(int value) {
+        return "%02X".formatted(value & 0xFF);
+    }
+
+    private static String hex16(int value) {
+        return "%04X".formatted(value & 0xFFFF);
     }
 
     private void pushWord(int value) {
@@ -1644,7 +1802,27 @@ public final class Z80Cpu implements Cpu {
         if (registers.bc() != 0) {
             flags |= Z80Registers.FLAG_PV;
         }
+        int sum = registers.a() + value;
+        flags |= sum & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
         registers.setF(flags);
+    }
+
+    private void blockInput(boolean increment) {
+        int port = registers.bc();
+        int value = readPort8(port);
+        writeMemory8(registers.hl(), value);
+        registers.setHl(registers.hl() + (increment ? 1 : -1));
+        registers.setB(registers.b() - 1);
+        setBlockIoFlags(value);
+    }
+
+    private void blockOutput(boolean increment) {
+        int port = registers.bc();
+        int value = readMemory8(registers.hl());
+        writePort8(port, value);
+        registers.setHl(registers.hl() + (increment ? 1 : -1));
+        registers.setB(registers.b() - 1);
+        setBlockIoFlags(value);
     }
 
     private boolean blockCompare(boolean increment) {
@@ -1671,11 +1849,32 @@ public final class Z80Cpu implements Cpu {
         return result == 0;
     }
 
-    private int blockRepeatTiming(int iterations) {
-        if (iterations <= 0) {
-            return 16;
+    private void setBlockIoFlags(int value) {
+        int b = registers.b();
+        int flags = b & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+        if (b == 0) {
+            flags |= Z80Registers.FLAG_Z;
         }
-        return 16 + ((iterations - 1) * 21);
+        if ((value & 0x80) != 0) {
+            flags |= Z80Registers.FLAG_N;
+        }
+        registers.setF(flags);
+    }
+
+    private int readPort8(int port) {
+        int waitStates = bus.readPortWaitStates(port, instructionPhaseTStates);
+        extraTStatesThisInstruction += waitStates;
+        int value = bus.readPort(port, instructionPhaseTStates) & 0xFF;
+        instructionPhaseTStates += 4 + waitStates;
+        return value;
+    }
+
+    private void writePort8(int port, int value) {
+        int normalized = value & 0xFF;
+        int waitStates = bus.writePortWaitStates(port, normalized, instructionPhaseTStates);
+        extraTStatesThisInstruction += waitStates;
+        bus.writePort(port, normalized, instructionPhaseTStates);
+        instructionPhaseTStates += 4 + waitStates;
     }
 
     private boolean usesIndexedSubstitution(int operandCode) {

@@ -65,8 +65,8 @@ public record SpectrumModelConfig(
     public static SpectrumModelConfig spectrum128() {
         return new SpectrumModelConfig(
                 "ZX Spectrum 128",
-                3_500_000L,
-                SpectrumUlaDevice.T_STATES_PER_FRAME,
+                3_546_900L,
+                70_908,
                 2,
                 8,
                 16 * 1024,

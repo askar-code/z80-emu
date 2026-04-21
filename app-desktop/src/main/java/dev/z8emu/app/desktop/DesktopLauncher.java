@@ -11,6 +11,8 @@ import dev.z8emu.machine.spectrum48k.tape.TapeLoaders;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.SwingUtilities;
 
 public final class DesktopLauncher {
@@ -47,7 +49,7 @@ public final class DesktopLauncher {
         }
 
         DesktopMachineKind machineKind = null;
-        java.util.List<String> positionalArgs = new java.util.ArrayList<>(2);
+        List<String> positionalArgs = new ArrayList<>(2);
         for (String arg : args) {
             if (arg.startsWith("--machine=")) {
                 machineKind = DesktopMachineKind.parse(arg.substring("--machine=".length()));

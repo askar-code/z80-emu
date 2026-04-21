@@ -6,6 +6,7 @@ import dev.z8emu.machine.radio86rk.device.Radio86AudioDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86TapeDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
+import dev.z8emu.machine.radio86rk.model.Radio86ModelConfig;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.machine.VideoMachineBoard;
 import dev.z8emu.platform.time.TStateCounter;
@@ -13,8 +14,7 @@ import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Objects;
 
 public final class Radio86Board implements VideoMachineBoard {
-    public static final String MODEL_NAME = "Radio-86RK";
-
+    private final Radio86ModelConfig modelConfig;
     private final Radio86Memory memory;
     private final Radio86KeyboardDevice keyboard;
     private final Radio86DmaDevice dma;
@@ -30,6 +30,7 @@ public final class Radio86Board implements VideoMachineBoard {
 
     public Radio86Board(byte[] romImage, TStateCounter clock, Radio86Bus.AccessTraceListener traceListener) {
         Objects.requireNonNull(clock, "clock");
+        this.modelConfig = Radio86ModelConfig.radio86rk();
         this.memory = new Radio86Memory(romImage);
         this.keyboard = new Radio86KeyboardDevice();
         this.dma = new Radio86DmaDevice();
@@ -78,7 +79,11 @@ public final class Radio86Board implements VideoMachineBoard {
     }
 
     public String modelName() {
-        return MODEL_NAME;
+        return modelConfig.modelName();
+    }
+
+    public Radio86ModelConfig modelConfig() {
+        return modelConfig;
     }
 
     public Radio86Memory memory() {

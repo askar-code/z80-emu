@@ -47,15 +47,13 @@ class TzxLoaderTest {
                         le16(333),
                         le24(2),
                         bytes(0xAA, 0x55)),
-                block(0x12, le16(1_000), le16(3)),
-                block(0x13, bytes(3), le16(100), le16(200), le16(300)),
                 block(0x14, le16(400), le16(800), bytes(3), le16(250), le24(1), bytes(0xE0)),
                 block(0x20, le16(0))
         );
 
         TapeFile tapeFile = TzxLoader.load(new ByteArrayInputStream(tzx));
 
-        assertEquals(5, tapeFile.blocks().size());
+        assertEquals(3, tapeFile.blocks().size());
 
         TapeBlock turbo = tapeFile.blocks().get(0);
         assertEquals(12, turbo.prefixPulseLengthsTStates().length);
@@ -68,16 +66,7 @@ class TzxLoaderTest {
         assertEquals(333, turbo.pauseAfterMillis());
         assertArrayEquals(bytes(0xAA, 0x55), turbo.data());
 
-        TapeBlock pureTone = tapeFile.blocks().get(1);
-        assertEquals(3, pureTone.prefixPulseLengthsTStates().length);
-        assertEquals(1_000, pureTone.prefixPulseLengthsTStates()[1]);
-        assertFalse(pureTone.hasData());
-
-        TapeBlock pulseSequence = tapeFile.blocks().get(2);
-        assertArrayEquals(new int[]{100, 200, 300}, pulseSequence.prefixPulseLengthsTStates());
-        assertFalse(pulseSequence.hasData());
-
-        TapeBlock pureData = tapeFile.blocks().get(3);
+        TapeBlock pureData = tapeFile.blocks().get(1);
         assertEquals(0, pureData.prefixPulseLengthsTStates().length);
         assertEquals(400, pureData.zeroBitPulseLengthTStates());
         assertEquals(800, pureData.oneBitPulseLengthTStates());
@@ -86,10 +75,44 @@ class TzxLoaderTest {
         assertEquals(250, pureData.pauseAfterMillis());
         assertArrayEquals(bytes(0xE0), pureData.data());
 
-        TapeBlock pause = tapeFile.blocks().get(4);
+        TapeBlock pause = tapeFile.blocks().get(2);
         assertTrue(pause.stopTapeAfterBlock());
         assertEquals(0, pause.pauseAfterMillis());
         assertFalse(pause.hasData());
+    }
+
+    @Test
+    void mergesPureToneAndPulseSequenceIntoFollowingPureDataBlock() throws Exception {
+        byte[] tzx = tzx(
+                block(0x12, le16(1_000), le16(3)),
+                block(0x13, bytes(3), le16(100), le16(200), le16(300)),
+                block(0x14, le16(400), le16(800), bytes(3), le16(250), le24(1), bytes(0xE0))
+        );
+
+        TapeFile tapeFile = TzxLoader.load(new ByteArrayInputStream(tzx));
+        TapeBlock block = tapeFile.blocks().get(0);
+
+        assertEquals(1, tapeFile.blocks().size());
+        assertArrayEquals(new int[]{1_000, 1_000, 1_000, 100, 200, 300}, block.prefixPulseLengthsTStates());
+        assertEquals(400, block.zeroBitPulseLengthTStates());
+        assertEquals(800, block.oneBitPulseLengthTStates());
+        assertEquals(250, block.pauseAfterMillis());
+        assertArrayEquals(bytes(0xE0), block.data());
+    }
+
+    @Test
+    void parsesStopTapeIf48kModeBlockSeparatelyFromHardStop() throws Exception {
+        byte[] tzx = tzx(
+                block(0x2A, bytes(0, 0, 0, 0))
+        );
+
+        TapeFile tapeFile = TzxLoader.load(new ByteArrayInputStream(tzx));
+        TapeBlock block = tapeFile.blocks().get(0);
+
+        assertEquals(1, tapeFile.blocks().size());
+        assertFalse(block.stopTapeAfterBlock());
+        assertTrue(block.stopTapeIf48kMode());
+        assertEquals(0, block.pauseAfterMillis());
     }
 
     private static byte[] tzx(byte[]... blocks) throws IOException {

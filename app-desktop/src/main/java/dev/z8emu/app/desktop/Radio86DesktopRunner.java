@@ -28,7 +28,7 @@ final class Radio86DesktopRunner {
         private final FrameDisplayPanel panel;
 
         private Radio86KeyboardController keyboardController;
-        private Radio86AudioEngine audioEngine;
+        private PcmMonoAudioEngine audioEngine;
 
         private Session(Radio86Machine machine, DesktopLaunchConfig config) {
             this.machine = machine;
@@ -106,7 +106,7 @@ final class Radio86DesktopRunner {
 
         @Override
         public long frameDurationNanos() {
-            return DesktopRunnerSupport.frameDurationNanos(Radio86Machine.CPU_CLOCK_HZ, Radio86Machine.FRAME_T_STATES);
+            return DesktopRunnerSupport.frameDurationNanos(machine.cpuClockHz(), machine.frameTStates());
         }
 
         @Override
@@ -122,7 +122,7 @@ final class Radio86DesktopRunner {
                     break;
                 }
                 keyboardController.tick();
-                long targetTState = machine.currentTState() + Radio86Machine.FRAME_T_STATES;
+                long targetTState = machine.currentTState() + machine.frameTStates();
                 while (machine.currentTState() < targetTState) {
                     machine.runInstruction();
                 }
@@ -163,9 +163,9 @@ final class Radio86DesktopRunner {
         }
     }
 
-    private static Radio86AudioEngine tryStartAudio(Radio86Machine machine) {
+    private static PcmMonoAudioEngine tryStartAudio(Radio86Machine machine) {
         try {
-            return Radio86AudioEngine.start(machine.board().audio());
+            return PcmMonoAudioEngine.start(machine.board().audio(), "radio86-audio");
         } catch (LineUnavailableException unavailable) {
             System.err.println("Audio disabled: " + unavailable.getMessage());
             return null;

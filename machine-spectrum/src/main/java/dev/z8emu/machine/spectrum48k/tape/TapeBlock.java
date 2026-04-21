@@ -9,6 +9,7 @@ public record TapeBlock(
         int usedBitsInLastByte,
         int pauseAfterMillis,
         boolean stopTapeAfterBlock,
+        boolean stopTapeIf48kMode,
         byte[] data
 ) {
     public TapeBlock {
@@ -40,12 +41,17 @@ public record TapeBlock(
                 usedBitsInLastByte,
                 pauseAfterMillis,
                 false,
+                false,
                 data
         );
     }
 
     public static TapeBlock pauseBlock(int pauseAfterMillis, boolean stopTapeAfterBlock) {
-        return new TapeBlock(new int[0], 0, 0, 0, pauseAfterMillis, stopTapeAfterBlock, new byte[0]);
+        return new TapeBlock(new int[0], 0, 0, 0, pauseAfterMillis, stopTapeAfterBlock, false, new byte[0]);
+    }
+
+    public static TapeBlock stopTapeIf48kModeBlock() {
+        return new TapeBlock(new int[0], 0, 0, 0, 0, false, true, new byte[0]);
     }
 
     public boolean hasPrefixPulses() {
