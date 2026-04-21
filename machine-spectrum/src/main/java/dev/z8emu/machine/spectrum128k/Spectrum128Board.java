@@ -41,7 +41,7 @@ public final class Spectrum128Board implements SpectrumBoard {
         this.pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
         this.keyboard = new KeyboardMatrixDevice();
         this.beeper = new BeeperDevice();
-        this.ay = new Ay38912Device();
+        this.ay = new Ay38912Device(modelConfig.cpuClockHz());
         this.audio = new MixedPcmMonoSource(beeper, ay);
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), false);
         this.ula = new SpectrumUlaDevice(modelConfig.frameTStates(), ULA_SCANLINES_PER_FRAME_128K);

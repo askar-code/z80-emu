@@ -69,7 +69,7 @@ class SpectrumBusIoTest {
                 new KeyboardMatrixDevice(),
                 new BeeperDevice(),
                 new TapeDevice(config.cpuClockHz(), false),
-                new Ay38912Device()
+                new Ay38912Device(config.cpuClockHz())
         );
 
         memory.ramBank(5).write(0, 0x9A);
@@ -99,7 +99,7 @@ class SpectrumBusIoTest {
                 new KeyboardMatrixDevice(),
                 new BeeperDevice(),
                 new TapeDevice(config.cpuClockHz(), false),
-                new Ay38912Device()
+                new Ay38912Device(config.cpuClockHz())
         );
 
         bus.writePort(0x7FFD, 0x03);
@@ -135,7 +135,7 @@ class SpectrumBusIoTest {
                 new KeyboardMatrixDevice(),
                 beeper,
                 new TapeDevice(config.cpuClockHz(), false),
-                new Ay38912Device()
+                new Ay38912Device(config.cpuClockHz())
         );
 
         bus.writePort(0x7FFD, 0x1B);
@@ -166,7 +166,7 @@ class SpectrumBusIoTest {
                 new KeyboardMatrixDevice(),
                 new BeeperDevice(),
                 new TapeDevice(config.cpuClockHz(), false),
-                new Ay38912Device()
+                new Ay38912Device(config.cpuClockHz())
         );
 
         bus.writePort(0x7FFD, 0x1B);
@@ -198,7 +198,7 @@ class SpectrumBusIoTest {
                 new KeyboardMatrixDevice(),
                 new BeeperDevice(),
                 new TapeDevice(config.cpuClockHz(), false),
-                new Ay38912Device()
+                new Ay38912Device(config.cpuClockHz())
         );
 
         bus.writePort(0xFFFD, 0x08);

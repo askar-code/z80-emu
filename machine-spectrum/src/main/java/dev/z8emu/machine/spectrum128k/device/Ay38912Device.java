@@ -7,12 +7,11 @@ import java.util.Arrays;
 public final class Ay38912Device implements TimedDevice, PcmMonoSource {
     public static final int SAMPLE_RATE = 44_100;
 
-    private static final int CPU_CLOCK_HZ = 3_500_000;
-    private static final int PSG_CLOCK_HZ = CPU_CLOCK_HZ / 2;
     private static final int BYTES_PER_SAMPLE = 2;
     private static final int BUFFER_CAPACITY = SAMPLE_RATE * BYTES_PER_SAMPLE / 5;
     private static final int REGISTER_COUNT = 16;
     private static final int CHANNEL_COUNT = 3;
+    private static final float HIGH_PASS_ALPHA = 0.995f;
     private static final int[] VOLUME_LEVELS = {
             0, 32, 48, 72,
             108, 162, 243, 364,
@@ -20,6 +19,8 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
             2_763, 4_145, 6_217, 9_326
     };
 
+    private final long cpuClockHz;
+    private final long psgClockHz;
     private final byte[] registers = new byte[REGISTER_COUNT];
     private final byte[] audioBuffer = new byte[BUFFER_CAPACITY];
     private final double[] tonePhases = new double[CHANNEL_COUNT];
@@ -38,6 +39,16 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
     private boolean envelopeHold;
     private boolean envelopeAlternate;
     private boolean envelopeHolding;
+    private float previousInputLevel;
+    private float filteredLevel;
+
+    public Ay38912Device(long cpuClockHz) {
+        if (cpuClockHz <= 0) {
+            throw new IllegalArgumentException("cpuClockHz must be positive");
+        }
+        this.cpuClockHz = cpuClockHz;
+        this.psgClockHz = cpuClockHz / 2;
+    }
 
     public synchronized void selectRegister(int registerIndex) {
         selectedRegister = registerIndex & 0x0F;
@@ -102,13 +113,15 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
         envelopeHold = false;
         envelopeAlternate = false;
         envelopeHolding = false;
+        previousInputLevel = 0.0f;
+        filteredLevel = 0.0f;
     }
 
     @Override
     public synchronized void onTStatesElapsed(int tStates) {
         long total = sampleRemainder + ((long) tStates * SAMPLE_RATE);
-        int samplesToGenerate = (int) (total / CPU_CLOCK_HZ);
-        sampleRemainder = total % CPU_CLOCK_HZ;
+        int samplesToGenerate = (int) (total / cpuClockHz);
+        sampleRemainder = total % cpuClockHz;
 
         for (int i = 0; i < samplesToGenerate; i++) {
             writeSample(nextSample());
@@ -120,7 +133,13 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
         advanceNoise();
         advanceEnvelope();
 
-        int mixed = channelSample(0) + channelSample(1) + channelSample(2);
+        // The AY outputs positive amplitudes that are typically AC-coupled later
+        // in the analogue path, so we approximate that here with a simple high-pass.
+        float inputLevel = channelSample(0) + channelSample(1) + channelSample(2);
+        filteredLevel = HIGH_PASS_ALPHA * (filteredLevel + inputLevel - previousInputLevel);
+        previousInputLevel = inputLevel;
+
+        int mixed = Math.round(filteredLevel);
         if (mixed > Short.MAX_VALUE) {
             return Short.MAX_VALUE;
         }
@@ -133,7 +152,7 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
     private void advanceTonePhases() {
         for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
             int period = Math.max(1, tonePeriod(channel));
-            double frequency = (double) PSG_CLOCK_HZ / (16.0d * period);
+            double frequency = (double) psgClockHz / (16.0d * period);
             tonePhases[channel] += frequency / SAMPLE_RATE;
             tonePhases[channel] -= Math.floor(tonePhases[channel]);
         }
@@ -141,7 +160,7 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
 
     private void advanceNoise() {
         int period = Math.max(1, registerValue(6) & 0x1F);
-        double frequency = (double) PSG_CLOCK_HZ / (16.0d * period);
+        double frequency = (double) psgClockHz / (16.0d * period);
         noisePhase += frequency / SAMPLE_RATE;
         int steps = (int) noisePhase;
         noisePhase -= steps;
@@ -154,7 +173,7 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
 
     private void advanceEnvelope() {
         int period = Math.max(1, envelopePeriod());
-        double frequency = (double) PSG_CLOCK_HZ / (256.0d * period);
+        double frequency = (double) psgClockHz / (256.0d * period);
         envelopePhase += frequency / SAMPLE_RATE;
         int steps = (int) envelopePhase;
         envelopePhase -= steps;
@@ -202,7 +221,7 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
         boolean noiseEnabled = (mixer & (1 << (channel + 3))) == 0;
         boolean toneHigh = !toneEnabled || tonePhases[channel] < 0.5d;
         boolean noiseHigh = !noiseEnabled || noiseOutputHigh;
-        return toneHigh && noiseHigh ? level : -level;
+        return toneHigh && noiseHigh ? level : 0;
     }
 
     private int currentEnvelopeLevel() {
