@@ -18,3 +18,14 @@ tasks.named<JavaExec>("run") {
         systemProperty("z8emu.tapeTurboFrames", it)
     }
 }
+
+tasks.register<JavaExec>("spectrumTapeProbe") {
+    group = "application"
+    description = "Runs the headless Spectrum tape probe launcher."
+    mainClass.set("dev.z8emu.app.desktop.SpectrumTapeProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") }
+        .associateWith { System.getProperty(it) })
+}

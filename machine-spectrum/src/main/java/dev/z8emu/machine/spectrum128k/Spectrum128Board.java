@@ -38,7 +38,7 @@ public final class Spectrum128Board implements SpectrumBoard {
         this.memory = new Spectrum48kMemoryMap(modelConfig, machineState, rom0Image, rom1Image);
         SpectrumPagingController pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
         this.keyboard = new KeyboardMatrixDevice();
-        this.beeper = new BeeperDevice();
+        this.beeper = new BeeperDevice(modelConfig.cpuClockHz());
         this.ay = new Ay38912Device(modelConfig.cpuClockHz());
         this.audio = new MixedPcmMonoSource(beeper, ay);
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), false);

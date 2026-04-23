@@ -6,7 +6,6 @@ import dev.z8emu.platform.device.TimedDevice;
 public final class BeeperDevice implements TimedDevice, PcmMonoSource {
     public static final int SAMPLE_RATE = 44_100;
 
-    private static final int CPU_CLOCK_HZ = 3_500_000;
     private static final int BYTES_PER_SAMPLE = 2;
     private static final int BUFFER_CAPACITY = SAMPLE_RATE * BYTES_PER_SAMPLE / 5;
     private static final short LEVEL_EAR_1_MIC_1 = 12_000;
@@ -15,6 +14,7 @@ public final class BeeperDevice implements TimedDevice, PcmMonoSource {
     private static final short LEVEL_EAR_0_MIC_0 = -12_000;
     private static final short TAPE_INPUT_LEVEL = 5_000;
 
+    private final long cpuClockHz;
     private boolean micHigh;
     private boolean earHigh;
     private boolean tapeInputHigh;
@@ -25,6 +25,13 @@ public final class BeeperDevice implements TimedDevice, PcmMonoSource {
     private int readIndex;
     private int writeIndex;
     private int bufferedBytes;
+
+    public BeeperDevice(long cpuClockHz) {
+        if (cpuClockHz <= 0) {
+            throw new IllegalArgumentException("cpuClockHz must be positive");
+        }
+        this.cpuClockHz = cpuClockHz;
+    }
 
     public synchronized void writeFromPortFe(int value) {
         lastPortFeValue = value & 0xFF;
@@ -78,8 +85,8 @@ public final class BeeperDevice implements TimedDevice, PcmMonoSource {
     @Override
     public synchronized void onTStatesElapsed(int tStates) {
         long total = sampleRemainder + ((long) tStates * SAMPLE_RATE);
-        int samplesToGenerate = (int) (total / CPU_CLOCK_HZ);
-        sampleRemainder = total % CPU_CLOCK_HZ;
+        int samplesToGenerate = (int) (total / cpuClockHz);
+        sampleRemainder = total % cpuClockHz;
 
         short sample = mixedOutputLevel();
         for (int i = 0; i < samplesToGenerate; i++) {

@@ -54,6 +54,9 @@ The core must be runnable:
 - inside a desktop app
 - inside future tooling such as a disassembler or trace runner
 
+For game-loading and visual regression investigation, use the operational
+runbook in [`docs/headless-spectrum-probe.md`](headless-spectrum-probe.md).
+
 ### 2. CPU Does Not Own The Hardware
 
 The CPU knows how to execute instructions and request machine cycles.

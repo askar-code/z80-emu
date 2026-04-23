@@ -15,15 +15,10 @@ public final class TapeDevice implements TimedDevice {
     private TapeBlockRuntime runtime;
     private long elapsedTStates;
 
-    public TapeDevice() {
-        this(3_500_000L, true);
-    }
-
-    public TapeDevice(boolean stopTapeIf48kModeEnabled) {
-        this(3_500_000L, stopTapeIf48kModeEnabled);
-    }
-
     public TapeDevice(long cpuClockHz, boolean stopTapeIf48kModeEnabled) {
+        if (cpuClockHz <= 0) {
+            throw new IllegalArgumentException("cpuClockHz must be positive");
+        }
         this.cpuClockHz = cpuClockHz;
         this.stopTapeIf48kModeEnabled = stopTapeIf48kModeEnabled;
     }
@@ -58,47 +53,8 @@ public final class TapeDevice implements TimedDevice {
         return tapeFile != null;
     }
 
-    public synchronized TapeBlock debugBlock(int index) {
-        if (tapeFile == null || index < 0 || index >= tapeFile.blocks().size()) {
-            return null;
-        }
-        return tapeFile.blocks().get(index);
-    }
-
     public synchronized boolean earHigh() {
         return runtime != null && runtime.earHigh();
-    }
-
-    public synchronized TapeDebugSnapshot debugSnapshot() {
-        if (runtime == null) {
-            return new TapeDebugSnapshot(
-                    currentBlockIndex(),
-                    totalBlocks(),
-                    playing,
-                    false,
-                    "IDLE",
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    elapsedTStates
-            );
-        }
-
-        return new TapeDebugSnapshot(
-                currentBlockIndex(),
-                totalBlocks(),
-                playing,
-                runtime.earHigh(),
-                runtime.stateName(),
-                runtime.stateRemaining(),
-                runtime.pilotPulsesRemaining(),
-                runtime.byteIndex(),
-                runtime.bitIndex(),
-                runtime.halfPulseIndex(),
-                elapsedTStates
-        );
     }
 
     public synchronized int currentBlockIndex() {
@@ -206,39 +162,6 @@ public final class TapeDevice implements TimedDevice {
 
         boolean earHigh() {
             return earHigh;
-        }
-
-        String stateName() {
-            return switch (state) {
-                case STATE_PREFIX -> "PULSES";
-                case STATE_DATA -> "DATA";
-                case STATE_PAUSE -> "PAUSE";
-                case STATE_FINISHED -> "FINISHED";
-                default -> "UNKNOWN";
-            };
-        }
-
-        int stateRemaining() {
-            return stateRemaining;
-        }
-
-        int pilotPulsesRemaining() {
-            if (!block.hasPrefixPulses()) {
-                return 0;
-            }
-            return Math.max(0, block.prefixPulseLengthsTStates().length - pulseIndex);
-        }
-
-        int byteIndex() {
-            return bitPosition / 8;
-        }
-
-        int bitIndex() {
-            return bitPosition % 8;
-        }
-
-        int halfPulseIndex() {
-            return halfPulseIndex;
         }
 
         boolean stopTapeAfterBlock() {
@@ -369,18 +292,4 @@ public final class TapeDevice implements TimedDevice {
         }
     }
 
-    public record TapeDebugSnapshot(
-            int currentBlockIndex,
-            int totalBlocks,
-            boolean playing,
-            boolean earHigh,
-            String state,
-            int stateRemaining,
-            int pilotPulsesRemaining,
-            int byteIndex,
-            int bitIndex,
-            int halfPulseIndex,
-            long elapsedTStates
-    ) {
-    }
 }

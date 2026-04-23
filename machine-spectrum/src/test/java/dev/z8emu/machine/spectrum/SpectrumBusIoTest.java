@@ -28,7 +28,7 @@ class SpectrumBusIoTest {
                 memory,
                 new SpectrumUlaDevice(),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), true)
         );
 
@@ -66,7 +66,7 @@ class SpectrumBusIoTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );
@@ -96,7 +96,7 @@ class SpectrumBusIoTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );
@@ -125,7 +125,7 @@ class SpectrumBusIoTest {
                 new byte[Spectrum48kMemoryMap.ROM_SIZE]
         );
         SpectrumUlaDevice ula = new SpectrumUlaDevice(config.frameTStates(), 311);
-        BeeperDevice beeper = new BeeperDevice();
+        BeeperDevice beeper = new BeeperDevice(config.cpuClockHz());
         Spectrum128Bus bus = new Spectrum128Bus(
                 new TStateCounter(),
                 memory,
@@ -163,7 +163,7 @@ class SpectrumBusIoTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );
@@ -195,7 +195,7 @@ class SpectrumBusIoTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );

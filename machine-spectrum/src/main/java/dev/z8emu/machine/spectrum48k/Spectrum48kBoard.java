@@ -30,7 +30,7 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         this.machineState = new SpectrumMachineState(modelConfig);
         this.memory = new Spectrum48kMemoryMap(modelConfig, machineState, romImage);
         this.keyboard = new KeyboardMatrixDevice();
-        this.beeper = new BeeperDevice();
+        this.beeper = new BeeperDevice(modelConfig.cpuClockHz());
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), true);
         this.ula = new SpectrumUlaDevice();
         this.bus = new Spectrum48kBus(clock, memory, ula, keyboard, beeper, tape);

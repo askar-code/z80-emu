@@ -33,7 +33,7 @@ class SpectrumBusContentionTest {
                 memory,
                 new SpectrumUlaDevice(),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), true)
         );
 
@@ -63,7 +63,7 @@ class SpectrumBusContentionTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );
@@ -103,7 +103,7 @@ class SpectrumBusContentionTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );
@@ -136,7 +136,7 @@ class SpectrumBusContentionTest {
                 new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(config.frameTStates(), 311),
                 new KeyboardMatrixDevice(),
-                new BeeperDevice(),
+                new BeeperDevice(config.cpuClockHz()),
                 new TapeDevice(config.cpuClockHz(), false),
                 new Ay38912Device(config.cpuClockHz())
         );
