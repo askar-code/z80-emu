@@ -124,6 +124,24 @@ class Z80CpuTest {
     }
 
     @Test
+    void clearedMaskableInterruptIsNotServicedAfterEiDelay() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xFB, 0x00, 0x00);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setInterruptMode(1);
+
+        assertEquals(4, cpu.runInstruction());
+        cpu.requestMaskableInterrupt();
+        cpu.clearMaskableInterrupt();
+
+        assertEquals(4, cpu.runInstruction());
+        assertEquals(0x0002, cpu.registers().pc());
+        assertEquals(4, cpu.runInstruction());
+        assertEquals(0x0003, cpu.registers().pc());
+    }
+
+    @Test
     void haltRepeatsRefreshCyclesUntilNmiArrives() {
         TestBus bus = new TestBus();
         bus.load(0x0000, 0x76, 0x00);

@@ -31,8 +31,10 @@ public final class MachineRuntime implements Machine {
 
         clock.advance(tStates);
         board.onTStatesElapsed(tStates, clock.value());
-        if (board.consumeMaskableInterrupt()) {
+        if (board.maskableInterruptLineActive(clock.value())) {
             cpu.requestMaskableInterrupt();
+        } else {
+            cpu.clearMaskableInterrupt();
         }
         return tStates;
     }

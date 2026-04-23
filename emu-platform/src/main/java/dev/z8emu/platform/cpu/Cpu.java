@@ -5,8 +5,10 @@ public interface Cpu {
 
     void requestMaskableInterrupt();
 
+    default void clearMaskableInterrupt() {
+    }
+
     void requestNonMaskableInterrupt();
 
     int runInstruction();
 }
-

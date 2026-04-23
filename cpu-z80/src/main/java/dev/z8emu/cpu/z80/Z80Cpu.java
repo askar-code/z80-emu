@@ -52,6 +52,11 @@ public final class Z80Cpu implements Cpu {
     }
 
     @Override
+    public void clearMaskableInterrupt() {
+        pendingInterrupt = false;
+    }
+
+    @Override
     public void requestNonMaskableInterrupt() {
         pendingNmi = true;
     }

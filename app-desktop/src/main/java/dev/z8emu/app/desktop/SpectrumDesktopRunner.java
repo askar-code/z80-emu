@@ -145,12 +145,21 @@ final class SpectrumDesktopRunner {
                 }
                 hostKeyTyper.tick();
                 startupTapeAutoplay.tick();
-                long targetTState = machine.currentTState() + machine.board().modelConfig().frameTStates();
+                long targetTState = nextFrameBoundaryTState();
                 while (machine.currentTState() < targetTState) {
                     autostartRunRescue.tick(machine);
                     machine.runInstruction();
                 }
             }
+        }
+
+        private long nextFrameBoundaryTState() {
+            long current = machine.currentTState();
+            long frameTStates = machine.board().modelConfig().frameTStates();
+            long remainder = Math.floorMod(current, frameTStates);
+            return remainder == 0
+                    ? current + frameTStates
+                    : current + frameTStates - remainder;
         }
 
         @Override

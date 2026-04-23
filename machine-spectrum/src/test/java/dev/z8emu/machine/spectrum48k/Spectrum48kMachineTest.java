@@ -58,6 +58,28 @@ class Spectrum48kMachineTest {
     }
 
     @Test
+    void completedFrameUsesDisplayBytesCapturedWhenUlaFetchedThem() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+
+        machine.board().memory().write(0x4000, 0x80);
+        machine.board().memory().write(0x5800, 0x47);
+
+        machine.board().onTStatesElapsed(15_000, 15_000);
+        machine.board().memory().write(0x4000, 0x00);
+        machine.board().onTStatesElapsed(
+                SpectrumUlaDevice.T_STATES_PER_FRAME - 15_000,
+                SpectrumUlaDevice.T_STATES_PER_FRAME
+        );
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+        int displayX = SpectrumUlaDevice.BORDER_LEFT;
+        int displayY = SpectrumUlaDevice.BORDER_TOP;
+        int pixelIndex = (displayY * frame.width()) + displayX;
+
+        assertEquals(0xFFFFFFFF, frame.pixels()[pixelIndex]);
+    }
+
+    @Test
     void borderColorHistoryProducesHorizontalBandsAcrossFrame() {
         Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
         machine.board().ula().writePortFe(0x02, 0, machine.board().beeper());
@@ -103,6 +125,15 @@ class Spectrum48kMachineTest {
         machine.board().onTStatesElapsed(SpectrumUlaDevice.T_STATES_PER_FRAME, SpectrumUlaDevice.T_STATES_PER_FRAME);
         assertEquals(true, machine.board().consumeMaskableInterrupt());
         assertEquals(false, machine.board().consumeMaskableInterrupt());
+    }
+
+    @Test
+    void ulaMaskableInterruptLineIsAShortFrameStartPulse() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+
+        assertEquals(true, machine.board().maskableInterruptLineActive(SpectrumUlaDevice.T_STATES_PER_FRAME));
+        assertEquals(true, machine.board().maskableInterruptLineActive(SpectrumUlaDevice.T_STATES_PER_FRAME + 31));
+        assertEquals(false, machine.board().maskableInterruptLineActive(SpectrumUlaDevice.T_STATES_PER_FRAME + 32));
     }
 
     @Test

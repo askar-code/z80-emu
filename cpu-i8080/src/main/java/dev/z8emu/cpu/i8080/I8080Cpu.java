@@ -67,6 +67,11 @@ public final class I8080Cpu implements Cpu {
     }
 
     @Override
+    public void clearMaskableInterrupt() {
+        pendingInterrupt = false;
+    }
+
+    @Override
     public void requestNonMaskableInterrupt() {
         throw new UnsupportedOperationException("Intel 8080 has no non-maskable interrupt input");
     }

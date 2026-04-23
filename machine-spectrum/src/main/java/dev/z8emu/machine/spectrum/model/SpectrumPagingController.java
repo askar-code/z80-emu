@@ -19,7 +19,7 @@ public final class SpectrumPagingController {
     }
 
     public boolean handlePortWrite(int port, int value) {
-        if (!config.pagingSupported() || !isPagingPort(port)) {
+        if (!handlesPortWrite(port)) {
             return false;
         }
 
@@ -69,6 +69,10 @@ public final class SpectrumPagingController {
             );
         }
         return true;
+    }
+
+    public boolean handlesPortWrite(int port) {
+        return config.pagingSupported() && isPagingPort(port);
     }
 
     private boolean isPagingPort(int port) {

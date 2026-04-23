@@ -123,12 +123,15 @@ public final class Spectrum128Bus implements CpuBus {
 
     @Override
     public void writePort(int port, int value, int phaseTStates) {
-        if (pagingController.handlePortWrite(port, value)) {
+        if (pagingController.handlesPortWrite(port)) {
+            long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
+            ula.syncToTState(eventTime, memory);
+            pagingController.handlePortWrite(port, value);
             return;
         }
         if ((port & 0xFF) == 0xFE) {
             long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
-            ula.writePortFe(value, eventTime, beeper);
+            ula.writePortFe(value, eventTime, beeper, memory);
             return;
         }
         if (isAyRegisterPort(port)) {

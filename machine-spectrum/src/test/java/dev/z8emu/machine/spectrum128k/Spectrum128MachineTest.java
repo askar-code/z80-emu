@@ -1,5 +1,8 @@
 package dev.z8emu.machine.spectrum128k;
 
+import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
+import dev.z8emu.platform.time.TStateCounter;
+import dev.z8emu.platform.video.FrameBuffer;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -74,6 +77,31 @@ class Spectrum128MachineTest {
     }
 
     @Test
+    void screenBankPagingKeepsBytesFetchedBeforePortWriteEvent() {
+        TStateCounter clock = new TStateCounter();
+        Spectrum128Board board = new Spectrum128Board(
+                new byte[Spectrum128Machine.ROM_BANK_SIZE],
+                new byte[Spectrum128Machine.ROM_BANK_SIZE],
+                clock
+        );
+        board.memory().ramBank(5).write(0x0000, 0x80);
+        board.memory().ramBank(5).write(0x1800, 0x47);
+        board.memory().ramBank(7).write(0x0000, 0x00);
+        board.memory().ramBank(7).write(0x1800, 0x47);
+
+        advance(board, clock, 14_360);
+        board.cpuBus().writePort(0x7FFD, 0x08, 20);
+        advance(board, clock, 100);
+        advance(board, clock, board.modelConfig().frameTStates() - (int) clock.value());
+
+        FrameBuffer frame = board.renderVideoFrame();
+        int firstDisplayPixel = (SpectrumUlaDevice.BORDER_TOP * frame.width()) + SpectrumUlaDevice.BORDER_LEFT;
+
+        assertEquals(7, board.machineState().activeScreenBankIndex());
+        assertEquals(0xFFFFFFFF, frame.pixels()[firstDisplayPixel]);
+    }
+
+    @Test
     void ayRegisterPortSelectsWritesAndReadsBackRegisters() {
         Spectrum128Machine machine = new Spectrum128Machine(
                 new byte[Spectrum128Machine.ROM_BANK_SIZE],
@@ -137,6 +165,11 @@ class Spectrum128MachineTest {
     private static void writeAy(Spectrum128Machine machine, int register, int value) {
         machine.board().cpuBus().writePort(0xFFFD, register);
         machine.board().cpuBus().writePort(0xBFFD, value);
+    }
+
+    private static void advance(Spectrum128Board board, TStateCounter clock, int tStates) {
+        clock.advance(tStates);
+        board.onTStatesElapsed(tStates, clock.value());
     }
 
     private static boolean hasNonZeroSample(byte[] pcm, int length) {

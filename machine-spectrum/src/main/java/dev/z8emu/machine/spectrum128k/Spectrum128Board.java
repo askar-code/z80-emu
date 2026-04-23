@@ -71,12 +71,17 @@ public final class Spectrum128Board implements SpectrumBoard {
         ay.onTStatesElapsed(tStates);
         tape.syncToTState(currentTState);
         beeper.setTapeInputLevel(tape.isPlaying() && tape.earHigh());
-        ula.onTStatesElapsed(tStates);
+        ula.onTStatesElapsed(tStates, memory);
     }
 
     @Override
     public boolean consumeMaskableInterrupt() {
         return ula.consumeMaskableInterrupt();
+    }
+
+    @Override
+    public boolean maskableInterruptLineActive(long currentTState) {
+        return ula.maskableInterruptLineActive(currentTState);
     }
 
     @Override

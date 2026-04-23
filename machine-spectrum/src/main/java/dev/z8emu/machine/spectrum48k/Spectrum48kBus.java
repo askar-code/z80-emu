@@ -114,7 +114,7 @@ public final class Spectrum48kBus implements CpuBus {
         }
         if ((port & 0xFF) == 0xFE) {
             long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
-            ula.writePortFe(value, eventTime, beeper);
+            ula.writePortFe(value, eventTime, beeper, memory);
         }
     }
 

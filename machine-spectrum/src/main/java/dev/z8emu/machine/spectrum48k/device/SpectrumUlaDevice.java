@@ -16,9 +16,12 @@ public final class SpectrumUlaDevice implements TimedDevice {
     public static final int BORDER_BOTTOM = 56;
     public static final int FRAME_WIDTH = BORDER_LEFT + DISPLAY_WIDTH + BORDER_RIGHT;
     public static final int FRAME_HEIGHT = BORDER_TOP + DISPLAY_HEIGHT + BORDER_BOTTOM;
+    private static final int DISPLAY_BYTES_PER_LINE = 32;
+    private static final int DISPLAY_BYTE_COUNT = DISPLAY_HEIGHT * DISPLAY_BYTES_PER_LINE;
     private static final int FLOATING_BUS_DISPLAY_START_48K = 14_347;
     private static final int FLOATING_BUS_DISPLAY_START_128K = 14_368;
     private static final int VISIBLE_T_STATES_PER_LINE = FRAME_WIDTH / 2;
+    private static final int MASKABLE_INTERRUPT_TSTATES = 32;
     private static final int INITIAL_EVENT_CAPACITY = 256;
 
     private static final int[] NORMAL_PALETTE = {
@@ -55,7 +58,15 @@ public final class SpectrumUlaDevice implements TimedDevice {
     private int[] completedFrameEventTimes = new int[INITIAL_EVENT_CAPACITY];
     private int[] completedFrameEventColors = new int[INITIAL_EVENT_CAPACITY];
     private int completedFrameEventCount;
-    private final FrameBuffer frameBuffer = new FrameBuffer(FRAME_WIDTH, FRAME_HEIGHT);
+    private byte[] currentFramePixelBytes = new byte[DISPLAY_BYTE_COUNT];
+    private byte[] currentFrameAttributeBytes = new byte[DISPLAY_BYTE_COUNT];
+    private byte[] completedFramePixelBytes = new byte[DISPLAY_BYTE_COUNT];
+    private byte[] completedFrameAttributeBytes = new byte[DISPLAY_BYTE_COUNT];
+    private final FrameBuffer completedFrameBuffer = new FrameBuffer(FRAME_WIDTH, FRAME_HEIGHT);
+    private final FrameBuffer immediateFrameBuffer = new FrameBuffer(FRAME_WIDTH, FRAME_HEIGHT);
+    private int nextDisplayByteIndex;
+    private boolean completedFrameAvailable;
+    private boolean completedFrameFlashPhase;
     private final int frameTStates;
     private final int scanlinesPerFrame;
     private final int tStatesPerScanline;
@@ -91,7 +102,11 @@ public final class SpectrumUlaDevice implements TimedDevice {
     }
 
     public void writePortFe(int value, long eventTState, BeeperDevice beeper) {
-        syncToTState(eventTState);
+        writePortFe(value, eventTState, beeper, null);
+    }
+
+    public void writePortFe(int value, long eventTState, BeeperDevice beeper, SpectrumDisplayMemory memory) {
+        syncToTState(eventTState, memory);
         borderColor = value & 0x07;
         portFeDefaultValue = (value & 0x10) != 0 ? 0xFF : 0xBF;
         appendBorderEvent((int) (elapsedTStates % frameTStates), borderColor);
@@ -115,7 +130,7 @@ public final class SpectrumUlaDevice implements TimedDevice {
     }
 
     public FrameBuffer frameBuffer() {
-        return frameBuffer;
+        return completedFrameAvailable ? completedFrameBuffer : immediateFrameBuffer;
     }
 
     public boolean consumeMaskableInterrupt() {
@@ -124,46 +139,44 @@ public final class SpectrumUlaDevice implements TimedDevice {
         return pending;
     }
 
+    public boolean maskableInterruptLineActive(long currentTState) {
+        int frameOffset = Math.floorMod((int) (currentTState % frameTStates), frameTStates);
+        return frameOffset < MASKABLE_INTERRUPT_TSTATES;
+    }
+
     public FrameBuffer renderFrame(SpectrumDisplayMemory memory) {
-        paintBorderBackground();
-
-        boolean flashPhase = ((frameCounter / 16) & 0x01) != 0;
-
-        for (int y = 0; y < DISPLAY_HEIGHT; y++) {
-            int pixelRowBase = 0x4000
-                    | ((y & 0xC0) << 5)
-                    | ((y & 0x07) << 8)
-                    | ((y & 0x38) << 2);
-            int attributeRowBase = 0x5800 + ((y >>> 3) * 32);
-            int targetY = BORDER_TOP + y;
-
-            for (int columnByte = 0; columnByte < 32; columnByte++) {
-                int pixelByte = memory.readDisplayMemory(pixelRowBase + columnByte);
-                int attribute = memory.readDisplayMemory(attributeRowBase + columnByte);
-
-                int ink = attribute & 0x07;
-                int paper = (attribute >>> 3) & 0x07;
-                boolean bright = (attribute & 0x40) != 0;
-                boolean flash = (attribute & 0x80) != 0;
-
-                if (flash && flashPhase) {
-                    int tmp = ink;
-                    ink = paper;
-                    paper = tmp;
-                }
-
-                int inkArgb = paletteColor(ink, bright);
-                int paperArgb = paletteColor(paper, bright);
-                int targetX = BORDER_LEFT + (columnByte * 8);
-
-                for (int bit = 0; bit < 8; bit++) {
-                    boolean pixelSet = ((pixelByte << bit) & 0x80) != 0;
-                    frameBuffer.setPixel(targetX + bit, targetY, pixelSet ? inkArgb : paperArgb);
-                }
-            }
+        if (completedFrameAvailable) {
+            renderCompletedFrame();
+            return completedFrameBuffer;
         }
 
-        return frameBuffer;
+        renderImmediateFrame(memory);
+        return immediateFrameBuffer;
+    }
+
+    private void renderImmediateFrame(SpectrumDisplayMemory memory) {
+        paintBorderBackground(
+                immediateFrameBuffer,
+                currentFrameEventTimes,
+                currentFrameEventColors,
+                currentFrameEventCount
+        );
+        renderDisplayFromMemory(memory, immediateFrameBuffer, flashPhase());
+    }
+
+    private void renderDisplayFromMemory(SpectrumDisplayMemory memory, FrameBuffer target, boolean flashPhase) {
+        for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+            for (int columnByte = 0; columnByte < DISPLAY_BYTES_PER_LINE; columnByte++) {
+                int index = (y * DISPLAY_BYTES_PER_LINE) + columnByte;
+                renderDisplayByte(
+                        memory.readDisplayMemory(pixelAddress(y, columnByte)),
+                        memory.readDisplayMemory(attributeAddress(y, columnByte)),
+                        target,
+                        index,
+                        flashPhase
+                );
+            }
+        }
     }
 
     public int readFloatingBus(SpectrumDisplayMemory memory, long currentTState) {
@@ -214,6 +227,15 @@ public final class SpectrumUlaDevice implements TimedDevice {
         pendingMaskableInterrupt = false;
         currentFrameEventCount = 0;
         completedFrameEventCount = 0;
+        nextDisplayByteIndex = 0;
+        completedFrameAvailable = false;
+        completedFrameFlashPhase = false;
+        java.util.Arrays.fill(currentFramePixelBytes, (byte) 0);
+        java.util.Arrays.fill(currentFrameAttributeBytes, (byte) 0);
+        java.util.Arrays.fill(completedFramePixelBytes, (byte) 0);
+        java.util.Arrays.fill(completedFrameAttributeBytes, (byte) 0);
+        completedFrameBuffer.clear(paletteColor(borderColor, false));
+        immediateFrameBuffer.clear(paletteColor(borderColor, false));
         appendBorderEvent(0, borderColor);
     }
 
@@ -222,7 +244,15 @@ public final class SpectrumUlaDevice implements TimedDevice {
         syncToTState(elapsedTStates + tStates);
     }
 
+    public void onTStatesElapsed(int tStates, SpectrumDisplayMemory memory) {
+        syncToTState(elapsedTStates + tStates, memory);
+    }
+
     public void syncToTState(long targetTState) {
+        syncToTState(targetTState, null);
+    }
+
+    public void syncToTState(long targetTState, SpectrumDisplayMemory memory) {
         if (targetTState <= elapsedTStates) {
             return;
         }
@@ -231,6 +261,7 @@ public final class SpectrumUlaDevice implements TimedDevice {
             int frameOffset = (int) (elapsedTStates % frameTStates);
             int remainingInFrame = frameTStates - frameOffset;
             int chunk = (int) Math.min(targetTState - elapsedTStates, remainingInFrame);
+            captureDisplayUntil(elapsedTStates + chunk, memory);
             elapsedTStates += chunk;
 
             if (((int) (elapsedTStates % frameTStates)) == 0) {
@@ -241,24 +272,30 @@ public final class SpectrumUlaDevice implements TimedDevice {
         }
     }
 
+    private boolean flashPhase() {
+        return ((frameCounter / 16) & 0x01) != 0;
+    }
+
     private int paletteColor(int color, boolean bright) {
         int normalized = color & 0x07;
         return bright ? BRIGHT_PALETTE[normalized] : NORMAL_PALETTE[normalized];
     }
 
-    private void paintBorderBackground() {
-        int[] eventTimes = frameCounter == 0 ? currentFrameEventTimes : completedFrameEventTimes;
-        int[] eventColors = frameCounter == 0 ? currentFrameEventColors : completedFrameEventColors;
-        int eventCount = frameCounter == 0 ? currentFrameEventCount : completedFrameEventCount;
-
+    private void paintBorderBackground(FrameBuffer target, int[] eventTimes, int[] eventColors, int eventCount) {
         int eventIndex = 0;
-        int currentArgb = paletteColor(eventColors[0], false);
-        int[] pixels = frameBuffer.pixels();
+        int currentArgb = paletteColor(eventCount == 0 ? borderColor : eventColors[0], false);
+        int[] pixels = target.pixels();
 
         for (int y = 0; y < FRAME_HEIGHT; y++) {
             int scanline = visibleStartScanline + y;
             int rowBase = y * FRAME_WIDTH;
             for (int x = 0; x < FRAME_WIDTH; x++) {
+                if (x >= BORDER_LEFT
+                        && x < BORDER_LEFT + DISPLAY_WIDTH
+                        && y >= BORDER_TOP
+                        && y < BORDER_TOP + DISPLAY_HEIGHT) {
+                    continue;
+                }
                 int frameTState = (scanline * tStatesPerScanline)
                         + visibleStartTState
                         + (x >>> 1);
@@ -282,7 +319,109 @@ public final class SpectrumUlaDevice implements TimedDevice {
 
         completedFrameEventCount = currentFrameEventCount;
         currentFrameEventCount = 0;
+        byte[] pixelBytes = completedFramePixelBytes;
+        completedFramePixelBytes = currentFramePixelBytes;
+        currentFramePixelBytes = pixelBytes;
+        byte[] attributeBytes = completedFrameAttributeBytes;
+        completedFrameAttributeBytes = currentFrameAttributeBytes;
+        currentFrameAttributeBytes = attributeBytes;
+        java.util.Arrays.fill(currentFramePixelBytes, (byte) 0);
+        java.util.Arrays.fill(currentFrameAttributeBytes, (byte) 0);
+        nextDisplayByteIndex = 0;
+        completedFrameAvailable = true;
+        completedFrameFlashPhase = flashPhase();
         appendBorderEvent(0, borderColor);
+    }
+
+    private void captureDisplayUntil(long targetTState, SpectrumDisplayMemory memory) {
+        if (memory == null) {
+            return;
+        }
+
+        long frameStartTState = elapsedTStates - Math.floorMod(elapsedTStates, frameTStates);
+        int targetFrameOffset = (int) Math.min(frameTStates, targetTState - frameStartTState);
+
+        while (nextDisplayByteIndex < DISPLAY_BYTE_COUNT
+                && displayFetchFrameOffset(nextDisplayByteIndex) <= targetFrameOffset) {
+            int y = nextDisplayByteIndex / DISPLAY_BYTES_PER_LINE;
+            int columnByte = nextDisplayByteIndex % DISPLAY_BYTES_PER_LINE;
+            currentFramePixelBytes[nextDisplayByteIndex] = (byte) memory.readDisplayMemory(pixelAddress(y, columnByte));
+            currentFrameAttributeBytes[nextDisplayByteIndex] = (byte) memory.readDisplayMemory(attributeAddress(y, columnByte));
+            nextDisplayByteIndex++;
+        }
+    }
+
+    private int displayFetchFrameOffset(int displayByteIndex) {
+        int y = displayByteIndex / DISPLAY_BYTES_PER_LINE;
+        int columnByte = displayByteIndex % DISPLAY_BYTES_PER_LINE;
+        int fetchGroup = columnByte >>> 1;
+        int fetchSlot = (columnByte & 0x01) == 0 ? 0 : 2;
+        return floatingBusDisplayStartTState
+                + (y * tStatesPerScanline)
+                + (fetchGroup * 8)
+                + fetchSlot;
+    }
+
+    private int pixelAddress(int y, int columnByte) {
+        int pixelRowBase = 0x4000
+                | ((y & 0xC0) << 5)
+                | ((y & 0x07) << 8)
+                | ((y & 0x38) << 2);
+        return pixelRowBase + columnByte;
+    }
+
+    private int attributeAddress(int y, int columnByte) {
+        int attributeRowBase = 0x5800 + ((y >>> 3) * DISPLAY_BYTES_PER_LINE);
+        return attributeRowBase + columnByte;
+    }
+
+    private void renderCompletedFrame() {
+        paintBorderBackground(
+                completedFrameBuffer,
+                completedFrameEventTimes,
+                completedFrameEventColors,
+                completedFrameEventCount
+        );
+        for (int index = 0; index < DISPLAY_BYTE_COUNT; index++) {
+            renderDisplayByte(
+                    completedFramePixelBytes[index] & 0xFF,
+                    completedFrameAttributeBytes[index] & 0xFF,
+                    completedFrameBuffer,
+                    index,
+                    completedFrameFlashPhase
+            );
+        }
+    }
+
+    private void renderDisplayByte(
+            int pixelByte,
+            int attribute,
+            FrameBuffer target,
+            int displayByteIndex,
+            boolean flashPhase) {
+        int y = displayByteIndex / DISPLAY_BYTES_PER_LINE;
+        int columnByte = displayByteIndex % DISPLAY_BYTES_PER_LINE;
+
+        int ink = attribute & 0x07;
+        int paper = (attribute >>> 3) & 0x07;
+        boolean bright = (attribute & 0x40) != 0;
+        boolean flash = (attribute & 0x80) != 0;
+
+        if (flash && flashPhase) {
+            int tmp = ink;
+            ink = paper;
+            paper = tmp;
+        }
+
+        int inkArgb = paletteColor(ink, bright);
+        int paperArgb = paletteColor(paper, bright);
+        int targetX = BORDER_LEFT + (columnByte * 8);
+        int targetY = BORDER_TOP + y;
+
+        for (int bit = 0; bit < 8; bit++) {
+            boolean pixelSet = ((pixelByte << bit) & 0x80) != 0;
+            target.setPixel(targetX + bit, targetY, pixelSet ? inkArgb : paperArgb);
+        }
     }
 
     private void appendBorderEvent(int frameOffset, int color) {
