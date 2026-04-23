@@ -52,12 +52,6 @@ public final class SpectrumTapeProbeLauncher {
     private static final int[] EOF_KEY = parseKeySpec(System.getProperty("z8emu.probeEofKey"));
     private static final long POST_EOF_TSTATES =
             Long.getLong("z8emu.probePostEofTStates", 0L);
-    private static final int AFTER_EOF_KEY_FRAMES =
-            Integer.getInteger("z8emu.probeAfterEofKeyFrames", 0);
-    private static final int AFTER_EOF_KEY_SNAPSHOT_INTERVAL_FRAMES =
-            Integer.getInteger("z8emu.probeAfterEofKeySnapshotIntervalFrames", 1);
-    private static final boolean AFTER_EOF_KEY_ALIGN_TO_FRAME_BOUNDARY =
-            Boolean.getBoolean("z8emu.probeAfterEofKeyAlignToFrameBoundary");
     private static final long[] DEFAULT_MILESTONES = {
             20_000_000L,
             80_000_000L,
@@ -154,7 +148,6 @@ public final class SpectrumTapeProbeLauncher {
         if (machine.board().tape().isAtEnd() && EOF_KEY != null) {
             press(machine, EOF_KEY[0], EOF_KEY[1], EOF_KEY[2]);
             summary.add(saveSnapshot(machine, outputDir, "after-eof-key"));
-            runDiagnosticFramesAfterEofKey(machine, outputDir, summary);
         }
         summary.add(saveSnapshot(machine, outputDir, machine.board().tape().isAtEnd() ? "eof" : "max"));
         Files.write(outputDir.resolve("summary.txt"), summary);
@@ -210,40 +203,6 @@ public final class SpectrumTapeProbeLauncher {
                 machine.runInstruction();
             }
         }
-    }
-
-    private static void runDiagnosticFramesAfterEofKey(
-            SpectrumMachine machine,
-            Path outputDir,
-            List<String> summary) throws IOException {
-        if (AFTER_EOF_KEY_FRAMES <= 0) {
-            return;
-        }
-
-        for (int frame = 1; frame <= AFTER_EOF_KEY_FRAMES; frame++) {
-            long target = AFTER_EOF_KEY_ALIGN_TO_FRAME_BOUNDARY
-                    ? nextFrameBoundary(machine)
-                    : machine.currentTState() + machine.board().modelConfig().frameTStates();
-            while (machine.currentTState() < target) {
-                appendPcTrace(machine, summary, true);
-                applyPokes(machine, STICKY_POKES);
-                machine.runInstruction();
-                appendPcTrace(machine, summary, false);
-            }
-            if (AFTER_EOF_KEY_SNAPSHOT_INTERVAL_FRAMES > 0
-                    && frame % AFTER_EOF_KEY_SNAPSHOT_INTERVAL_FRAMES == 0) {
-                summary.add(saveSnapshot(machine, outputDir, "after-eof-key-f" + frame));
-            }
-        }
-    }
-
-    private static long nextFrameBoundary(SpectrumMachine machine) {
-        long current = machine.currentTState();
-        long frameTStates = machine.board().modelConfig().frameTStates();
-        long remainder = Math.floorMod(current, frameTStates);
-        return remainder == 0
-                ? current + frameTStates
-                : current + frameTStates - remainder;
     }
 
     private static String saveSnapshot(SpectrumMachine machine, Path outputDir, String label) throws IOException {
