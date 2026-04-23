@@ -95,7 +95,6 @@ public final class SpectrumTapeProbeLauncher {
         boolean autostartWaitNudged = false;
         boolean autostartRunForced = false;
         boolean nextTapeLoaded = false;
-        SpectrumAutostartRunRescue autostartRunRescue = new SpectrumAutostartRunRescue();
         boolean breakTriggered = false;
         int[] watchedValues = snapshotWatchValues(machine);
         long eofReachedAt = -1;
@@ -116,7 +115,6 @@ public final class SpectrumTapeProbeLauncher {
                 press(machine, 6, 0, 3);
                 autostartWaitNudged = true;
             }
-            autostartRunRescue.tick(machine);
             machine.runInstruction();
             appendPcTrace(machine, summary, false);
             if (WATCH_ADDRESSES.length > 0) {

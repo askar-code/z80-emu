@@ -118,16 +118,6 @@ class Spectrum48kMachineTest {
     }
 
     @Test
-    void frameBoundaryRaisesMaskableInterruptRequest() {
-        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
-
-        assertEquals(false, machine.board().consumeMaskableInterrupt());
-        machine.board().onTStatesElapsed(SpectrumUlaDevice.T_STATES_PER_FRAME, SpectrumUlaDevice.T_STATES_PER_FRAME);
-        assertEquals(true, machine.board().consumeMaskableInterrupt());
-        assertEquals(false, machine.board().consumeMaskableInterrupt());
-    }
-
-    @Test
     void ulaMaskableInterruptLineIsAShortFrameStartPulse() {
         Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
 

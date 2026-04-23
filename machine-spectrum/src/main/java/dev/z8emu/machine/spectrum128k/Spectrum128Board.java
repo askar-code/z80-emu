@@ -20,11 +20,9 @@ import java.util.Objects;
 public final class Spectrum128Board implements SpectrumBoard {
     private static final int ULA_SCANLINES_PER_FRAME_128K = 311;
 
-    private final TStateCounter clock;
     private final SpectrumModelConfig modelConfig;
     private final SpectrumMachineState machineState;
     private final Spectrum48kMemoryMap memory;
-    private final SpectrumPagingController pagingController;
     private final KeyboardMatrixDevice keyboard;
     private final BeeperDevice beeper;
     private final Ay38912Device ay;
@@ -34,11 +32,11 @@ public final class Spectrum128Board implements SpectrumBoard {
     private final Spectrum128Bus bus;
 
     public Spectrum128Board(byte[] rom0Image, byte[] rom1Image, TStateCounter clock) {
-        this.clock = Objects.requireNonNull(clock, "clock");
+        Objects.requireNonNull(clock, "clock");
         this.modelConfig = SpectrumModelConfig.spectrum128();
         this.machineState = new SpectrumMachineState(modelConfig);
         this.memory = new Spectrum48kMemoryMap(modelConfig, machineState, rom0Image, rom1Image);
-        this.pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
+        SpectrumPagingController pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
         this.keyboard = new KeyboardMatrixDevice();
         this.beeper = new BeeperDevice();
         this.ay = new Ay38912Device(modelConfig.cpuClockHz());
@@ -72,11 +70,6 @@ public final class Spectrum128Board implements SpectrumBoard {
         tape.syncToTState(currentTState);
         beeper.setTapeInputLevel(tape.isPlaying() && tape.earHigh());
         ula.onTStatesElapsed(tStates, memory);
-    }
-
-    @Override
-    public boolean consumeMaskableInterrupt() {
-        return ula.consumeMaskableInterrupt();
     }
 
     @Override

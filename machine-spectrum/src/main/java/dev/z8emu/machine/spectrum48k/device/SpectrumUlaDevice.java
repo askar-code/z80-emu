@@ -5,7 +5,6 @@ import dev.z8emu.platform.device.TimedDevice;
 import dev.z8emu.platform.video.FrameBuffer;
 
 public final class SpectrumUlaDevice implements TimedDevice {
-    private static final Integer FORCED_FLOATING_BUS_VALUE = Integer.getInteger("z8emu.forceFloatingBusValue");
     public static final int T_STATES_PER_FRAME = 69_888;
     public static final int SCANLINES_PER_FRAME = 312;
     public static final int DISPLAY_WIDTH = 256;
@@ -51,7 +50,6 @@ public final class SpectrumUlaDevice implements TimedDevice {
     private long elapsedTStates;
     private long frameCounter;
     private int lastRefreshAddress;
-    private boolean pendingMaskableInterrupt;
     private int[] currentFrameEventTimes = new int[INITIAL_EVENT_CAPACITY];
     private int[] currentFrameEventColors = new int[INITIAL_EVENT_CAPACITY];
     private int currentFrameEventCount;
@@ -133,12 +131,6 @@ public final class SpectrumUlaDevice implements TimedDevice {
         return completedFrameAvailable ? completedFrameBuffer : immediateFrameBuffer;
     }
 
-    public boolean consumeMaskableInterrupt() {
-        boolean pending = pendingMaskableInterrupt;
-        pendingMaskableInterrupt = false;
-        return pending;
-    }
-
     public boolean maskableInterruptLineActive(long currentTState) {
         int frameOffset = Math.floorMod((int) (currentTState % frameTStates), frameTStates);
         return frameOffset < MASKABLE_INTERRUPT_TSTATES;
@@ -180,9 +172,6 @@ public final class SpectrumUlaDevice implements TimedDevice {
     }
 
     public int readFloatingBus(SpectrumDisplayMemory memory, long currentTState) {
-        if (FORCED_FLOATING_BUS_VALUE != null) {
-            return FORCED_FLOATING_BUS_VALUE & 0xFF;
-        }
         int frameOffset = Math.floorMod((int) (currentTState % frameTStates), frameTStates);
         int screenOffset = frameOffset - floatingBusDisplayStartTState;
         if (screenOffset < 0) {
@@ -224,7 +213,6 @@ public final class SpectrumUlaDevice implements TimedDevice {
         elapsedTStates = 0;
         frameCounter = 0;
         lastRefreshAddress = 0;
-        pendingMaskableInterrupt = false;
         currentFrameEventCount = 0;
         completedFrameEventCount = 0;
         nextDisplayByteIndex = 0;
@@ -267,7 +255,6 @@ public final class SpectrumUlaDevice implements TimedDevice {
             if (((int) (elapsedTStates % frameTStates)) == 0) {
                 completeCurrentFrame();
                 frameCounter++;
-                pendingMaskableInterrupt = true;
             }
         }
     }

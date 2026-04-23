@@ -68,12 +68,6 @@ public final class Radio86Board implements VideoMachineBoard {
     }
 
     @Override
-    public boolean consumeMaskableInterrupt() {
-        // Base Radio-86RK software polls 8275 status instead of using a CPU interrupt source.
-        return false;
-    }
-
-    @Override
     public FrameBuffer renderVideoFrame() {
         return video.renderFrame(memory);
     }

@@ -9,11 +9,7 @@ public interface MachineBoard {
 
     void onTStatesElapsed(int tStates, long currentTState);
 
-    default boolean consumeMaskableInterrupt() {
-        return false;
-    }
-
     default boolean maskableInterruptLineActive(long currentTState) {
-        return consumeMaskableInterrupt();
+        return false;
     }
 }

@@ -9,7 +9,6 @@ import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.machine.VideoMachineBoard;
-import dev.z8emu.platform.video.FrameBuffer;
 
 public interface SpectrumBoard extends VideoMachineBoard {
     KeyboardMatrixDevice keyboard();
@@ -27,6 +26,4 @@ public interface SpectrumBoard extends VideoMachineBoard {
     SpectrumModelConfig modelConfig();
 
     SpectrumMachineState machineState();
-
-    FrameBuffer renderVideoFrame();
 }

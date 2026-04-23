@@ -52,14 +52,24 @@ public final class FixedSlotMemoryMap implements AddressSpace {
 
     @Override
     public int read(int address) {
-        MemoryAccess access = resolve(address);
-        return access.bank().read(access.offset());
+        int normalized = normalizeAddress(address);
+        int slotIndex = normalized / slotSize;
+        MemoryBank bank = slots[slotIndex];
+        if (bank == null) {
+            throw new IllegalStateException("Slot %d is not mapped".formatted(slotIndex));
+        }
+        return bank.read(normalized % slotSize);
     }
 
     @Override
     public void write(int address, int value) {
-        MemoryAccess access = resolve(address);
-        access.bank().write(access.offset(), value);
+        int normalized = normalizeAddress(address);
+        int slotIndex = normalized / slotSize;
+        MemoryBank bank = slots[slotIndex];
+        if (bank == null) {
+            throw new IllegalStateException("Slot %d is not mapped".formatted(slotIndex));
+        }
+        bank.write(normalized % slotSize, value);
     }
 
     @Override
@@ -72,22 +82,13 @@ public final class FixedSlotMemoryMap implements AddressSpace {
         }
     }
 
-    private MemoryAccess resolve(int address) {
-        int normalized = Math.floorMod(address, addressSpaceSize);
-        int slotIndex = normalized / slotSize;
-        MemoryBank bank = slots[slotIndex];
-        if (bank == null) {
-            throw new IllegalStateException("Slot %d is not mapped".formatted(slotIndex));
-        }
-        return new MemoryAccess(bank, normalized % slotSize);
+    private int normalizeAddress(int address) {
+        return Math.floorMod(address, addressSpaceSize);
     }
 
     private void validateSlotIndex(int slotIndex) {
         if (slotIndex < 0 || slotIndex >= slotCount) {
             throw new IllegalArgumentException("slotIndex out of range: " + slotIndex);
         }
-    }
-
-    private record MemoryAccess(MemoryBank bank, int offset) {
     }
 }

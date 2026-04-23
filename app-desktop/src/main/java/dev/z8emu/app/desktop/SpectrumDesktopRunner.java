@@ -28,7 +28,6 @@ final class SpectrumDesktopRunner {
         private final DesktopLaunchConfig config;
         private final SpectrumDisplayPanel panel = new SpectrumDisplayPanel();
         private final HostKeyTyper hostKeyTyper;
-        private final SpectrumAutostartRunRescue autostartRunRescue = new SpectrumAutostartRunRescue();
 
         private SpectrumKeyboardController keyboardController;
         private PcmMonoAudioEngine audioEngine;
@@ -147,7 +146,6 @@ final class SpectrumDesktopRunner {
                 startupTapeAutoplay.tick();
                 long targetTState = nextFrameBoundaryTState();
                 while (machine.currentTState() < targetTState) {
-                    autostartRunRescue.tick(machine);
                     machine.runInstruction();
                 }
             }

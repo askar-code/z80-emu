@@ -15,8 +15,6 @@ import java.util.Objects;
 public final class Spectrum128Bus implements CpuBus {
     private static final int CONTENTION_START_128K = 14_361;
     private static final int T_STATES_PER_SCANLINE_128K = 228;
-    private static final int PORT_FE_SAMPLE_OFFSET_TSTATES =
-            Integer.getInteger("z8emu.portFeSampleOffsetTStates", 0);
     private static final int AY_REGISTER_PORT_MASK = 0xC002;
     private static final int AY_REGISTER_PORT_VALUE = 0xC000;
     private static final int AY_DATA_PORT_MASK = 0xC002;
@@ -104,8 +102,7 @@ public final class Spectrum128Bus implements CpuBus {
         if ((port & 0xFF) == 0xFE) {
             long sampleTime = clock.value()
                     + Math.max(0, phaseTStates)
-                    + readPortWaitStates(port, phaseTStates)
-                    + PORT_FE_SAMPLE_OFFSET_TSTATES;
+                    + readPortWaitStates(port, phaseTStates);
             tape.syncToTState(sampleTime);
             return ula.readPortFe(port, keyboard, tape);
         }

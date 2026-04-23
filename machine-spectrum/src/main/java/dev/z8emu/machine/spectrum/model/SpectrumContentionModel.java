@@ -1,8 +1,6 @@
 package dev.z8emu.machine.spectrum.model;
 
 public final class SpectrumContentionModel {
-    private static final boolean DISABLE_PORT_CONTENTION = Boolean.getBoolean("z8emu.disablePortContention");
-    private static final boolean DISABLE_MEMORY_CONTENTION = Boolean.getBoolean("z8emu.disableMemoryContention");
     private static final int[] CONTENTION_PATTERN = {6, 5, 4, 3, 2, 1, 0, 0};
 
     private final int frameTStates;
@@ -25,9 +23,6 @@ public final class SpectrumContentionModel {
     }
 
     public int ioPortDelay(long currentTState, int phaseTStates, int port) {
-        if (DISABLE_PORT_CONTENTION) {
-            return 0;
-        }
         int lowBitReset = (port & 0x0001) == 0 ? 1 : 0;
         int highByteContended = (((port >>> 8) & 0xFF) >= 0x40 && ((port >>> 8) & 0xFF) <= 0x7F) ? 1 : 0;
 
@@ -48,9 +43,6 @@ public final class SpectrumContentionModel {
     }
 
     public int memoryDelay(long currentTState, int phaseTStates, boolean contended) {
-        if (DISABLE_MEMORY_CONTENTION) {
-            return 0;
-        }
         if (!contended) {
             return 0;
         }

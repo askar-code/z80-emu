@@ -31,7 +31,6 @@ class SpectrumBusContentionTest {
         Spectrum48kBus bus = new Spectrum48kBus(
                 clock,
                 memory,
-                new SpectrumPagingController(config, state, memory),
                 new SpectrumUlaDevice(),
                 new KeyboardMatrixDevice(),
                 new BeeperDevice(),

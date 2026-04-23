@@ -104,7 +104,7 @@ class Radio86MachineTest {
         machine.board().cpuBus().writeMemory(0xC000, 0x12);
 
         assertEquals(0x1234, machine.board().video().cursorAddress());
-        assertEquals(false, machine.board().consumeMaskableInterrupt());
+        assertFalse(machine.board().maskableInterruptLineActive(machine.currentTState()));
     }
 
     @Test
@@ -150,7 +150,7 @@ class Radio86MachineTest {
         machine.board().onTStatesElapsed(machine.frameTStates(), machine.frameTStates());
 
         assertEquals(0x64, machine.board().cpuBus().readMemory(0xC001));
-        assertEquals(false, machine.board().consumeMaskableInterrupt());
+        assertFalse(machine.board().maskableInterruptLineActive(machine.currentTState()));
     }
 
     @Test

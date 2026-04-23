@@ -1,6 +1,5 @@
 package dev.z8emu.machine.spectrum48k;
 
-import dev.z8emu.machine.spectrum.model.SpectrumPagingController;
 import dev.z8emu.machine.spectrum.model.SpectrumContentionModel;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
@@ -14,12 +13,9 @@ import java.util.Objects;
 public final class Spectrum48kBus implements CpuBus {
     private static final int CONTENTION_START_48K = 14_335;
     private static final int T_STATES_PER_SCANLINE_48K = 224;
-    private static final int PORT_FE_SAMPLE_OFFSET_TSTATES =
-            Integer.getInteger("z8emu.portFeSampleOffsetTStates", 0);
 
     private final TStateCounter clock;
     private final Spectrum48kMemoryMap memory;
-    private final SpectrumPagingController pagingController;
     private final SpectrumUlaDevice ula;
     private final KeyboardMatrixDevice keyboard;
     private final BeeperDevice beeper;
@@ -29,7 +25,6 @@ public final class Spectrum48kBus implements CpuBus {
     public Spectrum48kBus(
             TStateCounter clock,
             Spectrum48kMemoryMap memory,
-            SpectrumPagingController pagingController,
             SpectrumUlaDevice ula,
             KeyboardMatrixDevice keyboard,
             BeeperDevice beeper,
@@ -37,7 +32,6 @@ public final class Spectrum48kBus implements CpuBus {
     ) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.memory = Objects.requireNonNull(memory, "memory");
-        this.pagingController = Objects.requireNonNull(pagingController, "pagingController");
         this.ula = Objects.requireNonNull(ula, "ula");
         this.keyboard = Objects.requireNonNull(keyboard, "keyboard");
         this.beeper = Objects.requireNonNull(beeper, "beeper");
@@ -93,8 +87,7 @@ public final class Spectrum48kBus implements CpuBus {
         if ((port & 0xFF) == 0xFE) {
             long sampleTime = clock.value()
                     + Math.max(0, phaseTStates)
-                    + readPortWaitStates(port, phaseTStates)
-                    + PORT_FE_SAMPLE_OFFSET_TSTATES;
+                    + readPortWaitStates(port, phaseTStates);
             tape.syncToTState(sampleTime);
             return ula.readPortFe(port, keyboard, tape);
         }
@@ -109,9 +102,6 @@ public final class Spectrum48kBus implements CpuBus {
 
     @Override
     public void writePort(int port, int value, int phaseTStates) {
-        if (pagingController.handlePortWrite(port, value)) {
-            return;
-        }
         if ((port & 0xFF) == 0xFE) {
             long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
             ula.writePortFe(value, eventTime, beeper, memory);

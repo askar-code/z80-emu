@@ -1,7 +1,6 @@
 package dev.z8emu.machine.spectrum48k;
 
 import dev.z8emu.machine.spectrum.SpectrumBoard;
-import dev.z8emu.machine.spectrum.model.SpectrumPagingController;
 import dev.z8emu.machine.spectrum.model.SpectrumMachineState;
 import dev.z8emu.machine.spectrum.model.SpectrumModelConfig;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
@@ -11,17 +10,14 @@ import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.bus.CpuBus;
-import dev.z8emu.platform.machine.MachineBoard;
 import dev.z8emu.platform.time.TStateCounter;
 import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Objects;
 
 public final class Spectrum48kBoard implements SpectrumBoard {
-    private final TStateCounter clock;
     private final SpectrumModelConfig modelConfig;
     private final SpectrumMachineState machineState;
     private final Spectrum48kMemoryMap memory;
-    private final SpectrumPagingController pagingController;
     private final KeyboardMatrixDevice keyboard;
     private final BeeperDevice beeper;
     private final TapeDevice tape;
@@ -29,16 +25,15 @@ public final class Spectrum48kBoard implements SpectrumBoard {
     private final Spectrum48kBus bus;
 
     public Spectrum48kBoard(byte[] romImage, TStateCounter clock) {
-        this.clock = Objects.requireNonNull(clock, "clock");
+        Objects.requireNonNull(clock, "clock");
         this.modelConfig = SpectrumModelConfig.spectrum48k();
         this.machineState = new SpectrumMachineState(modelConfig);
         this.memory = new Spectrum48kMemoryMap(modelConfig, machineState, romImage);
-        this.pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
         this.keyboard = new KeyboardMatrixDevice();
         this.beeper = new BeeperDevice();
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), true);
         this.ula = new SpectrumUlaDevice();
-        this.bus = new Spectrum48kBus(clock, memory, pagingController, ula, keyboard, beeper, tape);
+        this.bus = new Spectrum48kBus(clock, memory, ula, keyboard, beeper, tape);
     }
 
     @Override
@@ -63,11 +58,6 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         tape.syncToTState(currentTState);
         beeper.setTapeInputLevel(tape.isPlaying() && tape.earHigh());
         ula.onTStatesElapsed(tStates, memory);
-    }
-
-    @Override
-    public boolean consumeMaskableInterrupt() {
-        return ula.consumeMaskableInterrupt();
     }
 
     @Override
@@ -107,10 +97,6 @@ public final class Spectrum48kBoard implements SpectrumBoard {
 
     public SpectrumMachineState machineState() {
         return machineState;
-    }
-
-    public SpectrumPagingController pagingController() {
-        return pagingController;
     }
 
     public FrameBuffer renderVideoFrame() {
