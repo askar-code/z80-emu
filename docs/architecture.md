@@ -116,23 +116,24 @@ flowchart LR
 
 ## Gradle Module Layout
 
-Initial physical modules:
+Current physical module layout:
 
-- `:emu-platform`
-  Shared contracts, time model, machine runtime, routing helpers, snapshots, common test support.
-- `:cpu-z80`
-  Z80 core only.
-- `:machine-spectrum`
-  Spectrum board, memory map, ULA model, keyboard, tape, beeper, ROM loading.
-- `:app-desktop`
+- `apps/desktop` -> `:app-desktop`
   Window, input mapping, frame presentation, audio output, file dialogs, snapshots.
-
-Planned later:
-
-- `:cpu-i8080`
-  For Intel 8080 and Soviet-compatible variants such as `KR580VM80A`.
-- `:machine-radio86rk`
+- `platform/core` -> `:emu-platform`
+  Shared contracts, time model, machine runtime, routing helpers, snapshots, common test support.
+- `cpu/z80` -> `:cpu-z80`
+  Z80 core only.
+- `cpu/i8080` -> `:cpu-i8080`
+  Intel 8080 and Soviet-compatible variants such as `KR580VM80A`.
+- `chips/ay` -> `:chip-ay`
+  Shared AY-3-891x PSG model.
+- `machines/spectrum` -> `:machine-spectrum`
+  Spectrum board, memory map, ULA model, keyboard, tape, beeper, ROM loading.
+- `machines/radio86rk` -> `:machine-radio86rk`
   Radio-86RK board assembled on the same platform.
+- `machines/cpc` -> `:machine-cpc`
+  Amstrad CPC board, Gate Array, CRTC, PPI, keyboard, disk controller, memory map.
 
 Important note: replaceable modules are primarily a runtime architecture concern. We do not need one Gradle project per chip or device on day one.
 

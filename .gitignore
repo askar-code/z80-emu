@@ -8,5 +8,6 @@ tmp/
 *.tap
 *.tzx
 *.rkr
+*.dsk
 *.z80
 *.sna

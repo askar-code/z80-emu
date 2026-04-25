@@ -92,7 +92,7 @@ core code:
 - `z8emu.probeBlockSummaryLimit=8`: print tape block timing summaries.
 
 Prefer these probe switches for investigation, then turn the root cause into a
-focused regression test under `machine-spectrum/src/test/java`.
+focused regression test under `machines/spectrum/src/test/java`.
 
 ## Robocop Reference
 
