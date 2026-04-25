@@ -4,11 +4,11 @@ import dev.z8emu.machine.radio86rk.device.Radio86KeyboardDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86DmaDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
-import dev.z8emu.platform.bus.CpuBus;
+import dev.z8emu.platform.bus.ClockedCpuBus;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
-public final class Radio86Bus implements CpuBus {
+public final class Radio86Bus extends ClockedCpuBus {
     private static final int KEYBOARD_BASE = 0x8000;
     private static final int KEYBOARD_LIMIT = 0x9FFF;
     private static final int VIDEO_BASE = 0xC000;
@@ -16,7 +16,6 @@ public final class Radio86Bus implements CpuBus {
     private static final int DMA_BASE = 0xE000;
     private static final int DMA_LIMIT = 0xFFFF;
 
-    private final TStateCounter clock;
     private final Radio86Memory memory;
     private final Radio86KeyboardDevice keyboard;
     private final Radio86DmaDevice dma;
@@ -41,17 +40,12 @@ public final class Radio86Bus implements CpuBus {
             Radio86VideoDevice video,
             AccessTraceListener traceListener
     ) {
-        this.clock = Objects.requireNonNull(clock, "clock");
+        super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
         this.keyboard = Objects.requireNonNull(keyboard, "keyboard");
         this.dma = Objects.requireNonNull(dma, "dma");
         this.video = Objects.requireNonNull(video, "video");
         this.traceListener = traceListener;
-    }
-
-    @Override
-    public int fetchOpcode(int address) {
-        return readMemory(address);
     }
 
     @Override
@@ -114,21 +108,6 @@ public final class Radio86Bus implements CpuBus {
         writeMemory(portToMemoryAddress(port), value);
     }
 
-    @Override
-    public int acknowledgeInterrupt() {
-        return 0xFF;
-    }
-
-    @Override
-    public void onRefresh(int irValue) {
-    }
-
-    @Override
-    public int currentTState() {
-        long tState = clock.value();
-        return tState > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tState;
-    }
-
     private boolean isKeyboardRegister(int address) {
         return address >= KEYBOARD_BASE
                 && address <= KEYBOARD_LIMIT
@@ -152,13 +131,13 @@ public final class Radio86Bus implements CpuBus {
 
     private void traceRead(int address, int value) {
         if (traceListener != null) {
-            traceListener.onRead(address & 0xFFFF, value & 0xFF, clock.value());
+            traceListener.onRead(address & 0xFFFF, value & 0xFF, clockValue());
         }
     }
 
     private void traceWrite(int address, int value) {
         if (traceListener != null) {
-            traceListener.onWrite(address & 0xFFFF, value & 0xFF, clock.value());
+            traceListener.onWrite(address & 0xFFFF, value & 0xFF, clockValue());
         }
     }
 

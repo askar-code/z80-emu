@@ -8,11 +8,11 @@ import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
-import dev.z8emu.platform.bus.CpuBus;
+import dev.z8emu.platform.bus.ClockedCpuBus;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
-public final class Spectrum128Bus implements CpuBus {
+public final class Spectrum128Bus extends ClockedCpuBus {
     private static final int CONTENTION_START_128K = 14_361;
     private static final int T_STATES_PER_SCANLINE_128K = 228;
     private static final int AY_REGISTER_PORT_MASK = 0xC002;
@@ -20,7 +20,6 @@ public final class Spectrum128Bus implements CpuBus {
     private static final int AY_DATA_PORT_MASK = 0xC002;
     private static final int AY_DATA_PORT_VALUE = 0x8000;
 
-    private final TStateCounter clock;
     private final Spectrum48kMemoryMap memory;
     private final SpectrumPagingController pagingController;
     private final SpectrumUlaDevice ula;
@@ -40,7 +39,7 @@ public final class Spectrum128Bus implements CpuBus {
             TapeDevice tape,
             Ay38912Device ay
     ) {
-        this.clock = Objects.requireNonNull(clock, "clock");
+        super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
         this.pagingController = Objects.requireNonNull(pagingController, "pagingController");
         this.ula = Objects.requireNonNull(ula, "ula");
@@ -56,13 +55,8 @@ public final class Spectrum128Bus implements CpuBus {
     }
 
     @Override
-    public int fetchOpcode(int address) {
-        return memory.read(address);
-    }
-
-    @Override
     public int fetchOpcodeWaitStates(int address, int phaseTStates) {
-        return contentionModel.memoryDelay(clock.value(), phaseTStates, memory.isContendedAddress(address));
+        return contentionModel.memoryDelay(clockValue(), phaseTStates, memory.isContendedAddress(address));
     }
 
     @Override
@@ -72,7 +66,7 @@ public final class Spectrum128Bus implements CpuBus {
 
     @Override
     public int readMemoryWaitStates(int address, int phaseTStates) {
-        return contentionModel.memoryDelay(clock.value(), phaseTStates, memory.isContendedAddress(address));
+        return contentionModel.memoryDelay(clockValue(), phaseTStates, memory.isContendedAddress(address));
     }
 
     @Override
@@ -82,7 +76,7 @@ public final class Spectrum128Bus implements CpuBus {
 
     @Override
     public int writeMemoryWaitStates(int address, int value, int phaseTStates) {
-        return contentionModel.memoryDelay(clock.value(), phaseTStates, memory.isContendedAddress(address));
+        return contentionModel.memoryDelay(clockValue(), phaseTStates, memory.isContendedAddress(address));
     }
 
     @Override
@@ -94,13 +88,13 @@ public final class Spectrum128Bus implements CpuBus {
             return ay.readSelectedRegister();
         }
 
-        return ula.readFloatingBus(memory, clock.value());
+        return ula.readFloatingBus(memory, clockValue());
     }
 
     @Override
     public int readPort(int port, int phaseTStates) {
         if ((port & 0xFF) == 0xFE) {
-            long sampleTime = clock.value()
+            long sampleTime = clockValue()
                     + Math.max(0, phaseTStates)
                     + readPortWaitStates(port, phaseTStates);
             tape.syncToTState(sampleTime);
@@ -110,7 +104,7 @@ public final class Spectrum128Bus implements CpuBus {
             return ay.readSelectedRegister();
         }
 
-        return ula.readFloatingBus(memory, clock.value() + Math.max(0, phaseTStates) + readPortWaitStates(port, phaseTStates));
+        return ula.readFloatingBus(memory, clockValue() + Math.max(0, phaseTStates) + readPortWaitStates(port, phaseTStates));
     }
 
     @Override
@@ -121,13 +115,13 @@ public final class Spectrum128Bus implements CpuBus {
     @Override
     public void writePort(int port, int value, int phaseTStates) {
         if (pagingController.handlesPortWrite(port)) {
-            long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
+            long eventTime = clockValue() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
             ula.syncToTState(eventTime, memory);
             pagingController.handlePortWrite(port, value);
             return;
         }
         if ((port & 0xFF) == 0xFE) {
-            long eventTime = clock.value() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
+            long eventTime = clockValue() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
             ula.writePortFe(value, eventTime, beeper, memory);
             return;
         }
@@ -142,28 +136,17 @@ public final class Spectrum128Bus implements CpuBus {
 
     @Override
     public int readPortWaitStates(int port, int phaseTStates) {
-        return contentionModel.ioPortDelay(clock.value(), phaseTStates, port);
+        return contentionModel.ioPortDelay(clockValue(), phaseTStates, port);
     }
 
     @Override
     public int writePortWaitStates(int port, int value, int phaseTStates) {
-        return contentionModel.ioPortDelay(clock.value(), phaseTStates, port);
-    }
-
-    @Override
-    public int acknowledgeInterrupt() {
-        return 0xFF;
+        return contentionModel.ioPortDelay(clockValue(), phaseTStates, port);
     }
 
     @Override
     public void onRefresh(int irValue) {
         ula.onRefreshAddress(irValue);
-    }
-
-    @Override
-    public int currentTState() {
-        long tState = clock.value();
-        return tState > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tState;
     }
 
     private boolean isAyRegisterPort(int port) {

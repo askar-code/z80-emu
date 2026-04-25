@@ -91,11 +91,6 @@ final class ZexHarness {
         }
 
         @Override
-        public int fetchOpcode(int address) {
-            return readMemory(address);
-        }
-
-        @Override
         public int readMemory(int address) {
             return Byte.toUnsignedInt(memory[address & 0xFFFF]);
         }
@@ -118,20 +113,6 @@ final class ZexHarness {
             if ((port & 0xFF) == 0x00) {
                 finished = true;
             }
-        }
-
-        @Override
-        public int acknowledgeInterrupt() {
-            return 0xFF;
-        }
-
-        @Override
-        public void onRefresh(int irValue) {
-        }
-
-        @Override
-        public int currentTState() {
-            return 0;
         }
 
         private void emitBdosOutput() {

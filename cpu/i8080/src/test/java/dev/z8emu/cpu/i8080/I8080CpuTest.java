@@ -110,11 +110,6 @@ class I8080CpuTest {
         }
 
         @Override
-        public int fetchOpcode(int address) {
-            return readMemory(address);
-        }
-
-        @Override
         public int readMemory(int address) {
             return Byte.toUnsignedInt(memory[address & 0xFFFF]);
         }
@@ -125,28 +120,9 @@ class I8080CpuTest {
         }
 
         @Override
-        public int readPort(int port) {
-            return 0xFF;
-        }
-
-        @Override
         public void writePort(int port, int value) {
             lastPort = port & 0xFFFF;
             lastPortValue = value & 0xFF;
-        }
-
-        @Override
-        public int acknowledgeInterrupt() {
-            return 0xFF;
-        }
-
-        @Override
-        public void onRefresh(int irValue) {
-        }
-
-        @Override
-        public int currentTState() {
-            return 0;
         }
     }
 }

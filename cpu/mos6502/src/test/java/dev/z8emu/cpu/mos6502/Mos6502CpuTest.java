@@ -1047,11 +1047,6 @@ class Mos6502CpuTest {
         }
 
         @Override
-        public int fetchOpcode(int address) {
-            return readMemory(address);
-        }
-
-        @Override
         public int readMemory(int address) {
             return Byte.toUnsignedInt(memory[address & 0xFFFF]);
         }
@@ -1059,29 +1054,6 @@ class Mos6502CpuTest {
         @Override
         public void writeMemory(int address, int value) {
             memory[address & 0xFFFF] = (byte) value;
-        }
-
-        @Override
-        public int readPort(int port) {
-            return 0xFF;
-        }
-
-        @Override
-        public void writePort(int port, int value) {
-        }
-
-        @Override
-        public int acknowledgeInterrupt() {
-            return 0xFF;
-        }
-
-        @Override
-        public void onRefresh(int irValue) {
-        }
-
-        @Override
-        public int currentTState() {
-            return 0;
         }
     }
 }

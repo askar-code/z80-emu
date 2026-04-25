@@ -1,7 +1,9 @@
 package dev.z8emu.platform.bus;
 
 public interface CpuBus {
-    int fetchOpcode(int address);
+    default int fetchOpcode(int address) {
+        return readMemory(address);
+    }
 
     default int fetchOpcodeWaitStates(int address, int phaseTStates) {
         return 0;
@@ -19,7 +21,9 @@ public interface CpuBus {
         return 0;
     }
 
-    int readPort(int port);
+    default int readPort(int port) {
+        return 0xFF;
+    }
 
     default int readPort(int port, int phaseTStates) {
         return readPort(port);
@@ -29,7 +33,8 @@ public interface CpuBus {
         return 0;
     }
 
-    void writePort(int port, int value);
+    default void writePort(int port, int value) {
+    }
 
     default void writePort(int port, int value, int phaseTStates) {
         writePort(port, value);
@@ -39,9 +44,14 @@ public interface CpuBus {
         return 0;
     }
 
-    int acknowledgeInterrupt();
+    default int acknowledgeInterrupt() {
+        return 0xFF;
+    }
 
-    void onRefresh(int irValue);
+    default void onRefresh(int irValue) {
+    }
 
-    int currentTState();
+    default int currentTState() {
+        return 0;
+    }
 }

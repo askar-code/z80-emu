@@ -5,11 +5,11 @@ import dev.z8emu.machine.cpc.device.CpcFdcDevice;
 import dev.z8emu.machine.cpc.device.CpcGateArrayDevice;
 import dev.z8emu.machine.cpc.device.CpcPpiDevice;
 import dev.z8emu.machine.cpc.memory.CpcMemory;
-import dev.z8emu.platform.bus.CpuBus;
+import dev.z8emu.platform.bus.ClockedCpuBus;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
-public final class CpcBus implements CpuBus {
+public final class CpcBus extends ClockedCpuBus {
     private static final int GATE_ARRAY_PORT_MASK = 0xC000;
     private static final int GATE_ARRAY_PORT_VALUE = 0x4000;
     private static final int CRTC_PORT_MASK = 0x4300;
@@ -24,7 +24,6 @@ public final class CpcBus implements CpuBus {
     private static final int FDC_PORT_MASK = 0x0480;
     private static final int FDC_PORT_VALUE = 0x0000;
 
-    private final TStateCounter clock;
     private final CpcMemory memory;
     private final CpcGateArrayDevice gateArray;
     private final CpcCrtcDevice crtc;
@@ -39,17 +38,12 @@ public final class CpcBus implements CpuBus {
             CpcPpiDevice ppi,
             CpcFdcDevice fdc
     ) {
-        this.clock = Objects.requireNonNull(clock, "clock");
+        super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
         this.gateArray = Objects.requireNonNull(gateArray, "gateArray");
         this.crtc = Objects.requireNonNull(crtc, "crtc");
         this.ppi = Objects.requireNonNull(ppi, "ppi");
         this.fdc = Objects.requireNonNull(fdc, "fdc");
-    }
-
-    @Override
-    public int fetchOpcode(int address) {
-        return readMemory(address);
     }
 
     @Override
@@ -111,7 +105,7 @@ public final class CpcBus implements CpuBus {
             return;
         }
         if ((normalized & GATE_ARRAY_PORT_MASK) == GATE_ARRAY_PORT_VALUE) {
-            gateArray.writeRegister(value, memory, clock.value() + phaseTStates);
+            gateArray.writeRegister(value, memory, clockValue() + phaseTStates);
         }
     }
 
@@ -119,16 +113,6 @@ public final class CpcBus implements CpuBus {
     public int acknowledgeInterrupt() {
         gateArray.acknowledgeInterrupt();
         return 0xFF;
-    }
-
-    @Override
-    public void onRefresh(int irValue) {
-    }
-
-    @Override
-    public int currentTState() {
-        long tState = clock.value();
-        return tState > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) tState;
     }
 
     private int ppiRegister(int port) {

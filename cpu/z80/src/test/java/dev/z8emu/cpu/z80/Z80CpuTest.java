@@ -1273,11 +1273,6 @@ class Z80CpuTest {
         }
 
         @Override
-        public int fetchOpcode(int address) {
-            return read(address);
-        }
-
-        @Override
         public int fetchOpcodeWaitStates(int address, int phaseTStates) {
             fetchOpcodeWaitPhases.add(phaseTStates);
             return fetchOpcodeWaitStates;
@@ -1331,15 +1326,6 @@ class Z80CpuTest {
         @Override
         public int acknowledgeInterrupt() {
             return interruptVector;
-        }
-
-        @Override
-        public void onRefresh(int irValue) {
-        }
-
-        @Override
-        public int currentTState() {
-            return 0;
         }
     }
 }
