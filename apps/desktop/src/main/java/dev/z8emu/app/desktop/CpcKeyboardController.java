@@ -1,74 +1,33 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.cpc.device.CpcKeyboardDevice;
-import java.awt.KeyEventDispatcher;
-import java.awt.KeyboardFocusManager;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JComponent;
 
-final class CpcKeyboardController implements KeyEventDispatcher, AutoCloseable {
+final class CpcKeyboardController extends AbstractMappedHostKeyboardController<CpcKeyboardController.MatrixKey> {
     private final CpcKeyboardDevice keyboard;
-    private final Window window;
-    private volatile String lastEvent = "none";
 
     private CpcKeyboardController(Window window, CpcKeyboardDevice keyboard) {
-        this.window = window;
+        super(window);
         this.keyboard = keyboard;
     }
 
     static CpcKeyboardController bind(Window window, JComponent component, CpcKeyboardDevice keyboard) {
         CpcKeyboardController controller = new CpcKeyboardController(window, keyboard);
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(controller);
-        component.setFocusable(true);
-        component.setFocusTraversalKeysEnabled(false);
+        controller.bindToComponent(component);
         return controller;
-    }
-
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (!window.isActive()) {
-            return false;
-        }
-
-        if (event.getID() == KeyEvent.KEY_PRESSED) {
-            updateKeys(event, true);
-        } else if (event.getID() == KeyEvent.KEY_RELEASED) {
-            updateKeys(event, false);
-        }
-
-        return false;
     }
 
     void releaseAllKeys() {
         keyboard.releaseAllKeys();
-        lastEvent = "focus-lost";
-    }
-
-    String lastEvent() {
-        return lastEvent;
+        markFocusLost();
     }
 
     @Override
-    public void close() {
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this);
-    }
-
-    private void updateKeys(KeyEvent event, boolean pressed) {
-        List<MatrixKey> keys = keysFor(event.getKeyCode());
-        if (keys.isEmpty()) {
-            return;
-        }
-
-        for (MatrixKey key : keys) {
-            keyboard.setKeyPressed(key.line(), key.bit(), pressed);
-        }
-        lastEvent = "%s:%s".formatted(pressed ? "down" : "up", KeyEvent.getKeyText(event.getKeyCode()));
-    }
-
-    private List<MatrixKey> keysFor(int keyCode) {
+    protected List<MatrixKey> keysFor(int keyCode) {
         List<MatrixKey> keys = new ArrayList<>(1);
         switch (keyCode) {
             case KeyEvent.VK_UP -> keys.add(key(0, 0));
@@ -144,10 +103,15 @@ final class CpcKeyboardController implements KeyEventDispatcher, AutoCloseable {
         return keys;
     }
 
+    @Override
+    protected void updateKey(MatrixKey key, boolean pressed) {
+        keyboard.setKeyPressed(key.line(), key.bit(), pressed);
+    }
+
     private MatrixKey key(int line, int bit) {
         return new MatrixKey(line, bit);
     }
 
-    private record MatrixKey(int line, int bit) {
+    record MatrixKey(int line, int bit) {
     }
 }

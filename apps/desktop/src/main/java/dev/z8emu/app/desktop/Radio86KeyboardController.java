@@ -1,123 +1,46 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.radio86rk.device.Radio86KeyboardDevice;
-import java.awt.KeyEventDispatcher;
-import java.awt.KeyboardFocusManager;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JComponent;
 
-final class Radio86KeyboardController implements KeyEventDispatcher, AutoCloseable {
+final class Radio86KeyboardController extends AbstractMappedHostKeyboardController<Radio86KeyboardController.MatrixKey> {
     private static final int MINIMUM_RELEASE_FRAMES = Integer.getInteger("z8emu.radioKeyReleaseFrames", 3);
 
-    private final Radio86KeyboardDevice keyboard;
-    private final Window window;
     private final HostActions hostActions;
     private final Radio86KeyLatch keyLatch;
-    private volatile String lastEvent = "none";
 
     private Radio86KeyboardController(Window window, Radio86KeyboardDevice keyboard, HostActions hostActions) {
-        this.window = window;
-        this.keyboard = keyboard;
+        super(window);
         this.hostActions = hostActions;
         this.keyLatch = new Radio86KeyLatch(keyboard, MINIMUM_RELEASE_FRAMES);
     }
 
     static Radio86KeyboardController bind(Window window, JComponent component, Radio86KeyboardDevice keyboard, HostActions hostActions) {
         Radio86KeyboardController controller = new Radio86KeyboardController(window, keyboard, hostActions);
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(controller);
-        component.setFocusable(true);
-        component.setFocusTraversalKeysEnabled(false);
+        controller.bindToComponent(component);
         return controller;
     }
 
     @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (!window.isActive()) {
-            return false;
-        }
-
-        if (handleHostAction(event)) {
-            return true;
-        }
-
-        if (event.getID() == KeyEvent.KEY_PRESSED) {
-            updateKeys(event, true);
-        } else if (event.getID() == KeyEvent.KEY_RELEASED) {
-            updateKeys(event, false);
-        }
-
-        return false;
+    protected boolean handleHostAction(KeyEvent event) {
+        return handleTapeHostAction(event, hostActions);
     }
 
     void releaseAllKeys() {
         keyLatch.releaseAll();
-        lastEvent = "focus-lost";
-    }
-
-    String lastEvent() {
-        return lastEvent;
+        markFocusLost();
     }
 
     void tick() {
         keyLatch.tick();
     }
 
-    private boolean handleHostAction(KeyEvent event) {
-        if (!event.isMetaDown()) {
-            return false;
-        }
-
-        return switch (event.getKeyCode()) {
-            case KeyEvent.VK_P -> {
-                if (event.getID() == KeyEvent.KEY_RELEASED) {
-                    hostActions.toggleTapePlayback();
-                    lastEvent = "host:Cmd+P";
-                }
-                yield true;
-            }
-            case KeyEvent.VK_R -> {
-                if (event.getID() == KeyEvent.KEY_RELEASED) {
-                    hostActions.rewindTape();
-                    lastEvent = "host:Cmd+R";
-                }
-                yield true;
-            }
-            case KeyEvent.VK_S -> {
-                if (event.getID() == KeyEvent.KEY_RELEASED) {
-                    hostActions.stopTape();
-                    lastEvent = "host:Cmd+S";
-                }
-                yield true;
-            }
-            default -> false;
-        };
-    }
-
     @Override
-    public void close() {
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this);
-    }
-
-    private void updateKeys(KeyEvent event, boolean pressed) {
-        List<MatrixKey> keys = keysFor(event.getKeyCode());
-        if (keys.isEmpty()) {
-            return;
-        }
-
-        for (MatrixKey key : keys) {
-            if (pressed) {
-                keyLatch.press(key.row(), key.column());
-            } else {
-                keyLatch.release(key.row(), key.column());
-            }
-        }
-        lastEvent = "%s:%s".formatted(pressed ? "down" : "up", KeyEvent.getKeyText(event.getKeyCode()));
-    }
-
-    private List<MatrixKey> keysFor(int keyCode) {
+    protected List<MatrixKey> keysFor(int keyCode) {
         List<MatrixKey> keys = new ArrayList<>(1);
         switch (keyCode) {
             case KeyEvent.VK_HOME -> keys.add(key(0, 0));
@@ -201,18 +124,22 @@ final class Radio86KeyboardController implements KeyEventDispatcher, AutoCloseab
         return keys;
     }
 
+    @Override
+    protected void updateKey(MatrixKey key, boolean pressed) {
+        if (pressed) {
+            keyLatch.press(key.row(), key.column());
+        } else {
+            keyLatch.release(key.row(), key.column());
+        }
+    }
+
     private MatrixKey key(int row, int column) {
         return new MatrixKey(row, column);
     }
 
-    private record MatrixKey(int row, int column) {
+    record MatrixKey(int row, int column) {
     }
 
-    interface HostActions {
-        void toggleTapePlayback();
-
-        void rewindTape();
-
-        void stopTape();
+    interface HostActions extends HostTapeActions {
     }
 }

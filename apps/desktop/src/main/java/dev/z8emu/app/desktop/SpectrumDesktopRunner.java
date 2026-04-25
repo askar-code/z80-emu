@@ -9,9 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayDeque;
 import java.util.Queue;
-import javax.sound.sampled.LineUnavailableException;
 import javax.swing.JFrame;
-import javax.swing.SwingUtilities;
 
 final class SpectrumDesktopRunner {
     private static final int NORMAL_FRAMES_PER_SLICE = 1;
@@ -23,17 +21,22 @@ final class SpectrumDesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session implements DesktopMachineSession {
+    private static final class Session extends AbstractFrameDesktopSession<SpectrumDisplayPanel> {
         private final SpectrumMachine machine;
         private final DesktopLaunchConfig config;
-        private final SpectrumDisplayPanel panel = new SpectrumDisplayPanel();
         private final HostKeyTyper hostKeyTyper;
 
         private SpectrumKeyboardController keyboardController;
-        private PcmMonoAudioEngine audioEngine;
         private final SpectrumStartupTapeAutoplay startupTapeAutoplay;
 
         private Session(SpectrumMachine machine, DesktopLaunchConfig config) {
+            super(
+                    new SpectrumDisplayPanel(),
+                    machine.board().audio(),
+                    "spectrum-audio",
+                    machine.board().modelConfig().cpuClockHz(),
+                    machine.board().modelConfig().frameTStates()
+            );
             this.machine = machine;
             this.config = config;
             this.hostKeyTyper = HostKeyTyper.get(machine);
@@ -41,13 +44,12 @@ final class SpectrumDesktopRunner {
         }
 
         @Override
-        public void attachToFrame(JFrame frame) {
-            if (config.loadedTape() != null) {
-                machine.board().tape().load(config.loadedTape().tapeFile());
-            }
+        protected void attachMachine(JFrame frame) {
+            config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class)
+                    .ifPresent(loadedTape -> machine.board().tape().load(loadedTape.tapeFile()));
             keyboardController = SpectrumKeyboardController.bind(
                     frame,
-                    panel,
+                    displayComponent(),
                     machine.board().keyboard(),
                     new SpectrumKeyboardController.HostActions() {
                         @Override
@@ -82,17 +84,6 @@ final class SpectrumDesktopRunner {
                     }
             );
             startupTapeAutoplay.armIfNeeded();
-            audioEngine = tryStartAudio(machine);
-        }
-
-        @Override
-        public javax.swing.JComponent component() {
-            return panel;
-        }
-
-        @Override
-        public String initialTitle() {
-            return title(null);
         }
 
         @Override
@@ -119,14 +110,6 @@ final class SpectrumDesktopRunner {
         }
 
         @Override
-        public long frameDurationNanos() {
-            return DesktopRunnerSupport.frameDurationNanos(
-                    machine.board().modelConfig().cpuClockHz(),
-                    machine.board().modelConfig().frameTStates()
-            );
-        }
-
-        @Override
         public boolean turboActive() {
             return machine.board().tape().isPlaying() && tapeTurboEnabled();
         }
@@ -144,42 +127,31 @@ final class SpectrumDesktopRunner {
                 }
                 hostKeyTyper.tick();
                 startupTapeAutoplay.tick();
-                long targetTState = nextFrameBoundaryTState();
-                while (machine.currentTState() < targetTState) {
-                    machine.runInstruction();
-                }
+                runUntilTState(machine, nextFrameBoundaryTState(machine, machine.board().modelConfig().frameTStates()));
             }
         }
 
-        private long nextFrameBoundaryTState() {
-            long current = machine.currentTState();
-            long frameTStates = machine.board().modelConfig().frameTStates();
-            long remainder = Math.floorMod(current, frameTStates);
-            return remainder == 0
-                    ? current + frameTStates
-                    : current + frameTStates - remainder;
+        @Override
+        protected dev.z8emu.platform.video.FrameBuffer renderVideoFrame() {
+            return machine.board().renderVideoFrame();
         }
 
         @Override
-        public void presentFrame() {
-            panel.present(machine.board().renderVideoFrame());
+        protected void presentFrameBuffer(SpectrumDisplayPanel component, dev.z8emu.platform.video.FrameBuffer frame) {
+            component.present(frame);
         }
 
         @Override
-        public void onFocusGained() {
-            panel.requestFocusInWindow();
+        protected void releaseInputOnFocusLost() {
+            if (keyboardController != null) {
+                keyboardController.releaseAllKeys();
+            }
         }
 
         @Override
-        public void onFocusLost() {
-            keyboardController.releaseAllKeys();
-        }
-
-        @Override
-        public void close() {
-            keyboardController.close();
-            if (audioEngine != null) {
-                audioEngine.close();
+        protected void closeMachineResources() {
+            if (keyboardController != null) {
+                keyboardController.close();
             }
         }
 
@@ -191,15 +163,6 @@ final class SpectrumDesktopRunner {
         @Override
         public String threadName() {
             return "spectrum-video-runner";
-        }
-    }
-
-    private static PcmMonoAudioEngine tryStartAudio(SpectrumMachine machine) {
-        try {
-            return PcmMonoAudioEngine.start(machine.board().audio(), "spectrum-audio");
-        } catch (LineUnavailableException unavailable) {
-            System.err.println("Audio disabled: " + unavailable.getMessage());
-            return null;
         }
     }
 
@@ -255,7 +218,7 @@ final class SpectrumDesktopRunner {
     }
 
     private static String tapeStatus(SpectrumMachine machine, DesktopLaunchConfig config) {
-        if (config.loadedTape() == null) {
+        if (config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class).isEmpty()) {
             return "none";
         }
 

@@ -9,7 +9,6 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import javax.sound.sampled.LineUnavailableException;
 import javax.swing.JFrame;
 
 final class Radio86DesktopRunner {
@@ -22,29 +21,31 @@ final class Radio86DesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session implements DesktopMachineSession {
+    private static final class Session extends AbstractFrameDesktopSession<FrameDisplayPanel> {
         private final Radio86Machine machine;
         private final DesktopLaunchConfig config;
-        private final FrameDisplayPanel panel;
 
         private Radio86KeyboardController keyboardController;
-        private PcmMonoAudioEngine audioEngine;
 
         private Session(Radio86Machine machine, DesktopLaunchConfig config) {
+            super(
+                    createPanel(machine),
+                    machine.board().audio(),
+                    "radio86-audio",
+                    machine.cpuClockHz(),
+                    machine.frameTStates()
+            );
             this.machine = machine;
             this.config = config;
-            FrameBuffer initialFrame = machine.board().renderVideoFrame();
-            this.panel = new FrameDisplayPanel(initialFrame.width(), initialFrame.height(), 2);
         }
 
         @Override
-        public void attachToFrame(JFrame frame) {
-            if (config.loadedRadioTape() != null) {
-                machine.board().tape().load(config.loadedRadioTape().tapeFile());
-            }
+        protected void attachMachine(JFrame frame) {
+            config.loadedMedia(DesktopLaunchConfig.LoadedRadioTape.class)
+                    .ifPresent(loadedTape -> machine.board().tape().load(loadedTape.tapeFile()));
             keyboardController = Radio86KeyboardController.bind(
                     frame,
-                    panel,
+                    displayComponent(),
                     machine.board().keyboard(),
                     new Radio86KeyboardController.HostActions() {
                         @Override
@@ -70,17 +71,6 @@ final class Radio86DesktopRunner {
                         }
                     }
             );
-            audioEngine = tryStartAudio(machine);
-        }
-
-        @Override
-        public javax.swing.JComponent component() {
-            return panel;
-        }
-
-        @Override
-        public String initialTitle() {
-            return title(null);
         }
 
         @Override
@@ -105,11 +95,6 @@ final class Radio86DesktopRunner {
         }
 
         @Override
-        public long frameDurationNanos() {
-            return DesktopRunnerSupport.frameDurationNanos(machine.cpuClockHz(), machine.frameTStates());
-        }
-
-        @Override
         public boolean turboActive() {
             return machine.board().tape().isPlaying() && tapeTurboEnabled();
         }
@@ -123,32 +108,31 @@ final class Radio86DesktopRunner {
                 }
                 keyboardController.tick();
                 long targetTState = machine.currentTState() + machine.frameTStates();
-                while (machine.currentTState() < targetTState) {
-                    machine.runInstruction();
-                }
+                runUntilTState(machine, targetTState);
             }
         }
 
         @Override
-        public void presentFrame() {
-            panel.present(machine.board().renderVideoFrame());
+        protected FrameBuffer renderVideoFrame() {
+            return machine.board().renderVideoFrame();
         }
 
         @Override
-        public void onFocusGained() {
-            panel.requestFocusInWindow();
+        protected void presentFrameBuffer(FrameDisplayPanel component, FrameBuffer frame) {
+            component.present(frame);
         }
 
         @Override
-        public void onFocusLost() {
-            keyboardController.releaseAllKeys();
+        protected void releaseInputOnFocusLost() {
+            if (keyboardController != null) {
+                keyboardController.releaseAllKeys();
+            }
         }
 
         @Override
-        public void close() {
-            keyboardController.close();
-            if (audioEngine != null) {
-                audioEngine.close();
+        protected void closeMachineResources() {
+            if (keyboardController != null) {
+                keyboardController.close();
             }
         }
 
@@ -161,14 +145,10 @@ final class Radio86DesktopRunner {
         public String threadName() {
             return "radio86-video-runner";
         }
-    }
 
-    private static PcmMonoAudioEngine tryStartAudio(Radio86Machine machine) {
-        try {
-            return PcmMonoAudioEngine.start(machine.board().audio(), "radio86-audio");
-        } catch (LineUnavailableException unavailable) {
-            System.err.println("Audio disabled: " + unavailable.getMessage());
-            return null;
+        private static FrameDisplayPanel createPanel(Radio86Machine machine) {
+            FrameBuffer initialFrame = machine.board().renderVideoFrame();
+            return new FrameDisplayPanel(initialFrame.width(), initialFrame.height(), 2);
         }
     }
 
@@ -220,7 +200,7 @@ final class Radio86DesktopRunner {
     }
 
     private static String tapeStatus(Radio86Machine machine, DesktopLaunchConfig config) {
-        if (config.loadedRadioTape() == null) {
+        if (config.loadedMedia(DesktopLaunchConfig.LoadedRadioTape.class).isEmpty()) {
             return "none";
         }
         if (machine.board().tape().isPlaying()) {

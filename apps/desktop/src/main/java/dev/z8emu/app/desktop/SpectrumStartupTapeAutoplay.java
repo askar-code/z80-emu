@@ -20,7 +20,7 @@ final class SpectrumStartupTapeAutoplay {
     }
 
     void armIfNeeded() {
-        if (config.loadedTape() == null) {
+        if (!hasLoadedTape()) {
             pending = false;
             return;
         }
@@ -40,7 +40,7 @@ final class SpectrumStartupTapeAutoplay {
     }
 
     void tick() {
-        if (!pending || config.loadedTape() == null) {
+        if (!pending || !hasLoadedTape()) {
             return;
         }
         if (machine.board().tape().isPlaying()) {
@@ -52,5 +52,9 @@ final class SpectrumStartupTapeAutoplay {
         }
         machine.board().tape().play();
         pending = false;
+    }
+
+    private boolean hasLoadedTape() {
+        return config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class).isPresent();
     }
 }

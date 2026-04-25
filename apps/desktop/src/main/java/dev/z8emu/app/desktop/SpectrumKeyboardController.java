@@ -1,63 +1,39 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
-import java.awt.KeyEventDispatcher;
-import java.awt.KeyboardFocusManager;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 import javax.swing.JComponent;
 
-final class SpectrumKeyboardController implements KeyEventDispatcher, AutoCloseable {
+final class SpectrumKeyboardController extends AbstractMappedHostKeyboardController<SpectrumKeyboardController.MatrixKey> {
     private final KeyboardMatrixDevice keyboard;
-    private final Window window;
     private final HostActions hostActions;
-    private volatile String lastEvent = "none";
 
     private SpectrumKeyboardController(Window window, KeyboardMatrixDevice keyboard, HostActions hostActions) {
-        this.window = window;
+        super(window);
         this.keyboard = keyboard;
         this.hostActions = hostActions;
     }
 
     static SpectrumKeyboardController bind(Window window, JComponent component, KeyboardMatrixDevice keyboard, HostActions hostActions) {
         SpectrumKeyboardController controller = new SpectrumKeyboardController(window, keyboard, hostActions);
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(controller);
-        component.setFocusable(true);
-        component.setFocusTraversalKeysEnabled(false);
+        controller.bindToComponent(component);
         return controller;
     }
 
     @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (!window.isActive()) {
-            return false;
-        }
-
+    protected boolean handleMetaKey(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.VK_META) {
-            lastEvent = event.getID() == KeyEvent.KEY_RELEASED ? "host:Cmd-up" : "host:Cmd-down";
+            setLastEvent(event.getID() == KeyEvent.KEY_RELEASED ? "host:Cmd-up" : "host:Cmd-down");
             return true;
         }
-
-        if (handleHostTypedCharacter(event)) {
-            return true;
-        }
-
-        if (handleHostAction(event)) {
-            return true;
-        }
-
-        if (event.getID() == KeyEvent.KEY_PRESSED) {
-            updateKeys(event, true);
-        } else if (event.getID() == KeyEvent.KEY_RELEASED) {
-            updateKeys(event, false);
-        }
-
         return false;
     }
 
-    private boolean handleHostTypedCharacter(KeyEvent event) {
+    @Override
+    protected boolean handleTypedCharacter(KeyEvent event) {
         if (event.getID() != KeyEvent.KEY_TYPED) {
             return false;
         }
@@ -76,72 +52,23 @@ final class SpectrumKeyboardController implements KeyEventDispatcher, AutoClosea
         }
 
         keyboard.releaseAllKeys();
-        lastEvent = "char:" + character;
+        setLastEvent("char:" + character);
         return true;
     }
 
-    private void updateKeys(KeyEvent event, boolean pressed) {
-        List<MatrixKey> keys = keysFor(event);
-        if (keys.isEmpty()) {
-            return;
-        }
-
-        for (MatrixKey key : keys) {
-            keyboard.setKeyPressed(key.row(), key.column(), pressed);
-        }
-
-        lastEvent = "%s:%s".formatted(pressed ? "down" : "up", KeyEvent.getKeyText(event.getKeyCode()));
-    }
-
-    private boolean handleHostAction(KeyEvent event) {
-        boolean commandDown = event.isMetaDown();
-        if (!commandDown) {
-            return false;
-        }
-
-        return switch (event.getKeyCode()) {
-            case KeyEvent.VK_P -> {
-                if (event.getID() == KeyEvent.KEY_RELEASED) {
-                    hostActions.toggleTapePlayback();
-                    lastEvent = "host:Cmd+P";
-                }
-                yield true;
-            }
-            case KeyEvent.VK_R -> {
-                if (event.getID() == KeyEvent.KEY_RELEASED) {
-                    hostActions.rewindTape();
-                    lastEvent = "host:Cmd+R";
-                }
-                yield true;
-            }
-            case KeyEvent.VK_S -> {
-                if (event.getID() == KeyEvent.KEY_RELEASED) {
-                    hostActions.stopTape();
-                    lastEvent = "host:Cmd+S";
-                }
-                yield true;
-            }
-            default -> false;
-        };
+    @Override
+    protected boolean handleHostAction(KeyEvent event) {
+        return handleTapeHostAction(event, hostActions);
     }
 
     void releaseAllKeys() {
         keyboard.releaseAllKeys();
-        lastEvent = "focus-lost";
-    }
-
-    String lastEvent() {
-        return lastEvent;
+        markFocusLost();
     }
 
     @Override
-    public void close() {
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this);
-    }
-
-    private List<MatrixKey> keysFor(KeyEvent event) {
+    protected List<MatrixKey> keysFor(int keyCode) {
         List<MatrixKey> keys = new ArrayList<>(2);
-        int keyCode = event.getKeyCode();
 
         switch (keyCode) {
             case KeyEvent.VK_SHIFT -> keys.add(key(0, 0));
@@ -219,20 +146,19 @@ final class SpectrumKeyboardController implements KeyEventDispatcher, AutoClosea
         return keys;
     }
 
+    @Override
+    protected void updateKey(MatrixKey key, boolean pressed) {
+        keyboard.setKeyPressed(key.row(), key.column(), pressed);
+    }
+
     private static MatrixKey key(int row, int column) {
         return new MatrixKey(row, column);
     }
 
-    private record MatrixKey(int row, int column) {
+    record MatrixKey(int row, int column) {
     }
 
-    interface HostActions {
+    interface HostActions extends HostTapeActions {
         boolean typeHostCharacter(char character);
-
-        void toggleTapePlayback();
-
-        void rewindTape();
-
-        void stopTape();
     }
 }
