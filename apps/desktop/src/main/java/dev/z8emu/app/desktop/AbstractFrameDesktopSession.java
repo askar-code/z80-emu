@@ -113,6 +113,9 @@ abstract class AbstractFrameDesktopSession<P extends JComponent> implements Desk
     }
 
     private static PcmMonoAudioEngine tryStartAudio(PcmMonoSource source, String threadName) {
+        if (source == null) {
+            return null;
+        }
         try {
             return PcmMonoAudioEngine.start(source, threadName);
         } catch (LineUnavailableException unavailable) {

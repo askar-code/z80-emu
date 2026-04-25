@@ -1,5 +1,6 @@
 package dev.z8emu.app.desktop;
 
+import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.machine.spectrum128k.Spectrum128Machine;
@@ -20,6 +21,9 @@ class DesktopMachineDefinitionsTest {
         assertEquals(DesktopMachineKind.SPECTRUM128, DesktopMachineDefinitions.parse("spectrum128").kind());
         assertEquals(DesktopMachineKind.RADIO86RK, DesktopMachineDefinitions.parse("rk86").kind());
         assertEquals(DesktopMachineKind.CPC6128, DesktopMachineDefinitions.parse("amstradcpc6128").kind());
+        assertEquals(DesktopMachineKind.APPLE2, DesktopMachineDefinitions.parse("appleii").kind());
+        assertEquals(DesktopMachineKind.APPLE2, DesktopMachineDefinitions.parse("apple2plus").kind());
+        assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.parse("apple2e"));
     }
 
     @Test
@@ -44,10 +48,20 @@ class DesktopMachineDefinitionsTest {
                 .validateRom(new byte[Radio86Memory.ROM_SIZE_4K], label));
         assertDoesNotThrow(() -> DesktopMachineDefinitions.forKind(DesktopMachineKind.CPC6128)
                 .validateRom(new byte[CpcMemory.ROM_IMAGE_SIZE_OS_BASIC_AMSDOS], label));
+        assertDoesNotThrow(() -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2)
+                .validateRom(new byte[Apple2Memory.SYSTEM_ROM_SIZE_12K], label));
+        assertDoesNotThrow(() -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2)
+                .validateRom(new byte[Apple2Memory.ADDRESS_SPACE_SIZE], label));
 
         assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.SPECTRUM48)
                 .validateRom(new byte[1], label));
         assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.CPC6128)
                 .validateRom(new byte[1], label));
+        assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2)
+                .validateRom(new byte[1], label));
+        assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2)
+                .validateRom(new byte[16 * 1024], label));
+        assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2)
+                .validateRom(new byte[Apple2Memory.ADDRESS_SPACE_SIZE + 1], label));
     }
 }

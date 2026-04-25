@@ -1,36 +1,25 @@
 package dev.z8emu.machine.spectrum48k.device;
 
-import dev.z8emu.platform.audio.PcmMonoSource;
-import dev.z8emu.platform.device.TimedDevice;
+import dev.z8emu.platform.audio.ClockedPcmMonoSource;
+import dev.z8emu.platform.audio.DcBlocker;
 
-public final class BeeperDevice implements TimedDevice, PcmMonoSource {
+public final class BeeperDevice extends ClockedPcmMonoSource {
     public static final int SAMPLE_RATE = 44_100;
 
-    private static final int BYTES_PER_SAMPLE = 2;
-    private static final int BUFFER_CAPACITY = SAMPLE_RATE * BYTES_PER_SAMPLE / 5;
     private static final short LEVEL_EAR_1_MIC_1 = 12_000;
     private static final short LEVEL_EAR_1_MIC_0 = 11_000;
     private static final short LEVEL_EAR_0_MIC_1 = -8_000;
     private static final short LEVEL_EAR_0_MIC_0 = -12_000;
     private static final short TAPE_INPUT_LEVEL = 5_000;
 
-    private final long cpuClockHz;
+    private final DcBlocker dcBlocker = new DcBlocker(DcBlocker.DEFAULT_ALPHA, LEVEL_EAR_0_MIC_0 - TAPE_INPUT_LEVEL);
     private boolean micHigh;
     private boolean earHigh;
     private boolean tapeInputHigh;
-    private long sampleRemainder;
     private int lastPortFeValue = 0x00;
 
-    private final byte[] audioBuffer = new byte[BUFFER_CAPACITY];
-    private int readIndex;
-    private int writeIndex;
-    private int bufferedBytes;
-
     public BeeperDevice(long cpuClockHz) {
-        if (cpuClockHz <= 0) {
-            throw new IllegalArgumentException("cpuClockHz must be positive");
-        }
-        this.cpuClockHz = cpuClockHz;
+        super(cpuClockHz, SAMPLE_RATE);
     }
 
     public synchronized void writeFromPortFe(int value) {
@@ -51,50 +40,22 @@ public final class BeeperDevice implements TimedDevice, PcmMonoSource {
         this.tapeInputHigh = tapeInputHigh;
     }
 
-    public synchronized int drainAudio(byte[] target, int offset, int length) {
-        int copied = Math.min(length, bufferedBytes) & ~0x01;
-        for (int i = 0; i < copied; i++) {
-            target[offset + i] = audioBuffer[readIndex];
-            readIndex = (readIndex + 1) % audioBuffer.length;
-        }
-        bufferedBytes -= copied;
-        return copied;
-    }
-
-    @Override
-    public int sampleRate() {
-        return SAMPLE_RATE;
-    }
-
-    public synchronized int availableAudioBytes() {
-        return bufferedBytes;
-    }
-
     @Override
     public synchronized void reset() {
         micHigh = false;
         earHigh = false;
         tapeInputHigh = false;
-        sampleRemainder = 0;
-        readIndex = 0;
-        writeIndex = 0;
-        bufferedBytes = 0;
         lastPortFeValue = 0x00;
+        resetPcmAudio();
+        dcBlocker.reset(mixedOutputLevel());
     }
 
     @Override
-    public synchronized void onTStatesElapsed(int tStates) {
-        long total = sampleRemainder + ((long) tStates * SAMPLE_RATE);
-        int samplesToGenerate = (int) (total / cpuClockHz);
-        sampleRemainder = total % cpuClockHz;
-
-        short sample = mixedOutputLevel();
-        for (int i = 0; i < samplesToGenerate; i++) {
-            writeSample(sample);
-        }
+    protected short nextPcmSample() {
+        return dcBlocker.nextSample(mixedOutputLevel());
     }
 
-    private short mixedOutputLevel() {
+    private int mixedOutputLevel() {
         boolean earBit = (lastPortFeValue & 0x10) != 0;
         boolean micBit = (lastPortFeValue & 0x08) != 0;
 
@@ -106,32 +67,6 @@ public final class BeeperDevice implements TimedDevice, PcmMonoSource {
         }
 
         int tapeLevel = tapeInputHigh ? TAPE_INPUT_LEVEL : -TAPE_INPUT_LEVEL;
-        int mixed = speakerLevel + tapeLevel;
-        if (mixed > Short.MAX_VALUE) {
-            return Short.MAX_VALUE;
-        }
-        if (mixed < Short.MIN_VALUE) {
-            return Short.MIN_VALUE;
-        }
-        return (short) mixed;
-    }
-
-    private void writeSample(short sample) {
-        ensureCapacityForSample();
-        writeByteUnchecked((byte) (sample & 0xFF));
-        writeByteUnchecked((byte) ((sample >>> 8) & 0xFF));
-    }
-
-    private void ensureCapacityForSample() {
-        while (bufferedBytes > audioBuffer.length - BYTES_PER_SAMPLE) {
-            readIndex = (readIndex + 1) % audioBuffer.length;
-            bufferedBytes--;
-        }
-    }
-
-    private void writeByteUnchecked(byte value) {
-        audioBuffer[writeIndex] = value;
-        writeIndex = (writeIndex + 1) % audioBuffer.length;
-        bufferedBytes++;
+        return speakerLevel + tapeLevel;
     }
 }

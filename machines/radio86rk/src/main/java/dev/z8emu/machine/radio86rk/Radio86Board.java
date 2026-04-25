@@ -34,7 +34,7 @@ public final class Radio86Board implements VideoMachineBoard {
         this.memory = new Radio86Memory(romImage);
         this.keyboard = new Radio86KeyboardDevice();
         this.dma = new Radio86DmaDevice();
-        this.audio = new Radio86AudioDevice();
+        this.audio = new Radio86AudioDevice(modelConfig.cpuClockHz());
         this.tape = new Radio86TapeDevice();
         this.video = new Radio86VideoDevice(dma);
         this.bus = new Radio86Bus(clock, memory, keyboard, dma, video, traceListener);

@@ -1,22 +1,19 @@
 package dev.z8emu.chip.ay;
 
-import dev.z8emu.platform.audio.PcmMonoSource;
-import dev.z8emu.platform.device.TimedDevice;
+import dev.z8emu.platform.audio.ClockedPcmMonoSource;
+import dev.z8emu.platform.audio.DcBlocker;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
-public final class Ay38912Device implements TimedDevice, PcmMonoSource {
+public final class Ay38912Device extends ClockedPcmMonoSource {
     public static final int SAMPLE_RATE = 44_100;
 
-    private static final int BYTES_PER_SAMPLE = 2;
-    private static final int BUFFER_CAPACITY = SAMPLE_RATE * BYTES_PER_SAMPLE / 5;
     private static final int REGISTER_COUNT = 16;
     private static final int CHANNEL_COUNT = 3;
     private static final int PORT_A_REGISTER = 14;
     private static final int PORT_B_REGISTER = 15;
-    private static final float HIGH_PASS_ALPHA = 0.995f;
     private static final int[] VOLUME_LEVELS = {
             0, 32, 48, 72,
             108, 162, 243, 364,
@@ -24,11 +21,10 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
             2_763, 4_145, 6_217, 9_326
     };
 
-    private final long cpuClockHz;
     private final long psgClockHz;
     private final byte[] registers = new byte[REGISTER_COUNT];
-    private final byte[] audioBuffer = new byte[BUFFER_CAPACITY];
     private final double[] tonePhases = new double[CHANNEL_COUNT];
+    private final DcBlocker dcBlocker = new DcBlocker(DcBlocker.DEFAULT_ALPHA, 0);
 
     private IntSupplier portAReadProvider;
     private IntSupplier portBReadProvider;
@@ -37,10 +33,6 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
     private IntConsumer portBWriteListener = ignored -> {
     };
     private int selectedRegister;
-    private long sampleRemainder;
-    private int readIndex;
-    private int writeIndex;
-    private int bufferedBytes;
     private double noisePhase;
     private int noiseShiftRegister;
     private boolean noiseOutputHigh;
@@ -50,21 +42,16 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
     private boolean envelopeHold;
     private boolean envelopeAlternate;
     private boolean envelopeHolding;
-    private float previousInputLevel;
-    private float filteredLevel;
 
     public Ay38912Device(long cpuClockHz) {
         this(cpuClockHz, cpuClockHz / 2);
     }
 
     public Ay38912Device(long cpuClockHz, long psgClockHz) {
-        if (cpuClockHz <= 0) {
-            throw new IllegalArgumentException("cpuClockHz must be positive");
-        }
+        super(cpuClockHz, SAMPLE_RATE);
         if (psgClockHz <= 0) {
             throw new IllegalArgumentException("psgClockHz must be positive");
         }
-        this.cpuClockHz = cpuClockHz;
         this.psgClockHz = psgClockHz;
         this.portAReadProvider = () -> registerValue(PORT_A_REGISTER);
         this.portBReadProvider = () -> registerValue(PORT_B_REGISTER);
@@ -120,34 +107,11 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
     }
 
     @Override
-    public int sampleRate() {
-        return SAMPLE_RATE;
-    }
-
-    @Override
-    public synchronized int drainAudio(byte[] target, int offset, int length) {
-        int copied = Math.min(length, bufferedBytes) & ~0x01;
-        for (int i = 0; i < copied; i++) {
-            target[offset + i] = audioBuffer[readIndex];
-            readIndex = (readIndex + 1) % audioBuffer.length;
-        }
-        bufferedBytes -= copied;
-        return copied;
-    }
-
-    public synchronized int availableAudioBytes() {
-        return bufferedBytes;
-    }
-
-    @Override
     public synchronized void reset() {
         Arrays.fill(registers, (byte) 0x00);
         Arrays.fill(tonePhases, 0.0d);
         selectedRegister = 0;
-        sampleRemainder = 0;
-        readIndex = 0;
-        writeIndex = 0;
-        bufferedBytes = 0;
+        resetPcmAudio();
         noisePhase = 0.0d;
         noiseShiftRegister = 0x1FFFF;
         noiseOutputHigh = true;
@@ -157,40 +121,19 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
         envelopeHold = false;
         envelopeAlternate = false;
         envelopeHolding = false;
-        previousInputLevel = 0.0f;
-        filteredLevel = 0.0f;
+        dcBlocker.reset(0);
     }
 
     @Override
-    public synchronized void onTStatesElapsed(int tStates) {
-        long total = sampleRemainder + ((long) tStates * SAMPLE_RATE);
-        int samplesToGenerate = (int) (total / cpuClockHz);
-        sampleRemainder = total % cpuClockHz;
-
-        for (int i = 0; i < samplesToGenerate; i++) {
-            writeSample(nextSample());
-        }
-    }
-
-    private short nextSample() {
+    protected short nextPcmSample() {
         advanceTonePhases();
         advanceNoise();
         advanceEnvelope();
 
         // The AY outputs positive amplitudes that are typically AC-coupled later
         // in the analogue path, so we approximate that here with a simple high-pass.
-        float inputLevel = channelSample(0) + channelSample(1) + channelSample(2);
-        filteredLevel = HIGH_PASS_ALPHA * (filteredLevel + inputLevel - previousInputLevel);
-        previousInputLevel = inputLevel;
-
-        int mixed = Math.round(filteredLevel);
-        if (mixed > Short.MAX_VALUE) {
-            return Short.MAX_VALUE;
-        }
-        if (mixed < Short.MIN_VALUE) {
-            return Short.MIN_VALUE;
-        }
-        return (short) mixed;
+        int inputLevel = channelSample(0) + channelSample(1) + channelSample(2);
+        return dcBlocker.nextSample(inputLevel);
     }
 
     private void advanceTonePhases() {
@@ -310,24 +253,5 @@ public final class Ay38912Device implements TimedDevice, PcmMonoSource {
         if (registerIndex < 0 || registerIndex >= REGISTER_COUNT) {
             throw new IllegalArgumentException("AY register index out of range: " + registerIndex);
         }
-    }
-
-    private void writeSample(short sample) {
-        ensureCapacityForSample();
-        writeByteUnchecked((byte) (sample & 0xFF));
-        writeByteUnchecked((byte) ((sample >>> 8) & 0xFF));
-    }
-
-    private void ensureCapacityForSample() {
-        while (bufferedBytes > audioBuffer.length - BYTES_PER_SAMPLE) {
-            readIndex = (readIndex + 1) % audioBuffer.length;
-            bufferedBytes--;
-        }
-    }
-
-    private void writeByteUnchecked(byte value) {
-        audioBuffer[writeIndex] = value;
-        writeIndex = (writeIndex + 1) % audioBuffer.length;
-        bufferedBytes++;
     }
 }

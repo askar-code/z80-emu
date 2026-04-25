@@ -140,6 +140,19 @@ class Spectrum48kMachineTest {
     }
 
     @Test
+    void idleBeeperProducesSilentPcm() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        byte[] pcm = new byte[256];
+
+        machine.board().beeper().onTStatesElapsed(3_500);
+
+        int copied = machine.board().beeper().drainAudio(pcm, 0, pcm.length);
+
+        assertEquals(true, copied > 0);
+        assertEquals(false, hasNonZeroSample(pcm, copied));
+    }
+
+    @Test
     void beeperDistinguishesEarAndMicOutputLevels() {
         int highBoth = sampleLevel(0x18);
         int highEarOnly = sampleLevel(0x10);
@@ -147,6 +160,24 @@ class Spectrum48kMachineTest {
 
         assertEquals(true, highBoth > highEarOnly);
         assertEquals(true, highEarOnly > lowMicOnly);
+    }
+
+    @Test
+    void staticBeeperLevelDecaysBackToSilence() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        byte[] pcm = new byte[512];
+
+        machine.board().beeper().writeFromPortFe(0x10);
+        machine.board().beeper().onTStatesElapsed(2_000_000);
+        while (machine.board().beeper().drainAudio(pcm, 0, pcm.length) > 0) {
+            // Drop the initial AC-coupled edge before checking the settled level.
+        }
+
+        machine.board().beeper().onTStatesElapsed(3_500);
+        int copied = machine.board().beeper().drainAudio(pcm, 0, pcm.length);
+
+        assertEquals(true, copied > 0);
+        assertEquals(false, hasNonZeroSample(pcm, copied));
     }
 
     @Test
@@ -335,6 +366,15 @@ class Spectrum48kMachineTest {
         machine.board().beeper().onTStatesElapsed(3_500);
         machine.board().beeper().drainAudio(pcm, 0, pcm.length);
         return (pcm[1] << 8) | (pcm[0] & 0xFF);
+    }
+
+    private boolean hasNonZeroSample(byte[] pcm, int length) {
+        for (int i = 0; i + 1 < length; i += 2) {
+            if (((pcm[i + 1] << 8) | (pcm[i] & 0xFF)) != 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int[] standardHeaderPulses() {

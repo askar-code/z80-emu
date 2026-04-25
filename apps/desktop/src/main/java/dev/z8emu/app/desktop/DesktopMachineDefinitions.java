@@ -1,5 +1,7 @@
 package dev.z8emu.app.desktop;
 
+import dev.z8emu.machine.apple2.Apple2Machine;
+import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.cpc.CpcMachine;
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.cpc.disk.CpcDskLoader;
@@ -26,12 +28,14 @@ final class DesktopMachineDefinitions {
     private static final DesktopMachineDefinition SPECTRUM128 = new SpectrumDefinition(DesktopMachineKind.SPECTRUM128);
     private static final DesktopMachineDefinition RADIO86RK = new Radio86Definition();
     private static final DesktopMachineDefinition CPC6128 = new CpcDefinition();
+    private static final DesktopMachineDefinition APPLE2 = new Apple2Definition();
 
     private static final List<DesktopMachineDefinition> DEFINITIONS = List.of(
             SPECTRUM48,
             SPECTRUM128,
             RADIO86RK,
-            CPC6128
+            CPC6128,
+            APPLE2
     );
     private static final Map<DesktopMachineKind, DesktopMachineDefinition> BY_KIND = new HashMap<>();
     private static final Map<String, DesktopMachineDefinition> BY_ALIAS = new HashMap<>();
@@ -45,6 +49,7 @@ final class DesktopMachineDefinitions {
         register(SPECTRUM128, "128", "128k", "spectrum128", "spectrum128k");
         register(RADIO86RK, "radio86", "radio86rk", "rk86", "86rk");
         register(CPC6128, "cpc", "cpc6128", "amstradcpc", "amstradcpc6128");
+        register(APPLE2, "apple2", "appleii", "apple2plus", "appleiiplus");
     }
 
     private DesktopMachineDefinitions() {
@@ -67,7 +72,7 @@ final class DesktopMachineDefinitions {
     }
 
     static String usage() {
-        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128 <rom> [tape|disk]";
+        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|apple2|apple2plus <rom-or-memory-image> [media]";
     }
 
     static DesktopLaunchConfig demoConfig() {
@@ -154,7 +159,7 @@ final class DesktopMachineDefinitions {
             return switch (kind) {
                 case SPECTRUM48 -> new Spectrum48kMachine(config.romImage());
                 case SPECTRUM128 -> new Spectrum128Machine(config.romImage());
-                case RADIO86RK, CPC6128 -> throw new IllegalArgumentException("Expected Spectrum launch config");
+                case RADIO86RK, CPC6128, APPLE2 -> throw new IllegalArgumentException("Expected Spectrum launch config");
             };
         }
 
@@ -267,6 +272,38 @@ final class DesktopMachineDefinitions {
         @Override
         public String usage() {
             return "--machine=cpc6128 <rom-bundle> [disk.dsk]";
+        }
+    }
+
+    private static final class Apple2Definition implements DesktopMachineDefinition {
+        @Override
+        public DesktopMachineKind kind() {
+            return DesktopMachineKind.APPLE2;
+        }
+
+        @Override
+        public void validateRom(byte[] romImage, Path romPath) {
+            if (!Apple2Memory.isSupportedLaunchImageSize(romImage.length)) {
+                throw new IllegalArgumentException("Apple II image must be exactly 4 KB, 8 KB, 12 KB, or 64 KB: " + romPath);
+            }
+        }
+
+        @Override
+        public void validateArgumentCount(int positionalCount) {
+            if (positionalCount > 1) {
+                throw new IllegalArgumentException("Usage: " + usage());
+            }
+        }
+
+        @Override
+        public void open(DesktopLaunchConfig config) {
+            Apple2Machine machine = Apple2Machine.fromLaunchImage(config.romImage());
+            SwingUtilities.invokeLater(() -> Apple2DesktopRunner.open(machine, config));
+        }
+
+        @Override
+        public String usage() {
+            return "--machine=apple2|apple2plus <system-rom|memory-image>";
         }
     }
 }

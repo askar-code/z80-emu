@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":machine-apple2"))
     implementation(project(":machine-cpc"))
     implementation(project(":machine-radio86rk"))
     implementation(project(":machine-spectrum"))
@@ -33,5 +34,16 @@ tasks.register<JavaExec>("spectrumTapeProbe") {
     workingDir = rootProject.projectDir
     systemProperties(System.getProperties().stringPropertyNames()
         .filter { it.startsWith("z8emu.") }
+        .associateWith { System.getProperty(it) })
+}
+
+tasks.register<JavaExec>("apple2RomProbe") {
+    group = "application"
+    description = "Runs the headless Apple II ROM bring-up probe."
+    mainClass.set("dev.z8emu.app.desktop.Apple2RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("apple2.") }
         .associateWith { System.getProperty(it) })
 }
