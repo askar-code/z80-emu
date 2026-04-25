@@ -56,6 +56,8 @@ The core must be runnable:
 
 For game-loading and visual regression investigation, use the operational
 runbook in [`docs/headless-spectrum-probe.md`](headless-spectrum-probe.md).
+For the current Apple II Plus bring-up path, use
+[`docs/apple-ii-plus-runbook.md`](apple-ii-plus-runbook.md).
 
 ### 2. CPU Does Not Own The Hardware
 
@@ -126,6 +128,8 @@ Current physical module layout:
   Z80 core only.
 - `cpu/i8080` -> `:cpu-i8080`
   Intel 8080 and Soviet-compatible variants such as `KR580VM80A`.
+- `cpu/mos6502` -> `:cpu-mos6502`
+  MOS 6502 core used by the Apple II family and future 6502-based machines.
 - `chips/ay` -> `:chip-ay`
   Shared AY-3-891x PSG model.
 - `machines/spectrum` -> `:machine-spectrum`
@@ -134,6 +138,9 @@ Current physical module layout:
   Radio-86RK board assembled on the same platform.
 - `machines/cpc` -> `:machine-cpc`
   Amstrad CPC board, Gate Array, CRTC, PPI, keyboard, disk controller, memory map.
+- `machines/apple2` -> `:machine-apple2`
+  Apple II Plus board, 6502 bus, ROM/RAM map, text/lo-res/hi-res video,
+  keyboard strobe, and speaker path.
 
 Important note: replaceable modules are primarily a runtime architecture concern. We do not need one Gradle project per chip or device on day one.
 

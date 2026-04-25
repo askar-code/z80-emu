@@ -11,6 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Apple2MachineTest {
     private static final int BACKGROUND_ARGB = 0xFF101010;
     private static final int FOREGROUND_ARGB = 0xFF66FF66;
+    private static final int LORES_DARK_BLUE_ARGB = 0xFF000099;
+    private static final int LORES_DARK_GREEN_ARGB = 0xFF007722;
+    private static final int LORES_GREEN_ARGB = 0xFF00CC00;
 
     @Test
     void defaultModelIsAppleIIPlus() {
@@ -113,6 +116,96 @@ class Apple2MachineTest {
 
         assertEquals(0x0800, memoryMachine.cpu().registers().pc());
         assertThrows(IllegalArgumentException.class, () -> Apple2Machine.fromLaunchImage(new byte[16 * 1024]));
+    }
+
+    @Test
+    void rawProgramLoaderPlacesBytesInRamAndCanOverrideProgramCounter() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA));
+
+        machine.loadProgram(new byte[]{(byte) 0xA9, (byte) 0xC1}, 0x0800);
+        machine.setProgramCounter(0x0800);
+
+        assertEquals(0xA9, machine.board().memory().read(0x0800));
+        assertEquals(0xC1, machine.board().memory().read(0x0801));
+        assertEquals(0x0800, machine.cpu().registers().pc());
+    }
+
+    @Test
+    void rawProgramLoaderRejectsProgramsThatDoNotFitWritableRam() {
+        Apple2Machine romMachine = Apple2Machine.fromLaunchImage(filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA));
+        Apple2Machine ramMachine = Apple2Machine.withBlankMemory();
+
+        assertThrows(IllegalArgumentException.class, () -> romMachine.loadProgram(new byte[]{0x00}, 0xD000));
+        assertThrows(IllegalArgumentException.class, () -> ramMachine.loadProgram(new byte[]{0x00, 0x00}, 0xFFFF));
+    }
+
+    @Test
+    void languageCardCanWriteRamBehindRomAfterDoubleWriteEnableSwitch() {
+        byte[] rom = filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA);
+        rom[0x1000] = (byte) 0x4C;
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(rom);
+
+        machine.board().cpuBus().readMemory(0xC081);
+        machine.board().cpuBus().readMemory(0xC081);
+        machine.board().cpuBus().writeMemory(0xE000, 0xA9);
+
+        assertEquals(0x4C, machine.board().cpuBus().readMemory(0xE000));
+
+        machine.board().cpuBus().readMemory(0xC080);
+
+        assertEquals(0xA9, machine.board().cpuBus().readMemory(0xE000));
+    }
+
+    @Test
+    void languageCardKeepsSeparateD000BanksAndSharedE000Ram() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA));
+
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().writeMemory(0xD000, 0x22);
+        machine.board().cpuBus().writeMemory(0xE000, 0x33);
+        machine.board().cpuBus().readMemory(0xC08B);
+        machine.board().cpuBus().readMemory(0xC08B);
+        machine.board().cpuBus().writeMemory(0xD000, 0x44);
+
+        assertEquals(0x44, machine.board().cpuBus().readMemory(0xD000));
+        assertEquals(0x33, machine.board().cpuBus().readMemory(0xE000));
+
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().readMemory(0xC083);
+
+        assertEquals(0x22, machine.board().cpuBus().readMemory(0xD000));
+        assertEquals(0x33, machine.board().cpuBus().readMemory(0xE000));
+    }
+
+    @Test
+    void rawMachineCodeProgramCanWriteTextPage() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA));
+        machine.loadProgram(new byte[]{
+                (byte) 0xA9, (byte) 0xC1,
+                (byte) 0x8D, 0x00, 0x04,
+                (byte) 0x4C, 0x05, 0x08
+        }, 0x0800);
+        machine.setProgramCounter(0x0800);
+
+        assertEquals(2, machine.runInstruction());
+        assertEquals(4, machine.runInstruction());
+
+        assertEquals(0xC1, machine.board().memory().read(Apple2Memory.TEXT_PAGE_1_START));
+    }
+
+    @Test
+    void rawMachineCodeProgramCanToggleSpeaker() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA));
+        machine.loadProgram(new byte[]{
+                (byte) 0xAD, 0x30, (byte) 0xC0,
+                (byte) 0x4C, 0x00, 0x08
+        }, 0x0800);
+        machine.setProgramCounter(0x0800);
+
+        assertEquals(4, machine.runInstruction());
+
+        assertTrue(machine.board().speaker().high());
     }
 
     @Test
@@ -257,6 +350,86 @@ class Apple2MachineTest {
 
         assertEquals(FOREGROUND_ARGB, pixel(frame, 1, 0));
         assertEquals(BACKGROUND_ARGB, pixel(frame, 5, 0));
+    }
+
+    @Test
+    void graphicsAddressHelpersFollowAppleScreenLineLayout() {
+        assertEquals(0x0400, Apple2Memory.loresPage1Address(0, 0));
+        assertEquals(0x0400, Apple2Memory.loresPage1Address(1, 0));
+        assertEquals(0x0480, Apple2Memory.loresPage1Address(2, 0));
+        assertEquals(0x0800, Apple2Memory.loresPage2Address(0, 0));
+        assertEquals(0x2000, Apple2Memory.hiresPage1Address(0, 0));
+        assertEquals(0x2400, Apple2Memory.hiresPage1Address(1, 0));
+        assertEquals(0x2080, Apple2Memory.hiresPage1Address(8, 0));
+        assertEquals(0x2028, Apple2Memory.hiresPage1Address(64, 0));
+        assertEquals(0x4000, Apple2Memory.hiresPage2Address(0, 0));
+    }
+
+    @Test
+    void loresGraphicsRendersPage1NibblesAsFourLineBlocks() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.loresPage1Address(0, 0), 0xC4);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC056);
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+
+        assertEquals(LORES_DARK_GREEN_ARGB, pixel(frame, 1, 1));
+        assertEquals(LORES_DARK_GREEN_ARGB, pixel(frame, 6, 3));
+        assertEquals(LORES_GREEN_ARGB, pixel(frame, 1, 4));
+        assertEquals(LORES_GREEN_ARGB, pixel(frame, 6, 7));
+    }
+
+    @Test
+    void mixedLoresGraphicsKeepsBottomFourTextRows() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.loresPage1Address(0, 0), 0x22);
+        machine.board().memory().write(Apple2Memory.textPage1Address(20, 0), 0xC1);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC056);
+        machine.board().cpuBus().readMemory(0xC053);
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+
+        assertEquals(LORES_DARK_BLUE_ARGB, pixel(frame, 1, 1));
+        assertEquals(FOREGROUND_ARGB, pixel(frame, 2, 20 * Apple2VideoDevice.CELL_HEIGHT));
+    }
+
+    @Test
+    void hiresGraphicsRendersSevenPixelsPerScreenByte() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x41);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC057);
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+
+        assertEquals(FOREGROUND_ARGB, pixel(frame, 0, 0));
+        assertEquals(BACKGROUND_ARGB, pixel(frame, 1, 0));
+        assertEquals(FOREGROUND_ARGB, pixel(frame, 6, 0));
+    }
+
+    @Test
+    void graphicsRendererCanSwitchLoResAndHiResToPage2() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.loresPage1Address(0, 0), 0x44);
+        machine.board().memory().write(Apple2Memory.loresPage2Address(0, 0), 0x22);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC056);
+        machine.board().cpuBus().readMemory(0xC055);
+
+        FrameBuffer loresFrame = machine.board().renderVideoFrame();
+
+        assertEquals(LORES_DARK_BLUE_ARGB, pixel(loresFrame, 1, 1));
+
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x01);
+        machine.board().memory().write(Apple2Memory.hiresPage2Address(0, 0), 0x02);
+        machine.board().cpuBus().readMemory(0xC057);
+
+        FrameBuffer hiresFrame = machine.board().renderVideoFrame();
+
+        assertEquals(BACKGROUND_ARGB, pixel(hiresFrame, 0, 0));
+        assertEquals(FOREGROUND_ARGB, pixel(hiresFrame, 1, 0));
     }
 
     @Test

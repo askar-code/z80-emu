@@ -18,6 +18,10 @@ public final class Apple2Memory {
     public static final int TEXT_PAGE_1_END_EXCLUSIVE = 0x0800;
     public static final int TEXT_PAGE_2_START = 0x0800;
     public static final int TEXT_PAGE_2_END_EXCLUSIVE = 0x0C00;
+    public static final int HIRES_PAGE_1_START = 0x2000;
+    public static final int HIRES_PAGE_1_END_EXCLUSIVE = 0x4000;
+    public static final int HIRES_PAGE_2_START = 0x4000;
+    public static final int HIRES_PAGE_2_END_EXCLUSIVE = 0x6000;
 
     private final byte[] resetImage = new byte[ADDRESS_SPACE_SIZE];
     private final byte[] ram = new byte[ADDRESS_SPACE_SIZE];
@@ -82,6 +86,43 @@ public final class Apple2Memory {
 
     public static int textPage2Address(int row, int column) {
         return textPageAddress(TEXT_PAGE_2_START, row, column);
+    }
+
+    public static int loresPage1Address(int row, int column) {
+        return loresPageAddress(TEXT_PAGE_1_START, row, column);
+    }
+
+    public static int loresPage2Address(int row, int column) {
+        return loresPageAddress(TEXT_PAGE_2_START, row, column);
+    }
+
+    public static int loresPageAddress(int baseAddress, int row, int column) {
+        if (row < 0 || row >= Apple2VideoDevice.LORES_ROWS) {
+            throw new IllegalArgumentException("Apple II lo-res row out of range: " + row);
+        }
+        return textPageAddress(baseAddress, row / 2, column);
+    }
+
+    public static int hiresPage1Address(int y, int byteColumn) {
+        return hiresPageAddress(HIRES_PAGE_1_START, y, byteColumn);
+    }
+
+    public static int hiresPage2Address(int y, int byteColumn) {
+        return hiresPageAddress(HIRES_PAGE_2_START, y, byteColumn);
+    }
+
+    public static int hiresPageAddress(int baseAddress, int y, int byteColumn) {
+        if (y < 0 || y >= Apple2VideoDevice.HIRES_ROWS) {
+            throw new IllegalArgumentException("Apple II hi-res row out of range: " + y);
+        }
+        if (byteColumn < 0 || byteColumn >= Apple2VideoDevice.HIRES_BYTE_COLUMNS) {
+            throw new IllegalArgumentException("Apple II hi-res byte column out of range: " + byteColumn);
+        }
+        return baseAddress
+                + ((y & 0x07) * 0x400)
+                + (((y >>> 3) & 0x07) * 0x80)
+                + ((y >>> 6) * 0x28)
+                + byteColumn;
     }
 
     public static int textPageAddress(int baseAddress, int row, int column) {

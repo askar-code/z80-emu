@@ -6,6 +6,8 @@ import dev.z8emu.platform.video.FrameBuffer;
 import javax.swing.JFrame;
 
 final class Apple2DesktopRunner {
+    private static final int NORMAL_FRAMES_PER_SLICE = 1;
+
     private Apple2DesktopRunner() {
     }
 
@@ -39,10 +41,12 @@ final class Apple2DesktopRunner {
         public String title(Throwable failure) {
             String base = "z8-emu " + machine.board().modelName();
             String status = "source=" + config.sourceLabel()
+                    + programStatus(config)
                     + "  pc=0x" + hex16(machine.cpu().registers().pc())
                     + "  t=" + machine.currentTState()
                     + "  text=0x" + hex16(Apple2Memory.TEXT_PAGE_1_START)
                     + "  key=" + keyboardController.lastEvent()
+                    + diskStatus()
                     + "  cpu=6502";
 
             if (failure == null) {
@@ -54,8 +58,13 @@ final class Apple2DesktopRunner {
         }
 
         @Override
+        public boolean turboActive() {
+            return false;
+        }
+
+        @Override
         public void runSlice() {
-            long targetTState = machine.currentTState() + machine.frameTStates();
+            long targetTState = machine.currentTState() + (long) machine.frameTStates() * NORMAL_FRAMES_PER_SLICE;
             runUntilTState(machine, targetTState);
         }
 
@@ -95,6 +104,18 @@ final class Apple2DesktopRunner {
 
         private static String hex16(int value) {
             return "%04X".formatted(value & 0xFFFF);
+        }
+
+        private static String programStatus(DesktopLaunchConfig config) {
+            return config.loadedMedia(DesktopLaunchConfig.LoadedApple2Program.class)
+                    .map(program -> "  program=" + program.sourceLabel() + "@0x" + hex16(program.loadAddress()))
+                    .orElse("");
+        }
+
+        private String diskStatus() {
+            return config.loadedMedia(DesktopLaunchConfig.LoadedApple2Disk.class)
+                    .map(disk -> "  disk=" + disk.sourceLabel())
+                    .orElse("");
         }
     }
 }

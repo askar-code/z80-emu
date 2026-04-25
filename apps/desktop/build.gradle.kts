@@ -47,3 +47,20 @@ tasks.register<JavaExec>("apple2RomProbe") {
         .filter { it.startsWith("z8emu.") || it.startsWith("apple2.") }
         .associateWith { System.getProperty(it) })
 }
+
+tasks.register<JavaExec>("apple2BasicSmoke") {
+    group = "verification"
+    description = "Runs the Apple II Plus external-ROM BASIC smoke probe."
+    mainClass.set("dev.z8emu.app.desktop.Apple2RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    args(
+        providers.gradleProperty("apple2.rom").orElse("apple2plus-12k.rom").get(),
+        "1500000",
+        "--keys=PRINT<SP>2+2<CR>",
+        "--expect-screen=4"
+    )
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("apple2.") }
+        .associateWith { System.getProperty(it) })
+}

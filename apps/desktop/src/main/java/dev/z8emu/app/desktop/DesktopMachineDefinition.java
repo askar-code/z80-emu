@@ -10,8 +10,19 @@ interface DesktopMachineDefinition {
 
     void validateArgumentCount(int positionalCount);
 
+    default void validateLaunchOptions(DesktopLaunchOptions options, int positionalCount) {
+        if (options.hasAny()) {
+            throw new IllegalArgumentException("Usage: " + usage());
+        }
+    }
+
     default DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath) throws IOException {
         throw new IllegalArgumentException("Usage: " + usage());
+    }
+
+    default DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath, DesktopLaunchOptions options) throws IOException {
+        validateLaunchOptions(options, 2);
+        return loadMedia(rawPath);
     }
 
     void open(DesktopLaunchConfig config);

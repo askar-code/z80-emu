@@ -2,6 +2,7 @@ package dev.z8emu.machine.apple2;
 
 import dev.z8emu.machine.apple2.device.Apple2KeyboardDevice;
 import dev.z8emu.machine.apple2.device.Apple2SpeakerDevice;
+import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import dev.z8emu.platform.bus.ClockedCpuBus;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
@@ -15,19 +16,25 @@ public final class Apple2Bus extends ClockedCpuBus {
     private final Apple2KeyboardDevice keyboard;
     private final Apple2SpeakerDevice speaker;
     private final Apple2SoftSwitches softSwitches;
+    private final Apple2LanguageCard languageCard;
+    private final Apple2Disk2Controller disk2Controller;
 
     public Apple2Bus(
             TStateCounter clock,
             Apple2Memory memory,
             Apple2KeyboardDevice keyboard,
             Apple2SpeakerDevice speaker,
-            Apple2SoftSwitches softSwitches
+            Apple2SoftSwitches softSwitches,
+            Apple2LanguageCard languageCard,
+            Apple2Disk2Controller disk2Controller
     ) {
         super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
         this.keyboard = Objects.requireNonNull(keyboard, "keyboard");
         this.speaker = Objects.requireNonNull(speaker, "speaker");
         this.softSwitches = Objects.requireNonNull(softSwitches, "softSwitches");
+        this.languageCard = Objects.requireNonNull(languageCard, "languageCard");
+        this.disk2Controller = Objects.requireNonNull(disk2Controller, "disk2Controller");
     }
 
     @Override
@@ -37,7 +44,13 @@ public final class Apple2Bus extends ClockedCpuBus {
             return readIo(normalized);
         }
         if (isSlotRomAddress(normalized)) {
+            if (disk2Controller.handlesSlotRom(normalized)) {
+                return disk2Controller.readSlotRom(normalized);
+            }
             return 0xFF;
+        }
+        if (languageCard.handlesHighMemory(normalized) && languageCard.readsRam()) {
+            return languageCard.readHighMemory(normalized);
         }
         return memory.read(normalized);
     }
@@ -52,6 +65,10 @@ public final class Apple2Bus extends ClockedCpuBus {
         if (isSlotRomAddress(normalized)) {
             return;
         }
+        if (languageCard.handlesHighMemory(normalized) && languageCard.writesRam()) {
+            languageCard.writeHighMemory(normalized, value);
+            return;
+        }
         memory.write(normalized, value);
     }
 
@@ -64,6 +81,12 @@ public final class Apple2Bus extends ClockedCpuBus {
     }
 
     private int readIo(int address) {
+        if (disk2Controller.handlesIo(address)) {
+            return disk2Controller.readIo(address);
+        }
+        if (languageCard.handlesSwitch(address)) {
+            return languageCard.readSwitch(address);
+        }
         return switch (address) {
             case KEYBOARD_DATA -> keyboard.readData();
             case KEYBOARD_STROBE_CLEAR -> {
@@ -79,6 +102,14 @@ public final class Apple2Bus extends ClockedCpuBus {
     }
 
     private void writeIo(int address, int value) {
+        if (disk2Controller.handlesIo(address)) {
+            disk2Controller.writeIo(address, value);
+            return;
+        }
+        if (languageCard.handlesSwitch(address)) {
+            languageCard.writeSwitch(address);
+            return;
+        }
         switch (address) {
             case KEYBOARD_STROBE_CLEAR -> keyboard.clearStrobe();
             case SPEAKER_TOGGLE -> speaker.toggle();

@@ -9,17 +9,42 @@ public final class Apple2VideoDevice {
     public static final int CELL_HEIGHT = 8;
     public static final int FRAME_WIDTH = TEXT_COLUMNS * CELL_WIDTH;
     public static final int FRAME_HEIGHT = TEXT_ROWS * CELL_HEIGHT;
+    public static final int LORES_COLUMNS = TEXT_COLUMNS;
+    public static final int LORES_ROWS = 48;
+    public static final int LORES_CELL_HEIGHT = 4;
+    public static final int HIRES_ROWS = FRAME_HEIGHT;
+    public static final int HIRES_BYTE_COLUMNS = 40;
 
     private static final int FLASH_PHASE_FRAMES = 16;
+    private static final int MIXED_TEXT_ROWS = 4;
     private static final int BACKGROUND_ARGB = 0xFF101010;
     private static final int FOREGROUND_ARGB = 0xFF66FF66;
+    private static final int HIRES_FOREGROUND_ARGB = FOREGROUND_ARGB;
+    private static final int[] LORES_PALETTE = {
+            0xFF000000,
+            0xFFDD22DD,
+            0xFF000099,
+            0xFFDD22FF,
+            0xFF007722,
+            0xFF555555,
+            0xFF2222FF,
+            0xFF66AAFF,
+            0xFF885500,
+            0xFFFF6600,
+            0xFFAAAAAA,
+            0xFFFF99AA,
+            0xFF00CC00,
+            0xFFFFFF00,
+            0xFF44FFCC,
+            0xFFFFFFFF
+    };
 
     private final int frameWidth;
     private final int frameHeight;
 
     public Apple2VideoDevice(int frameWidth, int frameHeight) {
         if (frameWidth != FRAME_WIDTH || frameHeight != FRAME_HEIGHT) {
-            throw new IllegalArgumentException("Apple II text frame must be 280x192");
+            throw new IllegalArgumentException("Apple II frame must be 280x192");
         }
         this.frameWidth = frameWidth;
         this.frameHeight = frameHeight;
@@ -33,21 +58,93 @@ public final class Apple2VideoDevice {
     ) {
         FrameBuffer frame = new FrameBuffer(frameWidth, frameHeight);
         frame.clear(BACKGROUND_ARGB);
-        if (!softSwitches.textMode()) {
+        boolean flashInverse = flashInverse(currentTState, frameTStates);
+        int textPageBase = textPageBase(softSwitches);
+        if (softSwitches.textMode()) {
+            drawTextRows(frame, memory, textPageBase, 0, TEXT_ROWS, flashInverse);
             return frame;
         }
 
-        boolean flashInverse = flashInverse(currentTState, frameTStates);
-        int textPageBase = softSwitches.page2()
+        int graphicsHeight = softSwitches.mixedMode()
+                ? FRAME_HEIGHT - (MIXED_TEXT_ROWS * CELL_HEIGHT)
+                : FRAME_HEIGHT;
+        if (softSwitches.hires()) {
+            drawHiRes(frame, memory, hiresPageBase(softSwitches), graphicsHeight);
+        } else {
+            drawLoRes(frame, memory, textPageBase, graphicsHeight);
+        }
+        if (softSwitches.mixedMode()) {
+            drawTextRows(frame, memory, textPageBase, TEXT_ROWS - MIXED_TEXT_ROWS, TEXT_ROWS, flashInverse);
+        }
+        return frame;
+    }
+
+    private static int textPageBase(Apple2SoftSwitches softSwitches) {
+        return softSwitches.page2()
                 ? Apple2Memory.TEXT_PAGE_2_START
                 : Apple2Memory.TEXT_PAGE_1_START;
-        for (int row = 0; row < TEXT_ROWS; row++) {
+    }
+
+    private static int hiresPageBase(Apple2SoftSwitches softSwitches) {
+        return softSwitches.page2()
+                ? Apple2Memory.HIRES_PAGE_2_START
+                : Apple2Memory.HIRES_PAGE_1_START;
+    }
+
+    private static void drawTextRows(
+            FrameBuffer frame,
+            Apple2Memory memory,
+            int textPageBase,
+            int startRow,
+            int endRow,
+            boolean flashInverse
+    ) {
+        for (int row = startRow; row < endRow; row++) {
             for (int column = 0; column < TEXT_COLUMNS; column++) {
                 int address = Apple2Memory.textPageAddress(textPageBase, row, column);
                 drawCharacter(frame, column * CELL_WIDTH, row * CELL_HEIGHT, memory.read(address), flashInverse);
             }
         }
-        return frame;
+    }
+
+    private static void drawLoRes(FrameBuffer frame, Apple2Memory memory, int pageBase, int graphicsHeight) {
+        int loresRows = graphicsHeight / LORES_CELL_HEIGHT;
+        for (int row = 0; row < loresRows; row++) {
+            for (int column = 0; column < LORES_COLUMNS; column++) {
+                int address = Apple2Memory.loresPageAddress(pageBase, row, column);
+                int screenByte = memory.read(address);
+                int colorIndex = (row & 0x01) == 0 ? screenByte & 0x0F : (screenByte >>> 4) & 0x0F;
+                fillRect(
+                        frame,
+                        column * CELL_WIDTH,
+                        row * LORES_CELL_HEIGHT,
+                        CELL_WIDTH,
+                        LORES_CELL_HEIGHT,
+                        LORES_PALETTE[colorIndex]
+                );
+            }
+        }
+    }
+
+    private static void drawHiRes(FrameBuffer frame, Apple2Memory memory, int pageBase, int graphicsHeight) {
+        for (int y = 0; y < graphicsHeight; y++) {
+            for (int byteColumn = 0; byteColumn < HIRES_BYTE_COLUMNS; byteColumn++) {
+                int screenByte = memory.read(Apple2Memory.hiresPageAddress(pageBase, y, byteColumn));
+                for (int bit = 0; bit < 7; bit++) {
+                    boolean lit = ((screenByte >>> bit) & 0x01) != 0;
+                    int x = (byteColumn * CELL_WIDTH) + bit;
+                    frame.setPixel(x, y, lit ? HIRES_FOREGROUND_ARGB : BACKGROUND_ARGB);
+                }
+            }
+        }
+    }
+
+    private static void fillRect(FrameBuffer frame, int x, int y, int width, int height, int argb) {
+        for (int dy = 0; dy < height; dy++) {
+            for (int dx = 0; dx < width; dx++) {
+                frame.setPixel(x + dx, y + dy, argb);
+            }
+        }
     }
 
     private static boolean flashInverse(long currentTState, int frameTStates) {

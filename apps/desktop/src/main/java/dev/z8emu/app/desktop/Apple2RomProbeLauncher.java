@@ -3,6 +3,10 @@ package dev.z8emu.app.desktop;
 import dev.z8emu.machine.apple2.Apple2Machine;
 import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.apple2.Apple2VideoDevice;
+import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
+import dev.z8emu.machine.apple2.disk.Apple2DosDiskImageLoader;
+import dev.z8emu.platform.video.FrameBuffer;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.CRC32;
+import javax.imageio.ImageIO;
 
 public final class Apple2RomProbeLauncher {
     private static final long DEFAULT_MAX_INSTRUCTIONS = 2_000_000L;
@@ -22,7 +27,7 @@ public final class Apple2RomProbeLauncher {
     public static void main(String[] args) throws IOException {
         ProbeConfig config = parseArgs(args);
         if (config == null) {
-            System.err.println("Usage: Apple2RomProbeLauncher <system-rom|memory-image> [max-instructions] [--keys=<script>] [--expect-screen=<text>] [--key-poll-pc=<hex>]");
+            System.err.println("Usage: Apple2RomProbeLauncher <system-rom|memory-image> [max-instructions] [--disk=<disk.do|disk.dsk>] [--disk2-rom=<disk2.rom>] [--keys=<script>] [--expect-screen=<text>] [--key-poll-pc=<hex[,hex...]>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--poke-on-pc=<pc>:<addr>=<value>[,<addr>=<value>][;...]] [--profile-pc-callers=<pc[,pc...]>] [--profile-pc-top=<count>] [--dump-frame=<png>]");
             System.exit(2);
             return;
         }
@@ -34,15 +39,40 @@ public final class Apple2RomProbeLauncher {
         }
 
         Apple2Machine machine = Apple2Machine.fromLaunchImage(image);
+        if (config.disk2RomPath() != null) {
+            machine.loadDisk2SlotRom(readDisk2Rom(config.disk2RomPath()));
+        }
+        if (config.diskPath() != null) {
+            machine.insertDisk(Apple2DosDiskImageLoader.load(config.diskPath()));
+            if (config.disk2RomPath() != null) {
+                machine.bootDiskFromSlot6();
+            }
+        }
         String keyScript = decodeScript(config.keyScript());
         String expectedScreen = config.expectedScreen() == null ? null : decodeScript(config.expectedScreen());
         int injectedKeys = 0;
         boolean expectationMet = false;
+        int stopPc = -1;
+        long pokesApplied = 0;
+        long[] pcHits = config.profilePcTop() > 0 ? new long[0x10000] : null;
+        long[][] pcCallerHits = config.profilePcCallers().length > 0
+                ? new long[config.profilePcCallers().length][0x10000]
+                : null;
 
         long steps = 0;
         try {
             while (steps < config.maxInstructions()) {
-                if (shouldInjectKey(machine, keyScript, injectedKeys, config.keyPollPc())) {
+                int pc = machine.cpu().registers().pc();
+                if (pcHits != null) {
+                    pcHits[pc]++;
+                }
+                profilePcCaller(machine, pc, config.profilePcCallers(), pcCallerHits);
+                pokesApplied += applyPcPokes(machine, pc, config.pcPokes());
+                if (isPcMatch(pc, config.stopPcs())) {
+                    stopPc = pc;
+                    break;
+                }
+                if (shouldInjectKey(machine, keyScript, injectedKeys, config.keyPollPcs())) {
                     machine.board().keyboard().pressKey(normalizeKey(keyScript.charAt(injectedKeys)));
                     injectedKeys++;
                 }
@@ -57,17 +87,32 @@ public final class Apple2RomProbeLauncher {
             }
 
             if (expectedScreen != null && !expectationMet) {
-                System.out.println("status=expectation-not-met");
-                printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen);
+                System.out.println("status=" + (stopPc >= 0 ? "stop-pc-reached-expectation-not-met" : "expectation-not-met"));
+                printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen, config.watchAddrs());
+                printStopPc(stopPc);
+                printPokesApplied(pokesApplied);
+                printPcProfile(pcHits, config.profilePcTop());
+                printPcCallerProfile(pcCallerHits, config.profilePcCallers(), config.profilePcTop());
+                dumpFrameIfRequested(machine, config.dumpFramePath());
                 System.exit(1);
                 return;
             }
 
-            System.out.println("status=" + (expectationMet ? "expectation-met" : "max-instructions-reached"));
-            printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen);
+            System.out.println("status=" + status(expectationMet, stopPc));
+            printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen, config.watchAddrs());
+            printStopPc(stopPc);
+            printPokesApplied(pokesApplied);
+            printPcProfile(pcHits, config.profilePcTop());
+            printPcCallerProfile(pcCallerHits, config.profilePcCallers(), config.profilePcTop());
+            dumpFrameIfRequested(machine, config.dumpFramePath());
         } catch (Throwable failure) {
             System.out.println("status=failure");
-            printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen);
+            printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen, config.watchAddrs());
+            printStopPc(stopPc);
+            printPokesApplied(pokesApplied);
+            printPcProfile(pcHits, config.profilePcTop());
+            printPcCallerProfile(pcCallerHits, config.profilePcCallers(), config.profilePcTop());
+            dumpFrameIfRequested(machine, config.dumpFramePath());
             System.out.println("failure=" + failure.getClass().getName() + ": " + failure.getMessage());
             throw failure;
         }
@@ -81,14 +126,41 @@ public final class Apple2RomProbeLauncher {
         List<String> positional = new ArrayList<>(2);
         String keyScript = "";
         String expectedScreen = null;
-        int keyPollPc = DEFAULT_KEY_POLL_PC;
+        int[] keyPollPcs = new int[]{DEFAULT_KEY_POLL_PC};
+        int[] stopPcs = new int[0];
+        int[] watchAddrs = new int[0];
+        List<PcPoke> pcPokes = List.of();
+        int[] profilePcCallers = new int[0];
+        int profilePcTop = 0;
+        Path dumpFramePath = null;
+        Path diskPath = null;
+        Path disk2RomPath = null;
         for (String arg : args) {
             if (arg.startsWith("--keys=")) {
                 keyScript = arg.substring("--keys=".length());
             } else if (arg.startsWith("--expect-screen=")) {
                 expectedScreen = arg.substring("--expect-screen=".length());
             } else if (arg.startsWith("--key-poll-pc=")) {
-                keyPollPc = parseAddress(arg.substring("--key-poll-pc=".length()));
+                keyPollPcs = parseAddresses(arg.substring("--key-poll-pc=".length()));
+            } else if (arg.startsWith("--stop-pc=")) {
+                stopPcs = parseAddresses(arg.substring("--stop-pc=".length()));
+            } else if (arg.startsWith("--watch-addr=")) {
+                watchAddrs = parseAddresses(arg.substring("--watch-addr=".length()));
+            } else if (arg.startsWith("--poke-on-pc=")) {
+                pcPokes = parsePcPokes(arg.substring("--poke-on-pc=".length()));
+            } else if (arg.startsWith("--profile-pc-callers=")) {
+                profilePcCallers = parseAddresses(arg.substring("--profile-pc-callers=".length()));
+            } else if (arg.startsWith("--profile-pc-top=")) {
+                profilePcTop = Integer.parseInt(arg.substring("--profile-pc-top=".length()));
+                if (profilePcTop < 0) {
+                    return null;
+                }
+            } else if (arg.startsWith("--dump-frame=")) {
+                dumpFramePath = Path.of(arg.substring("--dump-frame=".length())).toAbsolutePath().normalize();
+            } else if (arg.startsWith("--disk=")) {
+                diskPath = Path.of(arg.substring("--disk=".length())).toAbsolutePath().normalize();
+            } else if (arg.startsWith("--disk2-rom=")) {
+                disk2RomPath = Path.of(arg.substring("--disk2-rom=".length())).toAbsolutePath().normalize();
             } else if (arg.startsWith("--")) {
                 return null;
             } else {
@@ -108,8 +180,24 @@ public final class Apple2RomProbeLauncher {
                 maxInstructions,
                 keyScript,
                 expectedScreen,
-                keyPollPc
+                keyPollPcs,
+                stopPcs,
+                watchAddrs,
+                pcPokes,
+                profilePcCallers,
+                profilePcTop,
+                dumpFramePath,
+                diskPath,
+                disk2RomPath
         );
+    }
+
+    private static byte[] readDisk2Rom(Path romPath) throws IOException {
+        byte[] rom = Files.readAllBytes(romPath);
+        if (rom.length != Apple2Disk2Controller.SLOT_ROM_SIZE) {
+            throw new IllegalArgumentException("Disk II slot ROM must be exactly 256 bytes: " + romPath);
+        }
+        return rom;
     }
 
     private static int parseAddress(String value) {
@@ -120,10 +208,93 @@ public final class Apple2RomProbeLauncher {
         return Integer.parseInt(normalized, 16) & 0xFFFF;
     }
 
-    private static boolean shouldInjectKey(Apple2Machine machine, String keyScript, int injectedKeys, int keyPollPc) {
+    private static int[] parseAddresses(String value) {
+        String[] parts = value.split(",");
+        int[] addresses = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            addresses[i] = parseAddress(parts[i]);
+        }
+        return addresses;
+    }
+
+    private static List<PcPoke> parsePcPokes(String value) {
+        List<PcPoke> pokes = new ArrayList<>();
+        for (String entry : value.split(";")) {
+            String[] parts = entry.split(":", 2);
+            if (parts.length != 2) {
+                throw new IllegalArgumentException("Invalid --poke-on-pc entry: " + entry);
+            }
+            int pc = parseAddress(parts[0]);
+            String[] assignments = parts[1].split(",");
+            int[] addresses = new int[assignments.length];
+            int[] values = new int[assignments.length];
+            for (int i = 0; i < assignments.length; i++) {
+                String[] assignment = assignments[i].split("=", 2);
+                if (assignment.length != 2) {
+                    throw new IllegalArgumentException("Invalid --poke-on-pc assignment: " + assignments[i]);
+                }
+                addresses[i] = parseAddress(assignment[0]);
+                values[i] = parseAddress(assignment[1]) & 0xFF;
+            }
+            pokes.add(new PcPoke(pc, addresses, values));
+        }
+        return pokes;
+    }
+
+    private static long applyPcPokes(Apple2Machine machine, int pc, List<PcPoke> pcPokes) {
+        long applied = 0;
+        for (PcPoke pcPoke : pcPokes) {
+            if (pcPoke.pc() == pc) {
+                for (int i = 0; i < pcPoke.addresses().length; i++) {
+                    machine.board().cpuBus().writeMemory(pcPoke.addresses()[i], pcPoke.values()[i]);
+                    applied++;
+                }
+            }
+        }
+        return applied;
+    }
+
+    private static void profilePcCaller(Apple2Machine machine, int pc, int[] targetPcs, long[][] callerHits) {
+        if (callerHits == null) {
+            return;
+        }
+        for (int i = 0; i < targetPcs.length; i++) {
+            if (pc == targetPcs[i]) {
+                callerHits[i][stackReturnAddress(machine)]++;
+            }
+        }
+    }
+
+    private static int stackReturnAddress(Apple2Machine machine) {
+        int sp = machine.cpu().registers().sp();
+        int low = machine.board().cpuBus().readMemory(0x0100 | ((sp + 1) & 0xFF));
+        int high = machine.board().cpuBus().readMemory(0x0100 | ((sp + 2) & 0xFF));
+        return ((high << 8) | low) & 0xFFFF;
+    }
+
+    private static boolean shouldInjectKey(Apple2Machine machine, String keyScript, int injectedKeys, int[] keyPollPcs) {
         return injectedKeys < keyScript.length()
                 && !machine.board().keyboard().strobe()
-                && machine.cpu().registers().pc() == keyPollPc;
+                && isPcMatch(machine.cpu().registers().pc(), keyPollPcs);
+    }
+
+    private static boolean isPcMatch(int pc, int[] pcs) {
+        for (int expectedPc : pcs) {
+            if (pc == expectedPc) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String status(boolean expectationMet, int stopPc) {
+        if (expectationMet) {
+            return "expectation-met";
+        }
+        if (stopPc >= 0) {
+            return "stop-pc-reached";
+        }
+        return "max-instructions-reached";
     }
 
     private static int normalizeKey(char key) {
@@ -193,7 +364,8 @@ public final class Apple2RomProbeLauncher {
             int imageLength,
             int keyCount,
             int injectedKeys,
-            String expectedScreen
+            String expectedScreen,
+            int[] watchAddrs
     ) {
         int pc = machine.cpu().registers().pc();
         int opcode = machine.board().cpuBus().readMemory(pc);
@@ -232,6 +404,99 @@ public final class Apple2RomProbeLauncher {
             int normalized = address & 0xFFFF;
             System.out.println(hex16(normalized) + ": " + hex8(machine.board().cpuBus().readMemory(normalized)));
         }
+
+        if (watchAddrs.length > 0) {
+            System.out.println("watchedBytes:");
+            for (int address : watchAddrs) {
+                System.out.println(hex16(address) + ": " + hex8(machine.board().cpuBus().readMemory(address)));
+            }
+        }
+    }
+
+    private static void printStopPc(int stopPc) {
+        if (stopPc >= 0) {
+            System.out.println("stopPc=0x" + hex16(stopPc));
+        }
+    }
+
+    private static void printPokesApplied(long pokesApplied) {
+        if (pokesApplied > 0) {
+            System.out.println("pokesApplied=" + pokesApplied);
+        }
+    }
+
+    private static void printPcProfile(long[] pcHits, int topCount) {
+        if (pcHits == null || topCount <= 0) {
+            return;
+        }
+        int printed = 0;
+        System.out.println("pcProfileTop:");
+        while (printed < topCount) {
+            int bestPc = -1;
+            long bestHits = 0;
+            for (int pc = 0; pc < pcHits.length; pc++) {
+                long hits = pcHits[pc];
+                if (hits > bestHits) {
+                    bestHits = hits;
+                    bestPc = pc;
+                }
+            }
+            if (bestPc < 0) {
+                break;
+            }
+            System.out.println("%02d|pc=0x%s hits=%d".formatted(printed + 1, hex16(bestPc), bestHits));
+            pcHits[bestPc] = 0;
+            printed++;
+        }
+    }
+
+    private static void printPcCallerProfile(long[][] callerHits, int[] targetPcs, int topCount) {
+        if (callerHits == null) {
+            return;
+        }
+        int callersToPrint = topCount > 0 ? topCount : 12;
+        for (int targetIndex = 0; targetIndex < targetPcs.length; targetIndex++) {
+            System.out.println("pcCallerProfile target=0x" + hex16(targetPcs[targetIndex]) + ":");
+            long[] hits = callerHits[targetIndex];
+            for (int printed = 0; printed < callersToPrint; printed++) {
+                int bestReturn = -1;
+                long bestHits = 0;
+                for (int returnAddress = 0; returnAddress < hits.length; returnAddress++) {
+                    if (hits[returnAddress] > bestHits) {
+                        bestHits = hits[returnAddress];
+                        bestReturn = returnAddress;
+                    }
+                }
+                if (bestReturn < 0) {
+                    break;
+                }
+                int callerResume = (bestReturn + 1) & 0xFFFF;
+                System.out.println("%02d|return=0x%s resume=0x%s hits=%d"
+                        .formatted(printed + 1, hex16(bestReturn), hex16(callerResume), bestHits));
+                hits[bestReturn] = 0;
+            }
+        }
+    }
+
+    private static void dumpFrameIfRequested(Apple2Machine machine, Path dumpFramePath) throws IOException {
+        if (dumpFramePath == null) {
+            return;
+        }
+        Path parent = dumpFramePath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        FrameBuffer frame = machine.board().renderVideoFrame();
+        writePng(frame, dumpFramePath);
+        System.out.println("frameDump=" + dumpFramePath);
+        System.out.println("frameSize=" + frame.width() + "x" + frame.height());
+        System.out.println("frameCrc32=0x" + frameCrc32Hex(frame));
+    }
+
+    private static void writePng(FrameBuffer frame, Path target) throws IOException {
+        BufferedImage image = new BufferedImage(frame.width(), frame.height(), BufferedImage.TYPE_INT_ARGB);
+        image.setRGB(0, 0, frame.width(), frame.height(), frame.pixels(), 0, frame.width());
+        ImageIO.write(image, "png", target.toFile());
     }
 
     private static boolean screenContains(Apple2Machine machine, String expectedScreen) {
@@ -283,6 +548,17 @@ public final class Apple2RomProbeLauncher {
         return "%08X".formatted(crc32.getValue());
     }
 
+    private static String frameCrc32Hex(FrameBuffer frame) {
+        CRC32 crc32 = new CRC32();
+        for (int pixel : frame.pixels()) {
+            crc32.update((pixel >>> 24) & 0xFF);
+            crc32.update((pixel >>> 16) & 0xFF);
+            crc32.update((pixel >>> 8) & 0xFF);
+            crc32.update(pixel & 0xFF);
+        }
+        return "%08X".formatted(crc32.getValue());
+    }
+
     private static String hex8(int value) {
         return "%02X".formatted(value & 0xFF);
     }
@@ -304,7 +580,22 @@ public final class Apple2RomProbeLauncher {
             long maxInstructions,
             String keyScript,
             String expectedScreen,
-            int keyPollPc
+            int[] keyPollPcs,
+            int[] stopPcs,
+            int[] watchAddrs,
+            List<PcPoke> pcPokes,
+            int[] profilePcCallers,
+            int profilePcTop,
+            Path dumpFramePath,
+            Path diskPath,
+            Path disk2RomPath
+    ) {
+    }
+
+    private record PcPoke(
+            int pc,
+            int[] addresses,
+            int[] values
     ) {
     }
 }

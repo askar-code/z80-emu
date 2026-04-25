@@ -2,6 +2,9 @@ package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.apple2.Apple2Machine;
 import dev.z8emu.machine.apple2.Apple2Memory;
+import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
+import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
+import dev.z8emu.machine.apple2.disk.Apple2DosDiskImageLoader;
 import dev.z8emu.machine.cpc.CpcMachine;
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.cpc.disk.CpcDskLoader;
@@ -72,7 +75,7 @@ final class DesktopMachineDefinitions {
     }
 
     static String usage() {
-        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|apple2|apple2plus <rom-or-memory-image> [media]";
+        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|apple2|apple2plus [machine-options] <rom-or-memory-image> [media]";
     }
 
     static DesktopLaunchConfig demoConfig() {
@@ -81,6 +84,7 @@ final class DesktopMachineDefinitions {
                 new byte[Spectrum48kMemoryMap.ROM_SIZE],
                 true,
                 null,
+                DesktopLaunchOptions.empty(),
                 DesktopMachineKind.SPECTRUM48
         );
     }
@@ -276,6 +280,8 @@ final class DesktopMachineDefinitions {
     }
 
     private static final class Apple2Definition implements DesktopMachineDefinition {
+        private static final int DEFAULT_PROGRAM_LOAD_ADDRESS = 0x0800;
+
         @Override
         public DesktopMachineKind kind() {
             return DesktopMachineKind.APPLE2;
@@ -290,20 +296,74 @@ final class DesktopMachineDefinitions {
 
         @Override
         public void validateArgumentCount(int positionalCount) {
-            if (positionalCount > 1) {
+            if (positionalCount > 2) {
                 throw new IllegalArgumentException("Usage: " + usage());
             }
         }
 
         @Override
+        public void validateLaunchOptions(DesktopLaunchOptions options, int positionalCount) {
+            if (options.hasLoadAddress() && positionalCount < 2) {
+                throw new IllegalArgumentException("--load-address requires an Apple II raw program argument");
+            }
+        }
+
+        @Override
+        public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath, DesktopLaunchOptions options) throws IOException {
+            Path mediaPath = Path.of(rawPath).toAbsolutePath().normalize();
+            byte[] programImage = Files.readAllBytes(mediaPath);
+            if (!options.hasLoadAddress() && programImage.length == Apple2DosDiskImage.IMAGE_SIZE) {
+                return new DesktopLaunchConfig.LoadedApple2Disk(
+                        mediaPath.toString(),
+                        Apple2DosDiskImageLoader.load(mediaPath)
+                );
+            }
+            if (programImage.length == 0) {
+                throw new IllegalArgumentException("Apple II raw program must not be empty: " + mediaPath);
+            }
+            return new DesktopLaunchConfig.LoadedApple2Program(
+                    mediaPath.toString(),
+                    programImage,
+                    options.loadAddressOr(DEFAULT_PROGRAM_LOAD_ADDRESS)
+            );
+        }
+
+        @Override
         public void open(DesktopLaunchConfig config) {
             Apple2Machine machine = Apple2Machine.fromLaunchImage(config.romImage());
+            if (config.launchOptions().hasDisk2RomPath()) {
+                machine.loadDisk2SlotRom(loadDisk2Rom(config.launchOptions().disk2RomPath()));
+            }
+            config.loadedMedia(DesktopLaunchConfig.LoadedApple2Program.class)
+                    .ifPresent(program -> machine.loadProgram(program.programImage(), program.loadAddress()));
+            config.loadedMedia(DesktopLaunchConfig.LoadedApple2Disk.class)
+                    .ifPresent(disk -> machine.insertDisk(disk.diskImage()));
+            if (config.loadedMedia(DesktopLaunchConfig.LoadedApple2Disk.class).isPresent()
+                    && config.launchOptions().hasDisk2RomPath()
+                    && !config.launchOptions().hasStartAddress()) {
+                machine.bootDiskFromSlot6();
+            }
+            if (config.launchOptions().hasStartAddress()) {
+                machine.setProgramCounter(config.launchOptions().startAddress());
+            }
             SwingUtilities.invokeLater(() -> Apple2DesktopRunner.open(machine, config));
         }
 
         @Override
         public String usage() {
-            return "--machine=apple2|apple2plus <system-rom|memory-image>";
+            return "--machine=apple2|apple2plus [--load-address=0800] [--start-address=0800] [--disk2-rom=disk2.rom] <system-rom|memory-image> [program.bin|disk.do|disk.dsk]";
+        }
+
+        private static byte[] loadDisk2Rom(Path romPath) {
+            try {
+                byte[] rom = Files.readAllBytes(romPath);
+                if (rom.length != Apple2Disk2Controller.SLOT_ROM_SIZE) {
+                    throw new IllegalArgumentException("Disk II slot ROM must be exactly 256 bytes: " + romPath);
+                }
+                return rom;
+            } catch (IOException e) {
+                throw new IllegalArgumentException("Cannot read Disk II slot ROM: " + romPath, e);
+            }
         }
     }
 }

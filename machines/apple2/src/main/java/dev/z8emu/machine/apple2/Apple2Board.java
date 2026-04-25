@@ -2,6 +2,7 @@ package dev.z8emu.machine.apple2;
 
 import dev.z8emu.machine.apple2.device.Apple2KeyboardDevice;
 import dev.z8emu.machine.apple2.device.Apple2SpeakerDevice;
+import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.machine.VideoMachineBoard;
@@ -15,6 +16,8 @@ public final class Apple2Board implements VideoMachineBoard {
     private final Apple2KeyboardDevice keyboard;
     private final Apple2SpeakerDevice speaker;
     private final Apple2SoftSwitches softSwitches;
+    private final Apple2LanguageCard languageCard;
+    private final Apple2Disk2Controller disk2Controller;
     private final Apple2VideoDevice video;
     private final Apple2Bus bus;
     private final TStateCounter clock;
@@ -26,8 +29,10 @@ public final class Apple2Board implements VideoMachineBoard {
         this.keyboard = new Apple2KeyboardDevice();
         this.speaker = new Apple2SpeakerDevice(modelConfig.cpuClockHz());
         this.softSwitches = new Apple2SoftSwitches();
+        this.languageCard = new Apple2LanguageCard();
+        this.disk2Controller = new Apple2Disk2Controller(this.clock);
         this.video = new Apple2VideoDevice(modelConfig.frameWidth(), modelConfig.frameHeight());
-        this.bus = new Apple2Bus(this.clock, memory, keyboard, speaker, softSwitches);
+        this.bus = new Apple2Bus(this.clock, memory, keyboard, speaker, softSwitches, languageCard, disk2Controller);
     }
 
     @Override
@@ -41,6 +46,8 @@ public final class Apple2Board implements VideoMachineBoard {
         keyboard.reset();
         speaker.reset();
         softSwitches.reset();
+        languageCard.resetSwitches();
+        disk2Controller.reset();
     }
 
     @Override
@@ -79,5 +86,17 @@ public final class Apple2Board implements VideoMachineBoard {
 
     public Apple2SoftSwitches softSwitches() {
         return softSwitches;
+    }
+
+    public Apple2LanguageCard languageCard() {
+        return languageCard;
+    }
+
+    public Apple2Disk2Controller disk2Controller() {
+        return disk2Controller;
+    }
+
+    public void loadDisk2SlotRom(byte[] slotRom) {
+        disk2Controller.loadSlotRom(slotRom);
     }
 }
