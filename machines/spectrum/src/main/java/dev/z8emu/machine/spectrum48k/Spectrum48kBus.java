@@ -7,6 +7,7 @@ import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.platform.bus.ClockedCpuBus;
+import dev.z8emu.platform.bus.io.IoAddressSpace;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
@@ -20,6 +21,7 @@ public final class Spectrum48kBus extends ClockedCpuBus {
     private final BeeperDevice beeper;
     private final TapeDevice tape;
     private final SpectrumContentionModel contentionModel;
+    private final IoAddressSpace ports;
 
     public Spectrum48kBus(
             TStateCounter clock,
@@ -40,6 +42,7 @@ public final class Spectrum48kBus extends ClockedCpuBus {
                 CONTENTION_START_48K,
                 T_STATES_PER_SCANLINE_48K
         );
+        this.ports = buildPortMap();
     }
 
     @Override
@@ -69,24 +72,12 @@ public final class Spectrum48kBus extends ClockedCpuBus {
 
     @Override
     public int readPort(int port) {
-        if ((port & 0xFF) == 0xFE) {
-            return ula.readPortFe(port, keyboard, tape);
-        }
-
-        return ula.readFloatingBus(memory, clockValue());
+        return ports.read(port, clockValue(), 0);
     }
 
     @Override
     public int readPort(int port, int phaseTStates) {
-        if ((port & 0xFF) == 0xFE) {
-            long sampleTime = clockValue()
-                    + Math.max(0, phaseTStates)
-                    + readPortWaitStates(port, phaseTStates);
-            tape.syncToTState(sampleTime);
-            return ula.readPortFe(port, keyboard, tape);
-        }
-
-        return ula.readFloatingBus(memory, clockValue() + Math.max(0, phaseTStates) + readPortWaitStates(port, phaseTStates));
+        return ports.read(port, clockValue() + readPortWaitStates(port, phaseTStates), phaseTStates);
     }
 
     @Override
@@ -96,10 +87,7 @@ public final class Spectrum48kBus extends ClockedCpuBus {
 
     @Override
     public void writePort(int port, int value, int phaseTStates) {
-        if ((port & 0xFF) == 0xFE) {
-            long eventTime = clockValue() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
-            ula.writePortFe(value, eventTime, beeper, memory);
-        }
+        ports.write(port, value, clockValue() + writePortWaitStates(port, value, phaseTStates), phaseTStates);
     }
 
     @Override
@@ -115,5 +103,18 @@ public final class Spectrum48kBus extends ClockedCpuBus {
     @Override
     public void onRefresh(int irValue) {
         ula.onRefreshAddress(irValue);
+    }
+
+    private IoAddressSpace buildPortMap() {
+        IoAddressSpace portMap = new IoAddressSpace(
+                access -> ula.readFloatingBus(memory, access.effectiveTState())
+        );
+        portMap.mapReadWrite(
+                "spectrum.ula-fe",
+                SpectrumUlaDevice.portSelector(),
+                access -> ula.readPortFe(access, keyboard, tape),
+                (access, value) -> ula.writePortFe(access, value, beeper, memory)
+        );
+        return portMap;
     }
 }

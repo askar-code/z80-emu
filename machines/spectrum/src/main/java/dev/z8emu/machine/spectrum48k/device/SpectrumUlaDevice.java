@@ -1,6 +1,8 @@
 package dev.z8emu.machine.spectrum48k.device;
 
 import dev.z8emu.machine.spectrum.memory.SpectrumDisplayMemory;
+import dev.z8emu.platform.bus.io.IoAccess;
+import dev.z8emu.platform.bus.io.IoSelector;
 import dev.z8emu.platform.device.TimedDevice;
 import dev.z8emu.platform.video.FrameBuffer;
 
@@ -22,6 +24,7 @@ public final class SpectrumUlaDevice implements TimedDevice {
     private static final int VISIBLE_T_STATES_PER_LINE = FRAME_WIDTH / 2;
     private static final int MASKABLE_INTERRUPT_TSTATES = 32;
     private static final int INITIAL_EVENT_CAPACITY = 256;
+    private static final IoSelector PORT_FE_SELECTOR = IoSelector.mask(0x00FF, 0x00FE);
 
     private static final int[] NORMAL_PALETTE = {
             0xFF000000,
@@ -94,9 +97,18 @@ public final class SpectrumUlaDevice implements TimedDevice {
                 : FLOATING_BUS_DISPLAY_START_48K;
     }
 
+    public static IoSelector portSelector() {
+        return PORT_FE_SELECTOR;
+    }
+
     public int readPortFe(int port, KeyboardMatrixDevice keyboard, TapeDevice tape) {
         int value = portFeDefaultValue & keyboard.readSelectedRows(port);
         return tape.applyEarBitToPortRead(value);
+    }
+
+    public int readPortFe(IoAccess access, KeyboardMatrixDevice keyboard, TapeDevice tape) {
+        tape.syncToTState(access.effectiveTState());
+        return readPortFe(access.address(), keyboard, tape);
     }
 
     public void writePortFe(int value, long eventTState, BeeperDevice beeper) {
@@ -109,6 +121,10 @@ public final class SpectrumUlaDevice implements TimedDevice {
         portFeDefaultValue = (value & 0x10) != 0 ? 0xFF : 0xBF;
         appendBorderEvent((int) (elapsedTStates % frameTStates), borderColor);
         beeper.writeFromPortFe(value);
+    }
+
+    public void writePortFe(IoAccess access, int value, BeeperDevice beeper, SpectrumDisplayMemory memory) {
+        writePortFe(value, access.effectiveTState(), beeper, memory);
     }
 
     public int borderColor() {

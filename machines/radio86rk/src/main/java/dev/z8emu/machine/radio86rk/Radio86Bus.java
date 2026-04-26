@@ -1,26 +1,28 @@
 package dev.z8emu.machine.radio86rk;
 
-import dev.z8emu.machine.radio86rk.device.Radio86KeyboardDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86DmaDevice;
+import dev.z8emu.machine.radio86rk.device.Radio86KeyboardDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.platform.bus.ClockedCpuBus;
+import dev.z8emu.platform.bus.io.IoAccess;
+import dev.z8emu.platform.bus.io.IoAddressSpace;
+import dev.z8emu.platform.bus.io.IoSelector;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
+import java.util.function.IntUnaryOperator;
 
 public final class Radio86Bus extends ClockedCpuBus {
     private static final int KEYBOARD_BASE = 0x8000;
-    private static final int KEYBOARD_LIMIT = 0x9FFF;
     private static final int VIDEO_BASE = 0xC000;
-    private static final int VIDEO_LIMIT = 0xDFFF;
     private static final int DMA_BASE = 0xE000;
-    private static final int DMA_LIMIT = 0xFFFF;
 
     private final Radio86Memory memory;
     private final Radio86KeyboardDevice keyboard;
     private final Radio86DmaDevice dma;
     private final Radio86VideoDevice video;
     private final AccessTraceListener traceListener;
+    private final IoAddressSpace memoryMappedIo;
 
     public Radio86Bus(
             TStateCounter clock,
@@ -46,6 +48,7 @@ public final class Radio86Bus extends ClockedCpuBus {
         this.dma = Objects.requireNonNull(dma, "dma");
         this.video = Objects.requireNonNull(video, "video");
         this.traceListener = traceListener;
+        this.memoryMappedIo = buildMemoryMappedIo();
     }
 
     @Override
@@ -57,22 +60,7 @@ public final class Radio86Bus extends ClockedCpuBus {
         if (normalized >= Radio86Memory.ROM_START) {
             return memory.readTopRom(normalized);
         }
-        if (isKeyboardRegister(normalized)) {
-            int value = keyboard.readRegister(normalized & 0x03);
-            traceRead(normalized, value);
-            return value;
-        }
-        if (isVideoRegister(normalized)) {
-            int value = video.readRegister(normalized & 0x01);
-            traceRead(normalized, value);
-            return value;
-        }
-        if (isDmaRegister(normalized)) {
-            int value = dma.readRegister(normalized & 0x0F);
-            traceRead(normalized, value);
-            return value;
-        }
-        return 0xFF;
+        return memoryMappedIo.read(normalized, clockValue(), 0);
     }
 
     @Override
@@ -82,20 +70,7 @@ public final class Radio86Bus extends ClockedCpuBus {
             memory.writeLowMemory(normalized, value);
             return;
         }
-        if (isKeyboardRegister(normalized)) {
-            keyboard.writeRegister(normalized & 0x03, value);
-            traceWrite(normalized, value);
-            return;
-        }
-        if (isVideoRegister(normalized)) {
-            video.writeRegister(normalized & 0x01, value);
-            traceWrite(normalized, value);
-            return;
-        }
-        if (isDmaRegister(normalized)) {
-            dma.writeRegister(normalized & 0x0F, value);
-            traceWrite(normalized, value);
-        }
+        memoryMappedIo.write(normalized, value, clockValue(), 0);
     }
 
     @Override
@@ -108,25 +83,43 @@ public final class Radio86Bus extends ClockedCpuBus {
         writeMemory(portToMemoryAddress(port), value);
     }
 
-    private boolean isKeyboardRegister(int address) {
-        return address >= KEYBOARD_BASE
-                && address <= KEYBOARD_LIMIT
-                && (address & 0x1FFC) == 0;
-    }
-
-    private boolean isVideoRegister(int address) {
-        return address >= VIDEO_BASE
-                && address <= VIDEO_LIMIT
-                && (address & 0x1FFE) == 0;
-    }
-
-    private boolean isDmaRegister(int address) {
-        return address >= DMA_BASE && address <= DMA_LIMIT;
-    }
-
     private int portToMemoryAddress(int port) {
         int offset = port & 0xFF;
         return (offset << 8) | offset;
+    }
+
+    private IoAddressSpace buildMemoryMappedIo() {
+        IoAddressSpace ioMap = IoAddressSpace.withUnmappedValue(0xFF);
+        ioMap.mapReadWrite(
+                "radio86.keyboard",
+                IoSelector.mask(0xFFFC, KEYBOARD_BASE, 0x0003, 0),
+                access -> readRegister(access, keyboard::readRegister),
+                (access, value) -> writeRegister(access, value, keyboard::writeRegister)
+        );
+        ioMap.mapReadWrite(
+                "radio86.video",
+                IoSelector.mask(0xFFFE, VIDEO_BASE, 0x0001, 0),
+                access -> readRegister(access, video::readRegister),
+                (access, value) -> writeRegister(access, value, video::writeRegister)
+        );
+        ioMap.mapReadWrite(
+                "radio86.dma",
+                IoSelector.mask(0xE000, DMA_BASE, 0x000F, 0),
+                access -> readRegister(access, dma::readRegister),
+                (access, value) -> writeRegister(access, value, dma::writeRegister)
+        );
+        return ioMap;
+    }
+
+    private int readRegister(IoAccess access, IntUnaryOperator reader) {
+        int value = reader.applyAsInt(access.offset());
+        traceRead(access.address(), value);
+        return value;
+    }
+
+    private void writeRegister(IoAccess access, int value, RegisterWriter writer) {
+        writer.write(access.offset(), value);
+        traceWrite(access.address(), value);
     }
 
     private void traceRead(int address, int value) {
@@ -145,5 +138,10 @@ public final class Radio86Bus extends ClockedCpuBus {
         void onRead(int address, int value, long tState);
 
         void onWrite(int address, int value, long tState);
+    }
+
+    @FunctionalInterface
+    private interface RegisterWriter {
+        void write(int register, int value);
     }
 }

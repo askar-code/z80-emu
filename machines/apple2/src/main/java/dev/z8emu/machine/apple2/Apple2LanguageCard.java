@@ -1,8 +1,9 @@
 package dev.z8emu.machine.apple2;
 
-public final class Apple2LanguageCard {
+import dev.z8emu.platform.bus.io.IoAccess;
+
+public final class Apple2LanguageCard implements Apple2SlotCard {
     private static final int SWITCH_START = 0xC080;
-    private static final int SWITCH_END_EXCLUSIVE = 0xC090;
     private static final int BANKED_START = 0xD000;
     private static final int BANKED_END_EXCLUSIVE = 0xE000;
     private static final int COMMON_START = 0xE000;
@@ -27,18 +28,15 @@ public final class Apple2LanguageCard {
         lastWriteEnableSwitch = -1;
     }
 
-    public boolean handlesSwitch(int address) {
-        int normalized = address & 0xFFFF;
-        return normalized >= SWITCH_START && normalized < SWITCH_END_EXCLUSIVE;
-    }
-
-    public int readSwitch(int address) {
-        applySwitch(address);
+    @Override
+    public int readC0x(IoAccess access) {
+        applySwitch(SWITCH_START + access.offset());
         return 0x00;
     }
 
-    public void writeSwitch(int address) {
-        applySwitch(address);
+    @Override
+    public void writeC0x(IoAccess access, int value) {
+        applySwitch(SWITCH_START + access.offset());
     }
 
     public boolean handlesHighMemory(int address) {

@@ -1,14 +1,17 @@
 package dev.z8emu.machine.spectrum128k;
 
 import dev.z8emu.chip.ay.Ay38912Device;
-import dev.z8emu.machine.spectrum.model.SpectrumPagingController;
 import dev.z8emu.machine.spectrum.model.SpectrumContentionModel;
+import dev.z8emu.machine.spectrum.model.SpectrumPagingController;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.platform.bus.ClockedCpuBus;
+import dev.z8emu.platform.bus.io.IoAccess;
+import dev.z8emu.platform.bus.io.IoAddressSpace;
+import dev.z8emu.platform.bus.io.IoSelector;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
@@ -28,6 +31,7 @@ public final class Spectrum128Bus extends ClockedCpuBus {
     private final TapeDevice tape;
     private final Ay38912Device ay;
     private final SpectrumContentionModel contentionModel;
+    private final IoAddressSpace ports;
 
     public Spectrum128Bus(
             TStateCounter clock,
@@ -52,6 +56,7 @@ public final class Spectrum128Bus extends ClockedCpuBus {
                 CONTENTION_START_128K,
                 T_STATES_PER_SCANLINE_128K
         );
+        this.ports = buildPortMap();
     }
 
     @Override
@@ -81,30 +86,12 @@ public final class Spectrum128Bus extends ClockedCpuBus {
 
     @Override
     public int readPort(int port) {
-        if ((port & 0xFF) == 0xFE) {
-            return ula.readPortFe(port, keyboard, tape);
-        }
-        if (isAyRegisterPort(port)) {
-            return ay.readSelectedRegister();
-        }
-
-        return ula.readFloatingBus(memory, clockValue());
+        return ports.read(port, clockValue(), 0);
     }
 
     @Override
     public int readPort(int port, int phaseTStates) {
-        if ((port & 0xFF) == 0xFE) {
-            long sampleTime = clockValue()
-                    + Math.max(0, phaseTStates)
-                    + readPortWaitStates(port, phaseTStates);
-            tape.syncToTState(sampleTime);
-            return ula.readPortFe(port, keyboard, tape);
-        }
-        if (isAyRegisterPort(port)) {
-            return ay.readSelectedRegister();
-        }
-
-        return ula.readFloatingBus(memory, clockValue() + Math.max(0, phaseTStates) + readPortWaitStates(port, phaseTStates));
+        return ports.read(port, clockValue() + readPortWaitStates(port, phaseTStates), phaseTStates);
     }
 
     @Override
@@ -114,24 +101,7 @@ public final class Spectrum128Bus extends ClockedCpuBus {
 
     @Override
     public void writePort(int port, int value, int phaseTStates) {
-        if (pagingController.handlesPortWrite(port)) {
-            long eventTime = clockValue() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
-            ula.syncToTState(eventTime, memory);
-            pagingController.handlePortWrite(port, value);
-            return;
-        }
-        if ((port & 0xFF) == 0xFE) {
-            long eventTime = clockValue() + Math.max(0, phaseTStates) + writePortWaitStates(port, value, phaseTStates);
-            ula.writePortFe(value, eventTime, beeper, memory);
-            return;
-        }
-        if (isAyRegisterPort(port)) {
-            ay.selectRegister(value);
-            return;
-        }
-        if (isAyDataPort(port)) {
-            ay.writeSelectedRegister(value);
-        }
+        ports.write(port, value, clockValue() + writePortWaitStates(port, value, phaseTStates), phaseTStates);
     }
 
     @Override
@@ -149,11 +119,41 @@ public final class Spectrum128Bus extends ClockedCpuBus {
         ula.onRefreshAddress(irValue);
     }
 
-    private boolean isAyRegisterPort(int port) {
-        return (port & AY_REGISTER_PORT_MASK) == AY_REGISTER_PORT_VALUE;
+    private IoAddressSpace buildPortMap() {
+        IoAddressSpace portMap = new IoAddressSpace(
+                access -> ula.readFloatingBus(memory, access.effectiveTState())
+        );
+        portMap.mapWrite(
+                "spectrum128.paging-7ffd",
+                pagingController.portSelector(),
+                this::writePagingPort,
+                100
+        );
+        portMap.mapReadWrite(
+                "spectrum128.ula-fe",
+                SpectrumUlaDevice.portSelector(),
+                access -> ula.readPortFe(access, keyboard, tape),
+                (access, value) -> ula.writePortFe(access, value, beeper, memory),
+                90
+        );
+        portMap.mapReadWrite(
+                "spectrum128.ay-register",
+                IoSelector.mask(AY_REGISTER_PORT_MASK, AY_REGISTER_PORT_VALUE),
+                access -> ay.readSelectedRegister(),
+                (access, value) -> ay.selectRegister(value),
+                80
+        );
+        portMap.mapWrite(
+                "spectrum128.ay-data",
+                IoSelector.mask(AY_DATA_PORT_MASK, AY_DATA_PORT_VALUE),
+                (access, value) -> ay.writeSelectedRegister(value),
+                70
+        );
+        return portMap;
     }
 
-    private boolean isAyDataPort(int port) {
-        return (port & AY_DATA_PORT_MASK) == AY_DATA_PORT_VALUE;
+    private void writePagingPort(IoAccess access, int value) {
+        ula.syncToTState(access.effectiveTState(), memory);
+        pagingController.handlePortWrite(access.address(), value);
     }
 }

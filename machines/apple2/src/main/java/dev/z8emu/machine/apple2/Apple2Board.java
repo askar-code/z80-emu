@@ -18,6 +18,7 @@ public final class Apple2Board implements VideoMachineBoard {
     private final Apple2SoftSwitches softSwitches;
     private final Apple2LanguageCard languageCard;
     private final Apple2Disk2Controller disk2Controller;
+    private final Apple2SlotBus slotBus;
     private final Apple2VideoDevice video;
     private final Apple2Bus bus;
     private final TStateCounter clock;
@@ -31,8 +32,11 @@ public final class Apple2Board implements VideoMachineBoard {
         this.softSwitches = new Apple2SoftSwitches();
         this.languageCard = new Apple2LanguageCard();
         this.disk2Controller = new Apple2Disk2Controller(this.clock);
+        this.slotBus = new Apple2SlotBus();
+        this.slotBus.install(0, languageCard);
+        this.slotBus.install(Apple2Disk2Controller.SLOT, disk2Controller);
         this.video = new Apple2VideoDevice(modelConfig.frameWidth(), modelConfig.frameHeight());
-        this.bus = new Apple2Bus(this.clock, memory, keyboard, speaker, softSwitches, languageCard, disk2Controller);
+        this.bus = new Apple2Bus(this.clock, memory, keyboard, speaker, softSwitches, languageCard, slotBus);
     }
 
     @Override
@@ -94,6 +98,10 @@ public final class Apple2Board implements VideoMachineBoard {
 
     public Apple2Disk2Controller disk2Controller() {
         return disk2Controller;
+    }
+
+    public Apple2SlotBus slotBus() {
+        return slotBus;
     }
 
     public void loadDisk2SlotRom(byte[] slotRom) {

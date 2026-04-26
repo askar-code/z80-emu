@@ -209,6 +209,45 @@ public interface CpuBus {
 
 The concrete implementation may expose more detailed access classifications such as opcode fetch vs data read, but the CPU must still go through the bus for every externally visible cycle.
 
+### I/O Address Space Dispatch
+
+Machine buses may use a shared I/O address-space helper to keep device routing
+declarative. Devices or board wiring should describe:
+
+- which addresses or ports they decode
+- whether they support read, write, or both
+- how CPU-visible addresses map to local device offsets
+- relative priority when real hardware has intentionally overlapping decodes
+
+The current implementation may use a simple ordered or priority-aware list of
+mapping entries. This is acceptable while a machine has a small number of
+devices, because I/O traffic is usually much less frequent than opcode fetches
+and normal memory accesses. This also keeps bring-up code easy to inspect while
+hardware behavior is still being corrected.
+
+If profiling shows I/O dispatch becoming expensive, or if a machine grows to
+dozens or hundreds of dynamically configured devices, switch the address space
+to a compiled table dispatch:
+
+- build the map after all devices are mounted from board defaults, command-line
+  options, or text config
+- keep separate read and write dispatch tables
+- index tables by the normalized 16-bit port or memory-mapped I/O address
+- preserve priority and overlap validation during the compile/freeze step
+- precompute local offsets where possible, or store a compact resolved target
+  for addresses whose offset still depends on address bits
+- keep unmapped reads and dropped writes as explicit default targets
+
+For a 16-bit address space, two arrays of 65,536 entries are small enough for
+desktop emulator use. The hot path then becomes array lookup plus handler call
+instead of a linear selector scan. If profiling also shows allocation pressure,
+avoid creating per-access objects in the compiled path and pass primitive
+address, offset, time, and phase values directly to handlers.
+
+Do not add this optimization preemptively. The linear form is the readable
+source of truth; table dispatch is the compiled runtime form to introduce when
+larger dynamic configurations or max-speed runs justify it.
+
 ### Machine Runtime
 
 The runtime owns:

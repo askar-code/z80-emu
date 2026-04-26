@@ -1,11 +1,14 @@
 package dev.z8emu.machine.spectrum.model;
 
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
+import dev.z8emu.platform.bus.io.IoSelector;
 import java.util.Objects;
 
 public final class SpectrumPagingController {
     private static final int PAGING_PORT_MASK = 0x8002;
+    private static final int PAGING_PORT_VALUE = 0x0000;
     private static final int BANKM_SYSTEM_VARIABLE = 0x5B5C;
+    private static final IoSelector PAGING_PORT_SELECTOR = IoSelector.mask(PAGING_PORT_MASK, PAGING_PORT_VALUE);
 
     private final SpectrumModelConfig config;
     private final SpectrumMachineState state;
@@ -51,8 +54,12 @@ public final class SpectrumPagingController {
         return config.pagingSupported() && isPagingPort(port);
     }
 
+    public IoSelector portSelector() {
+        return PAGING_PORT_SELECTOR;
+    }
+
     private boolean isPagingPort(int port) {
-        return (port & PAGING_PORT_MASK) == 0;
+        return PAGING_PORT_SELECTOR.matches(port);
     }
 
     private void syncBankmSystemVariable(int pagingValue) {

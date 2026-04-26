@@ -2,8 +2,9 @@ package dev.z8emu.machine.apple2;
 
 import dev.z8emu.machine.apple2.device.Apple2KeyboardDevice;
 import dev.z8emu.machine.apple2.device.Apple2SpeakerDevice;
-import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import dev.z8emu.platform.bus.ClockedCpuBus;
+import dev.z8emu.platform.bus.io.IoAddressSpace;
+import dev.z8emu.platform.bus.io.IoSelector;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
@@ -17,7 +18,8 @@ public final class Apple2Bus extends ClockedCpuBus {
     private final Apple2SpeakerDevice speaker;
     private final Apple2SoftSwitches softSwitches;
     private final Apple2LanguageCard languageCard;
-    private final Apple2Disk2Controller disk2Controller;
+    private final Apple2SlotBus slotBus;
+    private final IoAddressSpace ioPorts;
 
     public Apple2Bus(
             TStateCounter clock,
@@ -26,7 +28,7 @@ public final class Apple2Bus extends ClockedCpuBus {
             Apple2SpeakerDevice speaker,
             Apple2SoftSwitches softSwitches,
             Apple2LanguageCard languageCard,
-            Apple2Disk2Controller disk2Controller
+            Apple2SlotBus slotBus
     ) {
         super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
@@ -34,7 +36,8 @@ public final class Apple2Bus extends ClockedCpuBus {
         this.speaker = Objects.requireNonNull(speaker, "speaker");
         this.softSwitches = Objects.requireNonNull(softSwitches, "softSwitches");
         this.languageCard = Objects.requireNonNull(languageCard, "languageCard");
-        this.disk2Controller = Objects.requireNonNull(disk2Controller, "disk2Controller");
+        this.slotBus = Objects.requireNonNull(slotBus, "slotBus");
+        this.ioPorts = buildIoMap();
     }
 
     @Override
@@ -44,10 +47,7 @@ public final class Apple2Bus extends ClockedCpuBus {
             return readIo(normalized);
         }
         if (isSlotRomAddress(normalized)) {
-            if (disk2Controller.handlesSlotRom(normalized)) {
-                return disk2Controller.readSlotRom(normalized);
-            }
-            return 0xFF;
+            return slotBus.readCnxx(normalized);
         }
         if (languageCard.handlesHighMemory(normalized) && languageCard.readsRam()) {
             return languageCard.readHighMemory(normalized);
@@ -63,6 +63,7 @@ public final class Apple2Bus extends ClockedCpuBus {
             return;
         }
         if (isSlotRomAddress(normalized)) {
+            slotBus.writeCnxx(normalized, value);
             return;
         }
         if (languageCard.handlesHighMemory(normalized) && languageCard.writesRam()) {
@@ -81,39 +82,40 @@ public final class Apple2Bus extends ClockedCpuBus {
     }
 
     private int readIo(int address) {
-        if (disk2Controller.handlesIo(address)) {
-            return disk2Controller.readIo(address);
-        }
-        if (languageCard.handlesSwitch(address)) {
-            return languageCard.readSwitch(address);
-        }
-        return switch (address) {
-            case KEYBOARD_DATA -> keyboard.readData();
-            case KEYBOARD_STROBE_CLEAR -> {
-                keyboard.clearStrobe();
-                yield 0x00;
-            }
-            case SPEAKER_TOGGLE -> {
-                speaker.toggle();
-                yield 0x00;
-            }
-            default -> softSwitches.read(address);
-        };
+        return ioPorts.read(address, clockValue(), 0);
     }
 
     private void writeIo(int address, int value) {
-        if (disk2Controller.handlesIo(address)) {
-            disk2Controller.writeIo(address, value);
-            return;
-        }
-        if (languageCard.handlesSwitch(address)) {
-            languageCard.writeSwitch(address);
-            return;
-        }
-        switch (address) {
-            case KEYBOARD_STROBE_CLEAR -> keyboard.clearStrobe();
-            case SPEAKER_TOGGLE -> speaker.toggle();
-            default -> softSwitches.write(address, value);
-        }
+        ioPorts.write(address, value, clockValue(), 0);
+    }
+
+    private IoAddressSpace buildIoMap() {
+        IoAddressSpace ioMap = IoAddressSpace.withUnmappedValue(0x00);
+        ioMap.mapRead("apple2.keyboard-data", IoSelector.exact(KEYBOARD_DATA),
+                access -> keyboard.readData()
+        );
+        ioMap.mapReadWrite("apple2.keyboard-strobe-clear", IoSelector.exact(KEYBOARD_STROBE_CLEAR),
+                access -> {
+                    keyboard.clearStrobe();
+                    return 0x00;
+                },
+                (access, value) -> keyboard.clearStrobe()
+        );
+        ioMap.mapReadWrite("apple2.speaker-toggle", IoSelector.exact(SPEAKER_TOGGLE),
+                access -> {
+                    speaker.toggle();
+                    return 0x00;
+                },
+                (access, value) -> speaker.toggle()
+        );
+        ioMap.mapReadWrite("apple2.video-soft-switches", IoSelector.range(0xC050, 0xC057),
+                access -> softSwitches.read(access.address()),
+                (access, value) -> softSwitches.write(access.address(), value)
+        );
+        ioMap.mapReadWrite("apple2.slots-c0x", IoSelector.range(0xC080, 0xC0FF),
+                slotBus::readC0x,
+                slotBus::writeC0x
+        );
+        return ioMap;
     }
 }

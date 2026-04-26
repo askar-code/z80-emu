@@ -1,10 +1,12 @@
 package dev.z8emu.machine.apple2.disk;
 
+import dev.z8emu.machine.apple2.Apple2SlotCard;
+import dev.z8emu.platform.bus.io.IoAccess;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Arrays;
 import java.util.Objects;
 
-public final class Apple2Disk2Controller {
+public final class Apple2Disk2Controller implements Apple2SlotCard {
     private static final int RAW_BYTE_TSTATES = 32;
     private static final long MOTOR_COAST_TSTATES = 1_000_000L;
     private static final int EMPTY_SLOT_ROM_BYTE = 0xFF;
@@ -14,9 +16,6 @@ public final class Apple2Disk2Controller {
     public static final int SLOT_ROM_START = 0xC000 | (SLOT << 8);
     public static final int SLOT_ROM_SIZE = 0x100;
     public static final int SLOT_ROM_END_EXCLUSIVE = SLOT_ROM_START + 0x100;
-
-    private static final int SLOT_IO_START = 0xC080 | SLOT_INDEX;
-    private static final int SLOT_IO_END_EXCLUSIVE = SLOT_IO_START + 0x10;
 
     private final TStateCounter clock;
     private Apple2DosDiskImage diskImage;
@@ -71,29 +70,22 @@ public final class Apple2Disk2Controller {
         return diskImage != null;
     }
 
-    public boolean handlesIo(int address) {
-        int normalized = address & 0xFFFF;
-        return normalized >= SLOT_IO_START && normalized < SLOT_IO_END_EXCLUSIVE;
-    }
-
-    public boolean handlesSlotRom(int address) {
-        int normalized = address & 0xFFFF;
-        return normalized >= SLOT_ROM_START && normalized < SLOT_ROM_END_EXCLUSIVE;
-    }
-
-    public int readSlotRom(int address) {
+    @Override
+    public int readCnxx(int offset) {
         if (slotRom == null) {
             return EMPTY_SLOT_ROM_BYTE;
         }
-        return Byte.toUnsignedInt(slotRom[(address - SLOT_ROM_START) & 0xFF]);
+        return Byte.toUnsignedInt(slotRom[offset & 0xFF]);
     }
 
-    public int readIo(int address) {
-        return accessSwitch(address & 0xFFFF, true);
+    @Override
+    public int readC0x(IoAccess access) {
+        return accessSwitch(access.offset(), true);
     }
 
-    public void writeIo(int address, int value) {
-        accessSwitch(address & 0xFFFF, false);
+    @Override
+    public void writeC0x(IoAccess access, int value) {
+        accessSwitch(access.offset(), false);
     }
 
     public int currentTrack() {
