@@ -370,7 +370,8 @@ framebuffer. Only a truly idle 12-bit signal is clamped to black, so dark blue
 texture keeps the rolling NTSC color bleed instead of being crushed. This keeps
 the title artwork sharp while preserving subpixel color detail in thin
 ornaments; it is still a pragmatic composite approximation, not a full analog
-monitor model.
+monitor model. See `docs/apple-ii-dhgr-ntsc-tuning.md` for the rejected DHGR
+NTSC tuning attempts, remaining hypotheses, and visual acceptance criteria.
 
 Manual desktop controls for the current PoP path:
 
