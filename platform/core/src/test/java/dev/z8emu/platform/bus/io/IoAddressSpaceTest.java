@@ -118,4 +118,38 @@ class IoAddressSpaceTest {
         assertEquals(0x11, ports.read(0x10));
         assertEquals(0x22, ports.read(0x20));
     }
+
+    @Test
+    void tracesMappedAndUnmappedAccessesAfterRouting() {
+        IoAddressSpace ports = IoAddressSpace.withUnmappedValue(0xFF);
+        List<String> events = new ArrayList<>();
+        ports.setTraceSink((mappingName, read, access, value) -> events.add(
+                "%s %s %04X %04X %02X".formatted(
+                        mappingName,
+                        read ? "R" : "W",
+                        access.address(),
+                        access.offset(),
+                        value
+                )
+        ));
+        ports.mapReadWrite(
+                "registers",
+                IoSelector.range(0x10, 0x11),
+                access -> 0x20 + access.offset(),
+                (access, value) -> {
+                }
+        );
+
+        assertEquals(0x21, ports.read(0x11));
+        ports.write(0x10, 0xA5);
+        assertEquals(0xFF, ports.read(0x12));
+        ports.write(0x12, 0x7B);
+
+        assertEquals(List.of(
+                "registers R 0011 0001 21",
+                "registers W 0010 0000 A5",
+                "unmapped R 0012 0012 FF",
+                "unmapped W 0012 0012 7B"
+        ), events);
+    }
 }

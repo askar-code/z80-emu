@@ -19,6 +19,7 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
 
     private final TStateCounter clock;
     private Apple2DosDiskImage diskImage;
+    private Apple2WozDiskImage wozImage;
     private byte[] slotRom;
     private final byte[][] trackStreams = new byte[Apple2DosDiskImage.TRACK_COUNT][];
     private final int[] trackPositions = new int[Apple2DosDiskImage.TRACK_COUNT];
@@ -31,6 +32,7 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
     private int latch;
     private long nextRawByteTState;
     private long motorCoastUntilTState;
+    private Apple2Disk2TraceSink traceSink = Apple2Disk2TraceSink.NONE;
 
     public Apple2Disk2Controller(TStateCounter clock) {
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -58,8 +60,23 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
         this.slotRom = Arrays.copyOf(slotRom, slotRom.length);
     }
 
+    public void setTraceSink(Apple2Disk2TraceSink traceSink) {
+        this.traceSink = traceSink == null ? Apple2Disk2TraceSink.NONE : traceSink;
+    }
+
     public void insertDisk(Apple2DosDiskImage diskImage) {
         this.diskImage = Objects.requireNonNull(diskImage, "diskImage");
+        this.wozImage = null;
+        resetDiskStream();
+    }
+
+    public void insertDisk(Apple2WozDiskImage wozImage) {
+        this.diskImage = null;
+        this.wozImage = Objects.requireNonNull(wozImage, "wozImage");
+        resetDiskStream();
+    }
+
+    private void resetDiskStream() {
         Arrays.fill(trackStreams, null);
         Arrays.fill(trackPositions, 0);
         halfTrack = 0;
@@ -67,7 +84,7 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
     }
 
     public boolean hasDisk() {
-        return diskImage != null;
+        return diskImage != null || wozImage != null;
     }
 
     @Override
@@ -79,63 +96,71 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
     }
 
     @Override
+    public boolean hasCnxxRom() {
+        return slotRom != null;
+    }
+
+    @Override
     public int readC0x(IoAccess access) {
-        return accessSwitch(access.offset(), true);
+        return accessSwitch(access, true);
     }
 
     @Override
     public void writeC0x(IoAccess access, int value) {
-        accessSwitch(access.offset(), false);
+        accessSwitch(access, false);
     }
 
     public int currentTrack() {
         return Math.min(Apple2DosDiskImage.TRACK_COUNT - 1, (halfTrack + 1) / 2);
     }
 
-    private int accessSwitch(int address, boolean read) {
-        int offset = address & 0x0F;
+    private int accessSwitch(IoAccess access, boolean read) {
+        int offset = access.offset() & 0x0F;
+        int value;
         switch (offset) {
             case 0x0, 0x2, 0x4, 0x6 -> {
-                return latch;
+                value = latch;
             }
             case 0x1, 0x3, 0x5, 0x7 -> {
                 turnPhaseOn(offset >>> 1);
-                return latch;
+                value = latch;
             }
             case 0x8 -> {
                 turnMotorOff();
-                return latch;
+                value = latch;
             }
             case 0x9 -> {
                 turnMotorOn();
-                return latch;
+                value = latch;
             }
             case 0xA -> {
                 drive1Selected = true;
-                return latch;
+                value = latch;
             }
             case 0xB -> {
                 drive1Selected = false;
-                return latch;
+                value = latch;
             }
             case 0xC -> {
                 q6 = false;
-                return read ? readDataLatch() : latch;
+                value = read ? readDataLatch() : latch;
             }
             case 0xD -> {
                 q6 = true;
-                return read ? readWriteProtectSense() : latch;
+                value = read ? readWriteProtectSense() : latch;
             }
             case 0xE -> {
                 q7 = false;
-                return latch;
+                value = latch;
             }
             case 0xF -> {
                 q7 = true;
-                return latch;
+                value = latch;
             }
             default -> throw new IllegalStateException("Unexpected Disk II switch offset: " + offset);
         }
+        trace(access, read, value);
+        return value;
     }
 
     private void turnMotorOn() {
@@ -176,7 +201,7 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
     }
 
     private int readDataLatch() {
-        if (diskImage == null || !isMediaSpinning() || !drive1Selected || q6 || q7) {
+        if (!hasDisk() || !isMediaSpinning() || !drive1Selected || q6 || q7) {
             latch = 0x00;
             return latch;
         }
@@ -200,18 +225,24 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
     }
 
     private int readWriteProtectSense() {
-        if (diskImage == null || q7) {
+        if (!hasDisk() || q7) {
             latch = 0x00;
         } else {
-            latch = 0x80;
+            latch = isWriteProtected() ? 0x80 : 0x00;
         }
         return latch;
+    }
+
+    private boolean isWriteProtected() {
+        return diskImage != null || wozImage.writeProtected();
     }
 
     private byte[] trackStream(int track) {
         byte[] stream = trackStreams[track];
         if (stream == null) {
-            stream = Apple2DiskNibblizer.buildTrack(diskImage, track);
+            stream = diskImage != null
+                    ? Apple2DiskNibblizer.buildTrack(diskImage, track)
+                    : wozImage.trackStream(track);
             trackStreams[track] = stream;
         }
         return stream;
@@ -219,5 +250,51 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
 
     int currentTrackPosition() {
         return trackPositions[currentTrack()];
+    }
+
+    private void trace(IoAccess access, boolean read, int value) {
+        if (traceSink == Apple2Disk2TraceSink.NONE) {
+            return;
+        }
+        int track = currentTrack();
+        int trackPosition = hasDisk() ? trackPositions[track] : 0;
+        traceSink.traceDisk2(new Apple2Disk2TraceEvent(
+                switchName(access.offset()),
+                read,
+                access.address(),
+                access.offset() & 0x0F,
+                access.tState(),
+                value & 0xFF,
+                track,
+                halfTrack,
+                trackPosition,
+                motorOn,
+                isMediaSpinning(),
+                drive1Selected,
+                q6,
+                q7
+        ));
+    }
+
+    private static String switchName(int offset) {
+        return switch (offset & 0x0F) {
+            case 0x0 -> "phase0-off";
+            case 0x1 -> "phase0-on";
+            case 0x2 -> "phase1-off";
+            case 0x3 -> "phase1-on";
+            case 0x4 -> "phase2-off";
+            case 0x5 -> "phase2-on";
+            case 0x6 -> "phase3-off";
+            case 0x7 -> "phase3-on";
+            case 0x8 -> "motor-off";
+            case 0x9 -> "motor-on";
+            case 0xA -> "drive1";
+            case 0xB -> "drive2";
+            case 0xC -> "q6-low-read-latch";
+            case 0xD -> "q6-high-write-protect";
+            case 0xE -> "q7-low";
+            case 0xF -> "q7-high";
+            default -> throw new IllegalStateException("Unexpected Disk II switch offset");
+        };
     }
 }

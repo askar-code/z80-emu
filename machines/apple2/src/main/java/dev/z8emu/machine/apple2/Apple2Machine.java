@@ -2,7 +2,11 @@ package dev.z8emu.machine.apple2;
 
 import dev.z8emu.cpu.mos6502.Mos6502Cpu;
 import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
+import dev.z8emu.machine.apple2.disk.Apple2BlockDevice;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
+import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockShimController;
+import dev.z8emu.machine.apple2.disk.Apple2SuperDriveController;
+import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.platform.machine.BoardBackedMachine;
 import dev.z8emu.platform.machine.MachineRuntime;
 import dev.z8emu.platform.time.TStateCounter;
@@ -22,13 +26,17 @@ public final class Apple2Machine implements BoardBackedMachine<Apple2Board> {
     }
 
     public Apple2Machine(byte[] initialMemoryImage, byte[] systemRomImage) {
+        this(Apple2ModelConfig.appleIIPlus(), initialMemoryImage, systemRomImage);
+    }
+
+    public Apple2Machine(Apple2ModelConfig modelConfig, byte[] initialMemoryImage, byte[] systemRomImage) {
         TStateCounter clock = new TStateCounter();
         this.board = new Apple2Board(
-                Apple2ModelConfig.appleIIPlus(),
+                Objects.requireNonNull(modelConfig, "modelConfig"),
                 new Apple2Memory(initialMemoryImage, systemRomImage),
                 clock
         );
-        this.cpu = new Mos6502Cpu(board.cpuBus());
+        this.cpu = new Mos6502Cpu(board.cpuBus(), modelConfig.cpuVariant());
         this.runtime = new MachineRuntime(cpu, board, clock);
         this.runtime.reset();
     }
@@ -38,14 +46,20 @@ public final class Apple2Machine implements BoardBackedMachine<Apple2Board> {
     }
 
     public static Apple2Machine fromLaunchImage(byte[] image) {
+        return fromLaunchImage(Apple2ModelConfig.appleIIPlus(), image);
+    }
+
+    public static Apple2Machine fromLaunchImage(Apple2ModelConfig modelConfig, byte[] image) {
+        Objects.requireNonNull(modelConfig, "modelConfig");
         Objects.requireNonNull(image, "image");
         if (image.length == Apple2Memory.ADDRESS_SPACE_SIZE) {
-            return new Apple2Machine(image);
+            return new Apple2Machine(modelConfig, image, new byte[0]);
         }
-        if (Apple2Memory.isSupportedSystemRomSize(image.length)) {
-            return new Apple2Machine(new byte[0], image);
+        if (modelConfig.supportsSystemRomSize(image.length)) {
+            return new Apple2Machine(modelConfig, new byte[0], image);
         }
-        throw new IllegalArgumentException("Apple II launch image must be 4 KB, 8 KB, 12 KB, or 64 KB");
+        throw new IllegalArgumentException("Apple II launch image is not supported by %s: %d bytes"
+                .formatted(modelConfig.modelName(), image.length));
     }
 
     public void loadProgram(byte[] programImage, int loadAddress) {
@@ -79,6 +93,30 @@ public final class Apple2Machine implements BoardBackedMachine<Apple2Board> {
 
     public void insertDisk(Apple2DosDiskImage diskImage) {
         board.disk2Controller().insertDisk(diskImage);
+    }
+
+    public void insertDisk(Apple2WozDiskImage diskImage) {
+        board.disk2Controller().insertDisk(diskImage);
+    }
+
+    public void installProDosBlockShim(Apple2BlockDevice blockDevice) {
+        board.installProDosBlockShim(blockDevice);
+    }
+
+    public Apple2SuperDriveController installSuperDrive35Controller(int slot, byte[] controllerRom) {
+        return board.installSuperDrive35Controller(slot, controllerRom);
+    }
+
+    public void bootProDosBlockShimFromSlot6(Apple2BlockDevice blockDevice) {
+        installProDosBlockShim(blockDevice);
+        byte[] block0 = blockDevice.readBlock(0);
+        byte[] block1 = blockDevice.readBlock(1);
+        byte[] bootProgram = new byte[block0.length + block1.length];
+        System.arraycopy(block0, 0, bootProgram, 0, block0.length);
+        System.arraycopy(block1, 0, bootProgram, block0.length, block1.length);
+        loadProgram(bootProgram, 0x0800);
+        cpu.registers().setPc(0x0801);
+        cpu.registers().setX(Apple2ProDosBlockShimController.SLOT_INDEX);
     }
 
     public void loadDisk2SlotRom(byte[] slotRom) {

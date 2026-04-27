@@ -8,10 +8,12 @@ public final class Apple2Memory {
     public static final int SYSTEM_ROM_SIZE_4K = 4 * 1024;
     public static final int SYSTEM_ROM_SIZE_8K = 8 * 1024;
     public static final int SYSTEM_ROM_SIZE_12K = 12 * 1024;
+    public static final int SYSTEM_ROM_SIZE_16K = 16 * 1024;
     public static final int IO_START = 0xC000;
     public static final int IO_END_EXCLUSIVE = 0xC100;
     public static final int SLOT_ROM_START = 0xC100;
     public static final int SLOT_ROM_END_EXCLUSIVE = 0xD000;
+    public static final int FIRMWARE_ROM_START_16K = 0xC000;
     public static final int SYSTEM_ROM_START = 0xD000;
     public static final int SYSTEM_ROM_MAX_SIZE = ADDRESS_SPACE_SIZE - SYSTEM_ROM_START;
     public static final int TEXT_PAGE_1_START = 0x0400;
@@ -42,8 +44,8 @@ public final class Apple2Memory {
         if (initialMemoryImage.length > ADDRESS_SPACE_SIZE) {
             throw new IllegalArgumentException("Apple II initial memory image must be at most 64 KB");
         }
-        if (systemRomImage.length > SYSTEM_ROM_MAX_SIZE) {
-            throw new IllegalArgumentException("Apple II system ROM image must be at most 12 KB");
+        if (systemRomImage.length > SYSTEM_ROM_SIZE_16K) {
+            throw new IllegalArgumentException("Apple II system ROM image must be at most 16 KB");
         }
         System.arraycopy(initialMemoryImage, 0, resetImage, 0, initialMemoryImage.length);
         this.systemRom = Arrays.copyOf(systemRomImage, systemRomImage.length);
@@ -58,7 +60,7 @@ public final class Apple2Memory {
 
     public int read(int address) {
         int normalized = address & 0xFFFF;
-        if (hasSystemRom() && normalized >= systemRomStart) {
+        if (hasSystemRomAt(normalized)) {
             return Byte.toUnsignedInt(systemRom[normalized - systemRomStart]);
         }
         return Byte.toUnsignedInt(ram[normalized]);
@@ -66,7 +68,7 @@ public final class Apple2Memory {
 
     public void write(int address, int value) {
         int normalized = address & 0xFFFF;
-        if (hasSystemRom() && normalized >= systemRomStart) {
+        if (hasSystemRomAt(normalized)) {
             return;
         }
         ram[normalized] = (byte) value;
@@ -76,8 +78,25 @@ public final class Apple2Memory {
         return systemRom.length > 0;
     }
 
+    public boolean hasSystemRomAt(int address) {
+        int normalized = address & 0xFFFF;
+        int offset = normalized - systemRomStart;
+        return hasSystemRom() && offset >= 0 && offset < systemRom.length;
+    }
+
     public int systemRomStart() {
         return systemRomStart;
+    }
+
+    public int systemRomSize() {
+        return systemRom.length;
+    }
+
+    public int readSystemRomOffset(int offset) {
+        if (offset < 0 || offset >= systemRom.length) {
+            throw new IllegalArgumentException("Apple II system ROM offset out of range: 0x%04X".formatted(offset));
+        }
+        return Byte.toUnsignedInt(systemRom[offset]);
     }
 
     public static int textPage1Address(int row, int column) {
@@ -138,7 +157,8 @@ public final class Apple2Memory {
     public static boolean isSupportedSystemRomSize(int length) {
         return length == SYSTEM_ROM_SIZE_4K
                 || length == SYSTEM_ROM_SIZE_8K
-                || length == SYSTEM_ROM_SIZE_12K;
+                || length == SYSTEM_ROM_SIZE_12K
+                || length == SYSTEM_ROM_SIZE_16K;
     }
 
     public static boolean isSupportedLaunchImageSize(int length) {

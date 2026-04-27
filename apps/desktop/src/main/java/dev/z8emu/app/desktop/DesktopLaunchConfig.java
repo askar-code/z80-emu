@@ -2,6 +2,8 @@ package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
+import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
+import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.machine.radio86rk.tape.Radio86TapeFile;
 import dev.z8emu.machine.spectrum48k.tape.TapeFile;
 import java.util.Optional;
@@ -20,7 +22,7 @@ record DesktopLaunchConfig(
                 : Optional.empty();
     }
 
-    sealed interface LoadedMedia permits LoadedSpectrumTape, LoadedRadioTape, LoadedCpcDisk, LoadedApple2Program, LoadedApple2Disk {
+    sealed interface LoadedMedia permits LoadedSpectrumTape, LoadedRadioTape, LoadedCpcDisk, LoadedApple2Program, LoadedApple2Disk, LoadedApple2WozDisk, LoadedApple2BlockDevice {
         String sourceLabel();
     }
 
@@ -37,5 +39,11 @@ record DesktopLaunchConfig(
     }
 
     record LoadedApple2Disk(String sourceLabel, Apple2DosDiskImage diskImage) implements LoadedMedia {
+    }
+
+    record LoadedApple2WozDisk(String sourceLabel, Apple2WozDiskImage diskImage) implements LoadedMedia {
+    }
+
+    record LoadedApple2BlockDevice(String sourceLabel, Apple2ProDosBlockImage blockDevice) implements LoadedMedia {
     }
 }

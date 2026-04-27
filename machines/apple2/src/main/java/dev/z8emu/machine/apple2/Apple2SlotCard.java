@@ -16,4 +16,19 @@ public interface Apple2SlotCard {
 
     default void writeCnxx(int offset, int value) {
     }
+
+    default boolean hasCnxxRom() {
+        return false;
+    }
+
+    default int readC800(int offset) {
+        return 0xFF;
+    }
+
+    default void writeC800(int offset, int value) {
+    }
+
+    default boolean usesC800ExpansionRom() {
+        return false;
+    }
 }

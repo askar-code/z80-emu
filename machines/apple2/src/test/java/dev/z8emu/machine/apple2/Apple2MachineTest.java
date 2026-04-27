@@ -1,5 +1,6 @@
 package dev.z8emu.machine.apple2;
 
+import dev.z8emu.platform.time.TStateCounter;
 import dev.z8emu.platform.video.FrameBuffer;
 import org.junit.jupiter.api.Test;
 
@@ -11,15 +12,151 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Apple2MachineTest {
     private static final int BACKGROUND_ARGB = 0xFF101010;
     private static final int FOREGROUND_ARGB = 0xFF66FF66;
+    private static final int HIRES_BLACK_ARGB = 0xFF000000;
+    private static final int HIRES_WHITE_ARGB = 0xFFFFFFFF;
+    private static final int HIRES_VIOLET_ARGB = 0xFFDD22FF;
+    private static final int HIRES_GREEN_ARGB = 0xFF00CC00;
+    private static final int HIRES_BLUE_ARGB = 0xFF2222FF;
+    private static final int HIRES_ORANGE_ARGB = 0xFFFF6600;
     private static final int LORES_DARK_BLUE_ARGB = 0xFF000099;
     private static final int LORES_DARK_GREEN_ARGB = 0xFF007722;
     private static final int LORES_GREEN_ARGB = 0xFF00CC00;
+    private static final int LORES_WHITE_ARGB = 0xFFFFFFFF;
 
     @Test
     void defaultModelIsAppleIIPlus() {
         Apple2Machine machine = Apple2Machine.withBlankMemory();
 
         assertEquals("Apple II Plus", machine.board().modelName());
+    }
+
+    @Test
+    void launchImageFactoryCanUseAppleIIe128KModelProfile() {
+        byte[] image = new byte[Apple2Memory.ADDRESS_SPACE_SIZE];
+        load(image, 0x0800, 0xEA);
+        writeVector(image, 0xFFFC, 0x0800);
+
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(Apple2ModelConfig.appleIIe128K(), image);
+
+        assertEquals("Apple IIe 128K", machine.board().modelName());
+        assertEquals(128 * 1024, machine.board().modelConfig().ramSize());
+        assertEquals(0x0800, machine.cpu().registers().pc());
+    }
+
+    @Test
+    void appleIIeModelUses65C02BranchAlwaysOpcode() {
+        byte[] image = new byte[Apple2Memory.ADDRESS_SPACE_SIZE];
+        load(image, 0x0800, 0x80, 0x02, 0xA9, 0x11, 0xA9, 0x33);
+        writeVector(image, 0xFFFC, 0x0800);
+
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(Apple2ModelConfig.appleIIe128K(), image);
+
+        assertEquals(3, machine.runInstruction());
+        assertEquals(0x0804, machine.cpu().registers().pc());
+        machine.runInstruction();
+        assertEquals(0x33, machine.cpu().registers().a());
+    }
+
+    @Test
+    void appleIIeAuxSwitchesRouteReadsAndWritesBetweenMainAndAuxMemory() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(
+                Apple2ModelConfig.appleIIe128K(),
+                resetImageJumpingTo(0x0800)
+        );
+
+        machine.board().cpuBus().writeMemory(0x0200, 0x11);
+        machine.board().cpuBus().writeMemory(0xC005, 0x00);
+        machine.board().cpuBus().writeMemory(0x0200, 0x22);
+        machine.board().cpuBus().writeMemory(0xC004, 0x00);
+
+        assertEquals(0x11, machine.board().cpuBus().readMemory(0x0200));
+
+        machine.board().cpuBus().writeMemory(0xC003, 0x00);
+        assertEquals(0x22, machine.board().cpuBus().readMemory(0x0200));
+
+        machine.board().cpuBus().writeMemory(0xC002, 0x00);
+        assertEquals(0x11, machine.board().cpuBus().readMemory(0x0200));
+    }
+
+    @Test
+    void appleIIPlusIgnoresAppleIIeAuxSwitches() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+
+        machine.board().cpuBus().writeMemory(0xC005, 0x00);
+        machine.board().cpuBus().writeMemory(0x0200, 0x44);
+        machine.board().cpuBus().writeMemory(0xC003, 0x00);
+
+        assertEquals(0x44, machine.board().cpuBus().readMemory(0x0200));
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC013));
+    }
+
+    @Test
+    void appleIIeEightyStoreUsesPage2ToSelectTextPageBank() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(
+                Apple2ModelConfig.appleIIe128K(),
+                resetImageJumpingTo(0x0800)
+        );
+
+        machine.board().cpuBus().writeMemory(0xC001, 0x00);
+        machine.board().cpuBus().writeMemory(0xC054, 0x00);
+        machine.board().cpuBus().writeMemory(Apple2Memory.TEXT_PAGE_1_START, 0x11);
+        machine.board().cpuBus().writeMemory(0xC055, 0x00);
+        machine.board().cpuBus().writeMemory(Apple2Memory.TEXT_PAGE_1_START, 0x22);
+
+        machine.board().cpuBus().writeMemory(0xC054, 0x00);
+        assertEquals(0x11, machine.board().cpuBus().readMemory(Apple2Memory.TEXT_PAGE_1_START));
+
+        machine.board().cpuBus().writeMemory(0xC055, 0x00);
+        assertEquals(0x22, machine.board().cpuBus().readMemory(Apple2Memory.TEXT_PAGE_1_START));
+    }
+
+    @Test
+    void appleIIeSoftSwitchStatusReadsExposeAuxAndVideoFlags() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(
+                Apple2ModelConfig.appleIIe128K(),
+                resetImageJumpingTo(0x0800)
+        );
+
+        machine.board().cpuBus().writeMemory(0xC001, 0x00);
+        machine.board().cpuBus().writeMemory(0xC003, 0x00);
+        machine.board().cpuBus().writeMemory(0xC005, 0x00);
+        machine.board().cpuBus().writeMemory(0xC009, 0x00);
+        machine.board().cpuBus().writeMemory(0xC00D, 0x00);
+        machine.board().cpuBus().writeMemory(0xC00F, 0x00);
+        machine.board().cpuBus().writeMemory(0xC050, 0x00);
+        machine.board().cpuBus().writeMemory(0xC053, 0x00);
+        machine.board().cpuBus().writeMemory(0xC055, 0x00);
+        machine.board().cpuBus().writeMemory(0xC057, 0x00);
+
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC013));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC014));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC016));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC018));
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC01A));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC01B));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC01C));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC01D));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC01E));
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC01F));
+    }
+
+    @Test
+    void appleIIeC019ReportsVerticalBlankFromFrameClock() {
+        Apple2ModelConfig config = Apple2ModelConfig.appleIIe128K();
+        TStateCounter clock = new TStateCounter();
+        Apple2Board board = new Apple2Board(config, new Apple2Memory(), clock);
+        board.reset();
+
+        assertEquals(0x00, board.cpuBus().readMemory(0xC019));
+
+        clock.advance(config.frameTStates() - 4_550 - 1);
+        assertEquals(0x00, board.cpuBus().readMemory(0xC019));
+
+        clock.advance(1);
+        assertEquals(0x80, board.cpuBus().readMemory(0xC019));
+
+        clock.advance(4_550);
+        assertEquals(0x00, board.cpuBus().readMemory(0xC019));
     }
 
     @Test
@@ -102,6 +239,75 @@ class Apple2MachineTest {
     }
 
     @Test
+    void enhancedAppleIIeCxRomSoftSwitchesChooseInternalFirmwareOrSlotRom() {
+        byte[] rom = filledRom(Apple2Memory.SYSTEM_ROM_SIZE_16K, 0xEA);
+        rom[0x0000] = 0x11;
+        rom[0x0100] = 0x22;
+        rom[0x0300] = 0x77;
+        rom[0x065C] = 0x66;
+        rom[0x0800] = 0x33;
+        rom[0x1000] = 0x44;
+        writeRomVector(rom, 0xFFFC, 0xFA62);
+
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(Apple2ModelConfig.appleIIe128K(), rom);
+
+        assertEquals(Apple2Memory.FIRMWARE_ROM_START_16K, machine.board().memory().systemRomStart());
+        assertEquals(0xFA62, machine.cpu().registers().pc());
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC000));
+        assertEquals(0xFF, machine.board().cpuBus().readMemory(0xC100));
+        assertEquals(0x77, machine.board().cpuBus().readMemory(0xC300));
+        assertEquals(0xFF, machine.board().cpuBus().readMemory(0xC65C));
+        assertEquals(0x33, machine.board().cpuBus().readMemory(0xC800));
+        assertEquals(0x44, machine.board().cpuBus().readMemory(0xD000));
+
+        machine.board().cpuBus().writeMemory(0xC007, 0x00);
+
+        assertEquals(0x22, machine.board().cpuBus().readMemory(0xC100));
+        assertEquals(0x77, machine.board().cpuBus().readMemory(0xC300));
+        assertEquals(0x66, machine.board().cpuBus().readMemory(0xC65C));
+
+        byte[] slot6Rom = filledRom(0x100, 0x00);
+        slot6Rom[0x5C] = (byte) 0xA5;
+        machine.loadDisk2SlotRom(slot6Rom);
+
+        assertEquals(0x66, machine.board().cpuBus().readMemory(0xC65C));
+
+        machine.board().cpuBus().writeMemory(0xC006, 0x00);
+
+        assertEquals(0xA5, machine.board().cpuBus().readMemory(0xC65C));
+
+        machine.board().cpuBus().writeMemory(0xC00B, 0x00);
+        assertEquals(0xFF, machine.board().cpuBus().readMemory(0xC300));
+
+        machine.board().cpuBus().writeMemory(0xC00A, 0x00);
+        assertEquals(0x77, machine.board().cpuBus().readMemory(0xC300));
+    }
+
+    @Test
+    void enhancedAppleIIeCanRouteSelectedSlotC800ExpansionWindow() {
+        byte[] rom = filledRom(Apple2Memory.SYSTEM_ROM_SIZE_16K, 0xEA);
+        rom[0x0800] = 0x33;
+        writeRomVector(rom, 0xFFFC, 0xFA62);
+
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(Apple2ModelConfig.appleIIe128K(), rom);
+        ExpansionSlotCard card = new ExpansionSlotCard();
+        machine.board().slotBus().install(6, card);
+
+        assertEquals(0x33, machine.board().cpuBus().readMemory(0xC800));
+
+        machine.board().cpuBus().writeMemory(0xC006, 0x00);
+        assertEquals(0xA5, machine.board().cpuBus().readMemory(0xC65C));
+        assertEquals(0xC8, machine.board().cpuBus().readMemory(0xC800));
+        machine.board().cpuBus().writeMemory(0xCBFE, 0x42);
+
+        assertEquals(0x03FE, card.lastC800Offset);
+        assertEquals(0x42, card.lastC800Write);
+
+        machine.board().cpuBus().writeMemory(0xC007, 0x00);
+        assertEquals(0x33, machine.board().cpuBus().readMemory(0xC800));
+    }
+
+    @Test
     void launchImageFactoryAcceptsSystemRomAndFullMemoryImages() {
         byte[] rom = filledRom(Apple2Memory.SYSTEM_ROM_SIZE_12K, 0xEA);
         writeRomVector(rom, 0xFFFC, Apple2Memory.SYSTEM_ROM_START);
@@ -115,7 +321,13 @@ class Apple2MachineTest {
         Apple2Machine memoryMachine = Apple2Machine.fromLaunchImage(image);
 
         assertEquals(0x0800, memoryMachine.cpu().registers().pc());
-        assertThrows(IllegalArgumentException.class, () -> Apple2Machine.fromLaunchImage(new byte[16 * 1024]));
+        assertEquals(
+                Apple2Memory.FIRMWARE_ROM_START_16K,
+                Apple2Machine.fromLaunchImage(Apple2ModelConfig.appleIIe128K(), new byte[16 * 1024])
+                        .board()
+                        .memory()
+                        .systemRomStart()
+        );
     }
 
     @Test
@@ -173,6 +385,33 @@ class Apple2MachineTest {
 
         machine.board().cpuBus().readMemory(0xC083);
         machine.board().cpuBus().readMemory(0xC083);
+
+        assertEquals(0x22, machine.board().cpuBus().readMemory(0xD000));
+        assertEquals(0x33, machine.board().cpuBus().readMemory(0xE000));
+    }
+
+    @Test
+    void appleIIeAltZeroPageSelectsAuxiliaryLanguageCardMemory() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(
+                Apple2ModelConfig.appleIIe128K(),
+                filledRom(Apple2Memory.SYSTEM_ROM_SIZE_16K, 0xEA)
+        );
+
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().writeMemory(0xD000, 0x22);
+        machine.board().cpuBus().writeMemory(0xE000, 0x33);
+
+        machine.board().cpuBus().writeMemory(0xC009, 0x00);
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().readMemory(0xC083);
+        machine.board().cpuBus().writeMemory(0xD000, 0x44);
+        machine.board().cpuBus().writeMemory(0xE000, 0x55);
+
+        assertEquals(0x44, machine.board().cpuBus().readMemory(0xD000));
+        assertEquals(0x55, machine.board().cpuBus().readMemory(0xE000));
+
+        machine.board().cpuBus().writeMemory(0xC008, 0x00);
 
         assertEquals(0x22, machine.board().cpuBus().readMemory(0xD000));
         assertEquals(0x33, machine.board().cpuBus().readMemory(0xE000));
@@ -238,6 +477,61 @@ class Apple2MachineTest {
 
         assertFalse(machine.board().keyboard().strobe());
         assertEquals(0x41, machine.board().cpuBus().readMemory(0xC000));
+    }
+
+    @Test
+    void gamePortPushButtonsReadBit7WhenPressed() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC061));
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC062));
+
+        machine.board().gamePort().setPushButton(0, true);
+
+        assertEquals(0x80, machine.board().cpuBus().readMemory(0xC061));
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC062));
+
+        machine.reset();
+
+        assertEquals(0x00, machine.board().cpuBus().readMemory(0xC061));
+    }
+
+    @Test
+    void gamePortPaddlesReadHighUntilTriggeredTimerElapses() {
+        Apple2ModelConfig config = Apple2ModelConfig.appleIIPlus();
+        TStateCounter clock = new TStateCounter();
+        Apple2Board board = new Apple2Board(config, new Apple2Memory(), clock);
+        board.reset();
+
+        assertEquals(0x00, board.cpuBus().readMemory(0xC064));
+
+        board.cpuBus().readMemory(0xC070);
+        assertEquals(0x80, board.cpuBus().readMemory(0xC064));
+
+        clock.advance(1_000);
+        assertEquals(0x80, board.cpuBus().readMemory(0xC064));
+
+        clock.advance(1_000);
+        assertEquals(0x00, board.cpuBus().readMemory(0xC064));
+    }
+
+    @Test
+    void gamePortPaddlePositionsControlTimerDuration() {
+        TStateCounter clock = new TStateCounter();
+        Apple2Board board = new Apple2Board(Apple2ModelConfig.appleIIPlus(), new Apple2Memory(), clock);
+        board.reset();
+
+        board.gamePort().setPaddlePosition(0, 0);
+        board.cpuBus().readMemory(0xC070);
+        clock.advance(64);
+
+        assertEquals(0x00, board.cpuBus().readMemory(0xC064));
+
+        board.gamePort().setPaddlePosition(0, 255);
+        board.cpuBus().readMemory(0xC070);
+        clock.advance(2_000);
+
+        assertEquals(0x80, board.cpuBus().readMemory(0xC064));
     }
 
     @Test
@@ -319,7 +613,7 @@ class Apple2MachineTest {
         assertThrows(IllegalArgumentException.class, () -> new Apple2Memory(new byte[Apple2Memory.ADDRESS_SPACE_SIZE + 1]));
         assertThrows(IllegalArgumentException.class, () -> new Apple2Memory(
                 new byte[0],
-                new byte[Apple2Memory.SYSTEM_ROM_MAX_SIZE + 1]
+                new byte[Apple2Memory.SYSTEM_ROM_SIZE_16K + 1]
         ));
     }
 
@@ -396,7 +690,7 @@ class Apple2MachineTest {
     }
 
     @Test
-    void hiresGraphicsRendersSevenPixelsPerScreenByte() {
+    void hiresGraphicsRendersArtifactColorForIsolatedPixels() {
         Apple2Machine machine = Apple2Machine.withBlankMemory();
         machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x41);
         machine.board().cpuBus().readMemory(0xC050);
@@ -404,9 +698,58 @@ class Apple2MachineTest {
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
-        assertEquals(FOREGROUND_ARGB, pixel(frame, 0, 0));
-        assertEquals(BACKGROUND_ARGB, pixel(frame, 1, 0));
-        assertEquals(FOREGROUND_ARGB, pixel(frame, 6, 0));
+        assertEquals(HIRES_VIOLET_ARGB, pixel(frame, 0, 0));
+        assertEquals(HIRES_BLACK_ARGB, pixel(frame, 1, 0));
+        assertEquals(HIRES_VIOLET_ARGB, pixel(frame, 6, 0));
+    }
+
+    @Test
+    void hiresGraphicsRendersAdjacentPixelsAsWhite() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x03);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC057);
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+
+        assertEquals(HIRES_WHITE_ARGB, pixel(frame, 0, 0));
+        assertEquals(HIRES_WHITE_ARGB, pixel(frame, 1, 0));
+    }
+
+    @Test
+    void hiresGraphicsUsesHighBitForAlternateArtifactColorSet() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x81);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(1, 0), 0x82);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC057);
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+
+        assertEquals(HIRES_BLUE_ARGB, pixel(frame, 0, 0));
+        assertEquals(HIRES_ORANGE_ARGB, pixel(frame, 1, 1));
+    }
+
+    @Test
+    void appleIIeDoubleHiresRendersAuxPageWhenEightyColumnHiresIsActive() {
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(
+                Apple2ModelConfig.appleIIe128K(),
+                resetImageJumpingTo(0x0800)
+        );
+        machine.board().auxMemory().write(Apple2Memory.hiresPage1Address(0, 0), 0x7F);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x00);
+        machine.board().cpuBus().writeMemory(0xC050, 0x00);
+        machine.board().cpuBus().writeMemory(0xC057, 0x00);
+        machine.board().cpuBus().writeMemory(0xC00D, 0x00);
+
+        FrameBuffer doubleHiresFrame = machine.board().renderVideoFrame();
+
+        assertTrue(pixel(doubleHiresFrame, 0, 0) != HIRES_BLACK_ARGB);
+
+        machine.board().cpuBus().writeMemory(0xC00C, 0x00);
+        FrameBuffer hiresFrame = machine.board().renderVideoFrame();
+
+        assertEquals(HIRES_BLACK_ARGB, pixel(hiresFrame, 0, 0));
     }
 
     @Test
@@ -428,8 +771,8 @@ class Apple2MachineTest {
 
         FrameBuffer hiresFrame = machine.board().renderVideoFrame();
 
-        assertEquals(BACKGROUND_ARGB, pixel(hiresFrame, 0, 0));
-        assertEquals(FOREGROUND_ARGB, pixel(hiresFrame, 1, 0));
+        assertEquals(HIRES_BLACK_ARGB, pixel(hiresFrame, 0, 0));
+        assertEquals(HIRES_GREEN_ARGB, pixel(hiresFrame, 1, 0));
     }
 
     @Test
@@ -461,6 +804,12 @@ class Apple2MachineTest {
         image[(address + 1) & 0xFFFF] = (byte) (target >>> 8);
     }
 
+    private static byte[] resetImageJumpingTo(int address) {
+        byte[] image = new byte[Apple2Memory.ADDRESS_SPACE_SIZE];
+        writeVector(image, 0xFFFC, address);
+        return image;
+    }
+
     private static void writeRomVector(byte[] rom, int vectorAddress, int target) {
         int romStart = Apple2Memory.ADDRESS_SPACE_SIZE - rom.length;
         int offset = vectorAddress - romStart;
@@ -478,6 +827,37 @@ class Apple2MachineTest {
 
     private static int pixel(FrameBuffer frame, int x, int y) {
         return frame.pixels()[(y * frame.width()) + x];
+    }
+
+    private static final class ExpansionSlotCard implements Apple2SlotCard {
+        private int lastC800Offset = -1;
+        private int lastC800Write = -1;
+
+        @Override
+        public int readCnxx(int offset) {
+            return offset == 0x5C ? 0xA5 : 0x00;
+        }
+
+        @Override
+        public boolean hasCnxxRom() {
+            return true;
+        }
+
+        @Override
+        public int readC800(int offset) {
+            return 0xC8 | (offset & 0x07);
+        }
+
+        @Override
+        public void writeC800(int offset, int value) {
+            lastC800Offset = offset;
+            lastC800Write = value;
+        }
+
+        @Override
+        public boolean usesC800ExpansionRom() {
+            return true;
+        }
     }
 
     private static boolean anyNonZero(byte[] audio, int length) {

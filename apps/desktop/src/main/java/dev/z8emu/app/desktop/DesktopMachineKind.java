@@ -5,7 +5,8 @@ enum DesktopMachineKind {
     SPECTRUM128,
     RADIO86RK,
     CPC6128,
-    APPLE2;
+    APPLE2,
+    APPLE2E;
 
     boolean isSpectrum() {
         return this == SPECTRUM48 || this == SPECTRUM128;

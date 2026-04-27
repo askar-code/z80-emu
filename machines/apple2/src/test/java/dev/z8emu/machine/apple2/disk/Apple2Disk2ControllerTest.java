@@ -4,6 +4,9 @@ import dev.z8emu.platform.bus.io.IoAccess;
 import dev.z8emu.platform.time.TStateCounter;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,6 +83,50 @@ class Apple2Disk2ControllerTest {
         clock.advance(1);
 
         assertTrue((read(controller, READ_LATCH) & 0x80) != 0);
+        assertEquals(2, controller.currentTrackPosition());
+    }
+
+    @Test
+    void tracesSwitchAccessesWithCurrentDiskState() {
+        TStateCounter clock = new TStateCounter();
+        Apple2Disk2Controller controller = controller(clock);
+        List<Apple2Disk2TraceEvent> events = new ArrayList<>();
+        controller.setTraceSink(events::add);
+
+        int value = read(controller, READ_LATCH);
+
+        assertEquals(1, events.size());
+        Apple2Disk2TraceEvent event = events.getFirst();
+        assertEquals("q6-low-read-latch", event.switchName());
+        assertTrue(event.read());
+        assertEquals(READ_LATCH, event.address());
+        assertEquals(0x0C, event.offset());
+        assertEquals(value, event.value());
+        assertEquals(0, event.track());
+        assertEquals(1, event.trackPosition());
+        assertTrue(event.motorOn());
+        assertTrue(event.spinning());
+        assertTrue(event.drive1Selected());
+    }
+
+    @Test
+    void readsWozTrackStreamThroughDisk2Latch() {
+        TStateCounter clock = new TStateCounter();
+        Apple2Disk2Controller controller = new Apple2Disk2Controller(clock);
+        controller.insertDisk(Apple2WozDiskImage.fromWoz1Bytes(Apple2WozDiskImageTest.wozImage(
+                1,
+                true,
+                "Synthetic WOZ",
+                new byte[]{(byte) 0xD5, (byte) 0xAA, (byte) 0x96},
+                ""
+        )));
+        read(controller, MOTOR_ON);
+        read(controller, DRIVE_1);
+        read(controller, Q7_LOW);
+
+        assertEquals(0xD5, read(controller, READ_LATCH));
+        clock.advance(32);
+        assertEquals(0xAA, read(controller, READ_LATCH));
         assertEquals(2, controller.currentTrackPosition());
     }
 

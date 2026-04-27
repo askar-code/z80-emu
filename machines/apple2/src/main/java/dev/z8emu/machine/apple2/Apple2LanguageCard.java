@@ -9,9 +9,8 @@ public final class Apple2LanguageCard implements Apple2SlotCard {
     private static final int COMMON_START = 0xE000;
     private static final int COMMON_END_EXCLUSIVE = 0x10000;
 
-    private final byte[] bank1 = new byte[BANKED_END_EXCLUSIVE - BANKED_START];
-    private final byte[] bank2 = new byte[BANKED_END_EXCLUSIVE - BANKED_START];
-    private final byte[] common = new byte[COMMON_END_EXCLUSIVE - COMMON_START];
+    private final Bank mainBank = new Bank();
+    private final Bank auxiliaryBank = new Bank();
     private boolean readRam;
     private boolean writeEnabled;
     private boolean bank2Selected;
@@ -53,24 +52,34 @@ public final class Apple2LanguageCard implements Apple2SlotCard {
     }
 
     public int readHighMemory(int address) {
+        return readHighMemory(address, false);
+    }
+
+    public int readHighMemory(int address, boolean auxiliary) {
         int normalized = address & 0xFFFF;
+        Bank bank = auxiliary ? auxiliaryBank : mainBank;
         if (normalized >= BANKED_START && normalized < BANKED_END_EXCLUSIVE) {
-            return Byte.toUnsignedInt(selectedBank()[normalized - BANKED_START]);
+            return Byte.toUnsignedInt(bank.selectedBank(bank2Selected)[normalized - BANKED_START]);
         }
         if (normalized >= COMMON_START) {
-            return Byte.toUnsignedInt(common[normalized - COMMON_START]);
+            return Byte.toUnsignedInt(bank.common[normalized - COMMON_START]);
         }
         throw new IllegalArgumentException("Apple II language-card address out of range: 0x%04X".formatted(normalized));
     }
 
     public void writeHighMemory(int address, int value) {
+        writeHighMemory(address, value, false);
+    }
+
+    public void writeHighMemory(int address, int value, boolean auxiliary) {
         int normalized = address & 0xFFFF;
+        Bank bank = auxiliary ? auxiliaryBank : mainBank;
         if (normalized >= BANKED_START && normalized < BANKED_END_EXCLUSIVE) {
-            selectedBank()[normalized - BANKED_START] = (byte) value;
+            bank.selectedBank(bank2Selected)[normalized - BANKED_START] = (byte) value;
             return;
         }
         if (normalized >= COMMON_START) {
-            common[normalized - COMMON_START] = (byte) value;
+            bank.common[normalized - COMMON_START] = (byte) value;
             return;
         }
         throw new IllegalArgumentException("Apple II language-card address out of range: 0x%04X".formatted(normalized));
@@ -111,7 +120,13 @@ public final class Apple2LanguageCard implements Apple2SlotCard {
         lastWriteEnableSwitch = -1;
     }
 
-    private byte[] selectedBank() {
-        return bank2Selected ? bank2 : bank1;
+    private static final class Bank {
+        private final byte[] bank1 = new byte[BANKED_END_EXCLUSIVE - BANKED_START];
+        private final byte[] bank2 = new byte[BANKED_END_EXCLUSIVE - BANKED_START];
+        private final byte[] common = new byte[COMMON_END_EXCLUSIVE - COMMON_START];
+
+        private byte[] selectedBank(boolean bank2Selected) {
+            return bank2Selected ? bank2 : bank1;
+        }
     }
 }

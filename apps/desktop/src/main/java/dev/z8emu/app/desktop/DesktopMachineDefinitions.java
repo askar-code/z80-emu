@@ -2,9 +2,13 @@ package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.apple2.Apple2Machine;
 import dev.z8emu.machine.apple2.Apple2Memory;
+import dev.z8emu.machine.apple2.Apple2ModelConfig;
 import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImageLoader;
+import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
+import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
+import dev.z8emu.machine.apple2.disk.Apple2WozDiskImageLoader;
 import dev.z8emu.machine.cpc.CpcMachine;
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.cpc.disk.CpcDskLoader;
@@ -31,14 +35,22 @@ final class DesktopMachineDefinitions {
     private static final DesktopMachineDefinition SPECTRUM128 = new SpectrumDefinition(DesktopMachineKind.SPECTRUM128);
     private static final DesktopMachineDefinition RADIO86RK = new Radio86Definition();
     private static final DesktopMachineDefinition CPC6128 = new CpcDefinition();
-    private static final DesktopMachineDefinition APPLE2 = new Apple2Definition();
+    private static final DesktopMachineDefinition APPLE2 = new Apple2Definition(
+            DesktopMachineKind.APPLE2,
+            Apple2ModelConfig.appleIIPlus()
+    );
+    private static final DesktopMachineDefinition APPLE2E = new Apple2Definition(
+            DesktopMachineKind.APPLE2E,
+            Apple2ModelConfig.appleIIe128K()
+    );
 
     private static final List<DesktopMachineDefinition> DEFINITIONS = List.of(
             SPECTRUM48,
             SPECTRUM128,
             RADIO86RK,
             CPC6128,
-            APPLE2
+            APPLE2,
+            APPLE2E
     );
     private static final Map<DesktopMachineKind, DesktopMachineDefinition> BY_KIND = new HashMap<>();
     private static final Map<String, DesktopMachineDefinition> BY_ALIAS = new HashMap<>();
@@ -53,6 +65,7 @@ final class DesktopMachineDefinitions {
         register(RADIO86RK, "radio86", "radio86rk", "rk86", "86rk");
         register(CPC6128, "cpc", "cpc6128", "amstradcpc", "amstradcpc6128");
         register(APPLE2, "apple2", "appleii", "apple2plus", "appleiiplus");
+        register(APPLE2E, "apple2e", "appleiie", "apple2e128", "apple2e-128k");
     }
 
     private DesktopMachineDefinitions() {
@@ -75,7 +88,7 @@ final class DesktopMachineDefinitions {
     }
 
     static String usage() {
-        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|apple2|apple2plus [machine-options] <rom-or-memory-image> [media]";
+        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|apple2|apple2plus|apple2e [machine-options] <rom-or-memory-image> [media]";
     }
 
     static DesktopLaunchConfig demoConfig() {
@@ -90,7 +103,10 @@ final class DesktopMachineDefinitions {
     }
 
     static byte[] loadRom(Path romPath, DesktopMachineDefinition definition) throws IOException {
-        byte[] romImage = Files.readAllBytes(romPath);
+        byte[] romImage = switch (definition.kind()) {
+            case APPLE2, APPLE2E -> Apple2RomImageLoader.load(definition.kind(), romPath);
+            case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128 -> Files.readAllBytes(romPath);
+        };
         definition.validateRom(romImage, romPath);
         return romImage;
     }
@@ -163,7 +179,7 @@ final class DesktopMachineDefinitions {
             return switch (kind) {
                 case SPECTRUM48 -> new Spectrum48kMachine(config.romImage());
                 case SPECTRUM128 -> new Spectrum128Machine(config.romImage());
-                case RADIO86RK, CPC6128, APPLE2 -> throw new IllegalArgumentException("Expected Spectrum launch config");
+                case RADIO86RK, CPC6128, APPLE2, APPLE2E -> throw new IllegalArgumentException("Expected Spectrum launch config");
             };
         }
 
@@ -281,16 +297,24 @@ final class DesktopMachineDefinitions {
 
     private static final class Apple2Definition implements DesktopMachineDefinition {
         private static final int DEFAULT_PROGRAM_LOAD_ADDRESS = 0x0800;
+        private final DesktopMachineKind kind;
+        private final Apple2ModelConfig modelConfig;
+
+        private Apple2Definition(DesktopMachineKind kind, Apple2ModelConfig modelConfig) {
+            this.kind = kind;
+            this.modelConfig = modelConfig;
+        }
 
         @Override
         public DesktopMachineKind kind() {
-            return DesktopMachineKind.APPLE2;
+            return kind;
         }
 
         @Override
         public void validateRom(byte[] romImage, Path romPath) {
-            if (!Apple2Memory.isSupportedLaunchImageSize(romImage.length)) {
-                throw new IllegalArgumentException("Apple II image must be exactly 4 KB, 8 KB, 12 KB, or 64 KB: " + romPath);
+            if (!modelConfig.supportsLaunchImageSize(romImage.length)) {
+                throw new IllegalArgumentException("Apple II image size is not supported by %s: %s"
+                        .formatted(modelConfig.modelName(), romPath));
             }
         }
 
@@ -312,10 +336,22 @@ final class DesktopMachineDefinitions {
         public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath, DesktopLaunchOptions options) throws IOException {
             Path mediaPath = Path.of(rawPath).toAbsolutePath().normalize();
             byte[] programImage = Files.readAllBytes(mediaPath);
+            if (!options.hasLoadAddress() && Apple2WozDiskImage.hasWoz1Header(programImage)) {
+                return new DesktopLaunchConfig.LoadedApple2WozDisk(
+                        mediaPath.toString(),
+                        Apple2WozDiskImageLoader.load(mediaPath)
+                );
+            }
             if (!options.hasLoadAddress() && programImage.length == Apple2DosDiskImage.IMAGE_SIZE) {
                 return new DesktopLaunchConfig.LoadedApple2Disk(
                         mediaPath.toString(),
                         Apple2DosDiskImageLoader.load(mediaPath)
+                );
+            }
+            if (programImage.length == Apple2ProDosBlockImage.IMAGE_SIZE_800K) {
+                return new DesktopLaunchConfig.LoadedApple2BlockDevice(
+                        mediaPath.toString(),
+                        Apple2ProDosBlockImage.fromProDosOrderedBytes(programImage)
                 );
             }
             if (programImage.length == 0) {
@@ -330,7 +366,7 @@ final class DesktopMachineDefinitions {
 
         @Override
         public void open(DesktopLaunchConfig config) {
-            Apple2Machine machine = Apple2Machine.fromLaunchImage(config.romImage());
+            Apple2Machine machine = Apple2Machine.fromLaunchImage(modelConfig, config.romImage());
             if (config.launchOptions().hasDisk2RomPath()) {
                 machine.loadDisk2SlotRom(loadDisk2Rom(config.launchOptions().disk2RomPath()));
             }
@@ -338,7 +374,18 @@ final class DesktopMachineDefinitions {
                     .ifPresent(program -> machine.loadProgram(program.programImage(), program.loadAddress()));
             config.loadedMedia(DesktopLaunchConfig.LoadedApple2Disk.class)
                     .ifPresent(disk -> machine.insertDisk(disk.diskImage()));
-            if (config.loadedMedia(DesktopLaunchConfig.LoadedApple2Disk.class).isPresent()
+            config.loadedMedia(DesktopLaunchConfig.LoadedApple2WozDisk.class)
+                    .ifPresent(disk -> machine.insertDisk(disk.diskImage()));
+            config.loadedMedia(DesktopLaunchConfig.LoadedApple2BlockDevice.class)
+                    .ifPresent(media -> {
+                        throw new IllegalArgumentException(
+                                "Apple II ProDOS .po images are recognized but not desktop-bootable until an explicit Apple 3.5 / SuperDrive path is selected in the probe: "
+                                        + media.sourceLabel()
+                        );
+                    });
+            boolean disk2MediaPresent = config.loadedMedia(DesktopLaunchConfig.LoadedApple2Disk.class).isPresent()
+                    || config.loadedMedia(DesktopLaunchConfig.LoadedApple2WozDisk.class).isPresent();
+            if (disk2MediaPresent
                     && config.launchOptions().hasDisk2RomPath()
                     && !config.launchOptions().hasStartAddress()) {
                 machine.bootDiskFromSlot6();
@@ -351,7 +398,7 @@ final class DesktopMachineDefinitions {
 
         @Override
         public String usage() {
-            return "--machine=apple2|apple2plus [--load-address=0800] [--start-address=0800] [--disk2-rom=disk2.rom] <system-rom|memory-image> [program.bin|disk.do|disk.dsk]";
+            return "--machine=apple2|apple2plus|apple2e [--load-address=0800] [--start-address=0800] [--disk2-rom=disk2.rom] <system-rom|memory-image|apple-rom-dir> [program.bin|disk.do|disk.dsk|disk.woz|disk.po]";
         }
 
         private static byte[] loadDisk2Rom(Path romPath) {

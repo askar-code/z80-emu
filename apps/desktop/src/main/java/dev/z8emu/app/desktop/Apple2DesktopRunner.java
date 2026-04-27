@@ -34,7 +34,12 @@ final class Apple2DesktopRunner {
 
         @Override
         protected void attachMachine(JFrame frame) {
-            keyboardController = Apple2KeyboardController.bind(frame, displayComponent(), machine.board().keyboard());
+            keyboardController = Apple2KeyboardController.bind(
+                    frame,
+                    displayComponent(),
+                    machine.board().keyboard(),
+                    machine.board().gamePort()
+            );
         }
 
         @Override

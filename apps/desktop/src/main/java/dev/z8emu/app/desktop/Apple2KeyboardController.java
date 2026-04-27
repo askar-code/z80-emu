@@ -1,5 +1,6 @@
 package dev.z8emu.app.desktop;
 
+import dev.z8emu.machine.apple2.device.Apple2GamePortDevice;
 import dev.z8emu.machine.apple2.device.Apple2KeyboardDevice;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
@@ -7,20 +8,28 @@ import javax.swing.JComponent;
 
 final class Apple2KeyboardController extends AbstractHostKeyboardController {
     private final Apple2KeyboardDevice keyboard;
+    private final Apple2GamePortDevice gamePort;
 
-    private Apple2KeyboardController(Window window, Apple2KeyboardDevice keyboard) {
+    private Apple2KeyboardController(Window window, Apple2KeyboardDevice keyboard, Apple2GamePortDevice gamePort) {
         super(window);
         this.keyboard = keyboard;
+        this.gamePort = gamePort;
     }
 
-    static Apple2KeyboardController bind(Window window, JComponent component, Apple2KeyboardDevice keyboard) {
-        Apple2KeyboardController controller = new Apple2KeyboardController(window, keyboard);
+    static Apple2KeyboardController bind(
+            Window window,
+            JComponent component,
+            Apple2KeyboardDevice keyboard,
+            Apple2GamePortDevice gamePort
+    ) {
+        Apple2KeyboardController controller = new Apple2KeyboardController(window, keyboard, gamePort);
         controller.bindToComponent(component);
         return controller;
     }
 
     void releaseAllKeys() {
         keyboard.releaseAllKeys();
+        gamePort.reset();
         markFocusLost();
     }
 
@@ -42,6 +51,8 @@ final class Apple2KeyboardController extends AbstractHostKeyboardController {
 
     @Override
     protected void updateKeys(KeyEvent event, boolean pressed) {
+        updateGamePort(event.getKeyCode(), pressed);
+
         if (!pressed) {
             return;
         }
@@ -53,6 +64,19 @@ final class Apple2KeyboardController extends AbstractHostKeyboardController {
 
         keyboard.pressKey(ascii);
         setLastEvent("down:" + KeyEvent.getKeyText(event.getKeyCode()));
+    }
+
+    private void updateGamePort(int keyCode, boolean pressed) {
+        switch (keyCode) {
+            case KeyEvent.VK_LEFT -> gamePort.setPaddlePosition(0, pressed ? 0 : 128);
+            case KeyEvent.VK_RIGHT -> gamePort.setPaddlePosition(0, pressed ? 255 : 128);
+            case KeyEvent.VK_UP -> gamePort.setPaddlePosition(1, pressed ? 0 : 128);
+            case KeyEvent.VK_DOWN -> gamePort.setPaddlePosition(1, pressed ? 255 : 128);
+            case KeyEvent.VK_SPACE, KeyEvent.VK_SHIFT, KeyEvent.VK_CONTROL ->
+                    gamePort.setPushButton(0, pressed);
+            default -> {
+            }
+        }
     }
 
     private static int asciiForTypedCharacter(char character) {

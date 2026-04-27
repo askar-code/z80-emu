@@ -6,10 +6,12 @@ import java.util.Objects;
 
 public final class IoAddressSpace {
     private static final int DEFAULT_ADDRESS_MASK = 0xFFFF;
+    private static final String UNMAPPED = "unmapped";
 
     private final int addressMask;
     private final IoReadHandler unmappedReadHandler;
     private final List<Entry> entries = new ArrayList<>();
+    private IoTraceSink traceSink = IoTraceSink.NONE;
 
     public IoAddressSpace(IoReadHandler unmappedReadHandler) {
         this(DEFAULT_ADDRESS_MASK, unmappedReadHandler);
@@ -26,6 +28,10 @@ public final class IoAddressSpace {
     public static IoAddressSpace withUnmappedValue(int value) {
         int normalized = value & 0xFF;
         return new IoAddressSpace(access -> normalized);
+    }
+
+    public void setTraceSink(IoTraceSink traceSink) {
+        this.traceSink = traceSink == null ? IoTraceSink.NONE : traceSink;
     }
 
     public void map(String name, IoSelector selector, IoHandler handler) {
@@ -86,10 +92,14 @@ public final class IoAddressSpace {
         int normalized = normalize(address);
         Entry entry = find(normalized, true);
         IoAccess access = access(entry, normalized, tState, phaseTStates);
+        int value;
         if (entry == null) {
-            return unmappedReadHandler.read(access) & 0xFF;
+            value = unmappedReadHandler.read(access) & 0xFF;
+        } else {
+            value = entry.handler().read(access) & 0xFF;
         }
-        return entry.handler().read(access) & 0xFF;
+        trace(entry, true, access, value);
+        return value;
     }
 
     public void write(int address, int value) {
@@ -99,8 +109,19 @@ public final class IoAddressSpace {
     public void write(int address, int value, long tState, int phaseTStates) {
         int normalized = normalize(address);
         Entry entry = find(normalized, false);
+        int normalizedValue = value & 0xFF;
         if (entry != null) {
-            entry.handler().write(access(entry, normalized, tState, phaseTStates), value & 0xFF);
+            IoAccess access = access(entry, normalized, tState, phaseTStates);
+            entry.handler().write(access, normalizedValue);
+            trace(entry, false, access, normalizedValue);
+        } else {
+            trace(null, false, new IoAccess(normalized, normalized, tState, phaseTStates), normalizedValue);
+        }
+    }
+
+    private void trace(Entry entry, boolean read, IoAccess access, int value) {
+        if (traceSink != IoTraceSink.NONE) {
+            traceSink.traceIo(entry == null ? UNMAPPED : entry.name(), read, access, value & 0xFF);
         }
     }
 
