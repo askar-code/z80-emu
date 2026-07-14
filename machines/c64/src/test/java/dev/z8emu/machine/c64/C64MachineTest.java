@@ -1,5 +1,6 @@
 package dev.z8emu.machine.c64;
 
+import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,34 @@ class C64MachineTest {
     }
 
     @Test
+    void ciaTwoTimerUnderflowDeliversNonMaskableInterrupt() {
+        C64Machine machine = bootableMachine();
+        armCiaTwoTimer(machine);
+
+        assertTrue(runUntilProgramCounter(machine, 0xE100, 10));
+    }
+
+    @Test
+    void heldNmiLineDoesNotRetrigger() {
+        C64Machine machine = bootableMachine();
+        armCiaTwoTimer(machine);
+        assertTrue(runUntilProgramCounter(machine, 0xE100, 10));
+
+        for (int instruction = 0; instruction < 10; instruction++) {
+            machine.runInstruction();
+            assertNotEquals(0xE100, machine.cpu().registers().pc());
+        }
+
+        CpuBus bus = machine.board().cpuBus();
+        bus.writeMemory(0xDD0E, 0x00);
+        bus.readMemory(0xDD0D);
+        machine.runInstruction();
+        bus.writeMemory(0xDD0E, 0x01);
+
+        assertTrue(runUntilProgramCounter(machine, 0xE100, 10));
+    }
+
+    @Test
     void romSizeValidationRejectsEveryIncorrectImageSize() {
         byte[] basicRom = new byte[C64Memory.BASIC_ROM_SIZE];
         byte[] kernalRom = bootableKernalRom();
@@ -73,10 +102,29 @@ class C64MachineTest {
 
     private static byte[] bootableKernalRom() {
         byte[] kernalRom = new byte[C64Memory.KERNAL_ROM_SIZE];
-        Arrays.fill(kernalRom, (byte) 0xE0);
-        kernalRom[0x0000] = (byte) 0xEA;
+        Arrays.fill(kernalRom, (byte) 0xEA);
+        kernalRom[0x1FFA] = 0x00;
+        kernalRom[0x1FFB] = (byte) 0xE1;
         kernalRom[0x1FFC] = 0x00;
         kernalRom[0x1FFD] = (byte) 0xE0;
         return kernalRom;
+    }
+
+    private static void armCiaTwoTimer(C64Machine machine) {
+        CpuBus bus = machine.board().cpuBus();
+        bus.writeMemory(0xDD0D, 0x81);
+        bus.writeMemory(0xDD04, 0x02);
+        bus.writeMemory(0xDD05, 0x00);
+        bus.writeMemory(0xDD0E, 0x01);
+    }
+
+    private static boolean runUntilProgramCounter(C64Machine machine, int programCounter, int limit) {
+        for (int instruction = 0; instruction < limit; instruction++) {
+            machine.runInstruction();
+            if (machine.cpu().registers().pc() == programCounter) {
+                return true;
+            }
+        }
+        return false;
     }
 }

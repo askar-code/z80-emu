@@ -1,5 +1,6 @@
 package dev.z8emu.machine.c64;
 
+import dev.z8emu.machine.c64.device.C64CiaDevice;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.bus.io.IoTraceSink;
 import dev.z8emu.platform.machine.VideoMachineBoard;
@@ -11,6 +12,8 @@ public final class C64Board implements VideoMachineBoard {
     private final C64ModelConfig modelConfig;
     private final C64Memory memory;
     private final C64CpuPort cpuPort;
+    private final C64CiaDevice cia1;
+    private final C64CiaDevice cia2;
     private final C64Bus bus;
     private final FrameBuffer frame;
 
@@ -19,7 +22,9 @@ public final class C64Board implements VideoMachineBoard {
         this.memory = Objects.requireNonNull(memory, "memory");
         TStateCounter requiredClock = Objects.requireNonNull(clock, "clock");
         this.cpuPort = new C64CpuPort();
-        this.bus = new C64Bus(requiredClock, memory, cpuPort);
+        this.cia1 = new C64CiaDevice();
+        this.cia2 = new C64CiaDevice();
+        this.bus = new C64Bus(requiredClock, memory, cpuPort, cia1, cia2);
         this.frame = new FrameBuffer(modelConfig.frameWidth(), modelConfig.frameHeight());
     }
 
@@ -32,10 +37,24 @@ public final class C64Board implements VideoMachineBoard {
     public void reset() {
         memory.reset();
         cpuPort.reset();
+        cia1.reset();
+        cia2.reset();
     }
 
     @Override
     public void onTStatesElapsed(int tStates, long currentTState) {
+        cia1.onTStatesElapsed(tStates);
+        cia2.onTStatesElapsed(tStates);
+    }
+
+    @Override
+    public boolean maskableInterruptLineActive(long currentTState) {
+        return cia1.interruptLineActive();
+    }
+
+    @Override
+    public boolean nonMaskableInterruptLineActive(long currentTState) {
+        return cia2.interruptLineActive();
     }
 
     @Override
@@ -50,6 +69,14 @@ public final class C64Board implements VideoMachineBoard {
 
     public C64CpuPort cpuPort() {
         return cpuPort;
+    }
+
+    public C64CiaDevice cia1() {
+        return cia1;
+    }
+
+    public C64CiaDevice cia2() {
+        return cia2;
     }
 
     public C64ModelConfig modelConfig() {

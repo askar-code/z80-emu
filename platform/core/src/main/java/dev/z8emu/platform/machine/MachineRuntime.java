@@ -8,6 +8,7 @@ public final class MachineRuntime implements Machine {
     private final Cpu cpu;
     private final MachineBoard board;
     private final TStateCounter clock;
+    private boolean nmiLineWasActive;
 
     public MachineRuntime(Cpu cpu, MachineBoard board, TStateCounter clock) {
         this.cpu = Objects.requireNonNull(cpu, "cpu");
@@ -17,6 +18,7 @@ public final class MachineRuntime implements Machine {
 
     @Override
     public void reset() {
+        nmiLineWasActive = false;
         clock.reset();
         board.reset();
         cpu.reset();
@@ -31,6 +33,11 @@ public final class MachineRuntime implements Machine {
 
         clock.advance(tStates);
         board.onTStatesElapsed(tStates, clock.value());
+        boolean nmiLineActive = board.nonMaskableInterruptLineActive(clock.value());
+        if (nmiLineActive && !nmiLineWasActive) {
+            cpu.requestNonMaskableInterrupt();
+        }
+        nmiLineWasActive = nmiLineActive;
         if (board.maskableInterruptLineActive(clock.value())) {
             cpu.requestMaskableInterrupt();
         } else {
