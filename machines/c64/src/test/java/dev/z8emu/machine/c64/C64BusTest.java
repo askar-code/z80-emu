@@ -1,5 +1,6 @@
 package dev.z8emu.machine.c64;
 
+import dev.z8emu.machine.c64.device.C64CiaDevice;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,8 @@ class C64BusTest {
 
     private C64Memory memory;
     private C64Bus bus;
+    private C64CiaDevice cia1;
+    private C64CiaDevice cia2;
 
     @BeforeEach
     void setUp() {
@@ -39,7 +42,11 @@ class C64BusTest {
         memory = new C64Memory(basicRom, kernalRom, chargenRom);
         C64CpuPort cpuPort = new C64CpuPort();
         cpuPort.reset();
-        bus = new C64Bus(new TStateCounter(), memory, cpuPort);
+        cia1 = new C64CiaDevice();
+        cia2 = new C64CiaDevice();
+        cia1.reset();
+        cia2.reset();
+        bus = new C64Bus(new TStateCounter(), memory, cpuPort, cia1, cia2);
 
         memory.writeRam(0xA123, BASIC_RAM_SENTINEL);
         memory.writeRam(0xD123, IO_RAM_SENTINEL);
@@ -91,12 +98,48 @@ class C64BusTest {
     @Test
     void writesToUnmappedIoAreDroppedWithoutTouchingUnderlyingRam() {
         driveMode(1, 1, 1);
-        memory.writeRam(0xDC05, 0x44);
+        memory.writeRam(0xDE05, 0x44);
 
-        bus.writeMemory(0xDC05, 0x99);
+        bus.writeMemory(0xDE05, 0x99);
 
-        assertEquals(0xFF, bus.readMemory(0xDC05));
-        assertEquals(0x44, memory.readRam(0xDC05));
+        assertEquals(0xFF, bus.readMemory(0xDE05));
+        assertEquals(0x44, memory.readRam(0xDE05));
+    }
+
+    @Test
+    void ciaOneRegistersMirrorAcrossTheDcWindow() {
+        driveMode(1, 1, 1);
+
+        bus.writeMemory(0xDC04, 0x42);
+        bus.writeMemory(0xDC05, 0x00);
+
+        assertEquals(0x42, bus.readMemory(0xDC44));
+        assertEquals(0x42, bus.readMemory(0xDCF4));
+    }
+
+    @Test
+    void ciaTwoAtDd00IsIndependentFromCiaOne() {
+        driveMode(1, 1, 1);
+
+        bus.writeMemory(0xDC02, 0xA5);
+        bus.writeMemory(0xDD02, 0x5A);
+
+        assertEquals(0xA5, bus.readMemory(0xDC02));
+        assertEquals(0x5A, bus.readMemory(0xDD02));
+        assertEquals(0xA5, cia1.readRegister(0x02));
+        assertEquals(0x5A, cia2.readRegister(0x02));
+    }
+
+    @Test
+    void ciaRegistersAreHiddenWhenAllRamIsBankedIn() {
+        driveMode(1, 1, 1);
+        bus.writeMemory(0xDC02, 0xF0);
+        memory.writeRam(0xDC02, 0x3C);
+
+        driveMode(0, 0, 1);
+
+        assertEquals(0x3C, bus.readMemory(0xDC02));
+        assertEquals(0xF0, cia1.readRegister(0x02));
     }
 
     @Test

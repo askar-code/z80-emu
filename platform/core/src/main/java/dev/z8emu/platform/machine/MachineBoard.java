@@ -12,4 +12,8 @@ public interface MachineBoard {
     default boolean maskableInterruptLineActive(long currentTState) {
         return false;
     }
+
+    default boolean nonMaskableInterruptLineActive(long currentTState) {
+        return false;
+    }
 }
