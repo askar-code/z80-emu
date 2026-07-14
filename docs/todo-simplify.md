@@ -17,7 +17,7 @@ extra gate or land here as deferred items. After each tranche: full
 - [x] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines) — DONE 2026-07-14
 - [x] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines) — DONE 2026-07-14
 - [x] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines) — DONE 2026-07-14
-- [ ] 8. `app-desktop` — apps/desktop (~5.9k lines)
+- [x] 8. `app-desktop` — apps/desktop (~5.9k lines) — DONE 2026-07-14
 - [ ] 9. `cross-reuse` + `cross-altitude` — whole repo, run last
 
 ## Deferred findings
@@ -25,6 +25,33 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 8: `app-desktop` (apps/desktop) — 2026-07-14
+
+- Review: 26 confirmed / 0 rejected → 11 unique (record convergence:
+  SpectrumDisplayPanel duplicate found by all four angles; probe report
+  and crash-report dups by three-four each).
+- Applied: 10 + 1 justified PARTIAL via Codex, net −176 lines. Headliners:
+  SpectrumDisplayPanel deleted in favor of FrameDisplayPanel; shared
+  ProbeOutput (hex8/hex16/crc32Hex/writePng/countVisibleCharacters,
+  ~80 pasted lines across nine classes); Apple II probe report extracted
+  with a deferred supplier so the catch-path frame render stays at its
+  original 9th position; shared CrashReportWriter; final title() over
+  statusTitle(); HostKeyTyper weak-registry removed; 100-line host-char
+  switch collapsed to a coordinate table; tape-turbo properties cached
+  as constants (were re-parsed 3-5x per frame on the emulation thread);
+  Disk II slot ROM loading centralized in Apple2RomImageLoader.
+- Codex ran the executable gates ITSELF this time (media copied into the
+  worktree): full build + all three Apple II smokes green pre-merge,
+  including the PoP frame CRC 54BCF7D0 through the refactored launcher.
+- Agent diff review: 13/13 CLEAN. Resolved the finder's "24 mappings"
+  claim: the old switch had exactly 23 cases, all pairs byte-identical.
+  String-literal multiset 433 -> 433, zero vanished/added. Crash-report
+  line sequences reconstructed byte-identically for both machines.
+- Spectrum pixel gate: STRML128 probe re-run in the worktree, 4/4 PNGs
+  MD5-identical to the tranche-4 baseline; probe summary identical.
+- Verification on main after merge: `./gradlew build` + all three Apple II
+  smokes green. @Test 4/10/2/3 unchanged.
 
 ### Tranche 7: `apple2-disk` (machines/apple2 disk/) — 2026-07-14
 
