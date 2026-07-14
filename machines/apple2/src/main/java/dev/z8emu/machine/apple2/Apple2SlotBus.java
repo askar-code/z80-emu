@@ -5,8 +5,6 @@ import java.util.Objects;
 
 public final class Apple2SlotBus {
     private static final int SLOT_COUNT = 8;
-    private static final int C800_EXPANSION_START = 0xC800;
-    private static final int C800_EXPANSION_END_EXCLUSIVE = 0xD000;
 
     private final Apple2SlotCard[] slots = new Apple2SlotCard[SLOT_COUNT];
     private int selectedC800Slot = -1;
@@ -53,7 +51,7 @@ public final class Apple2SlotBus {
 
     public boolean hasCnxxRom(int address) {
         int normalized = address & 0xFFFF;
-        if (normalized < Apple2Memory.SLOT_ROM_START || normalized >= 0xC800) {
+        if (normalized < Apple2Memory.SLOT_ROM_START || normalized >= Apple2Memory.C800_EXPANSION_START) {
             return false;
         }
         Apple2SlotCard card = slots[slotForCnxx(normalized)];
@@ -77,21 +75,23 @@ public final class Apple2SlotBus {
 
     public int readC800(int address) {
         int normalized = address & 0xFFFF;
-        if (normalized < C800_EXPANSION_START || normalized >= C800_EXPANSION_END_EXCLUSIVE) {
+        if (normalized < Apple2Memory.C800_EXPANSION_START
+                || normalized >= Apple2Memory.C800_EXPANSION_END_EXCLUSIVE) {
             return 0xFF;
         }
         Apple2SlotCard card = selectedC800Card();
-        return card == null ? 0xFF : card.readC800(normalized - C800_EXPANSION_START);
+        return card == null ? 0xFF : card.readC800(normalized - Apple2Memory.C800_EXPANSION_START);
     }
 
     public void writeC800(int address, int value) {
         int normalized = address & 0xFFFF;
-        if (normalized < C800_EXPANSION_START || normalized >= C800_EXPANSION_END_EXCLUSIVE) {
+        if (normalized < Apple2Memory.C800_EXPANSION_START
+                || normalized >= Apple2Memory.C800_EXPANSION_END_EXCLUSIVE) {
             return;
         }
         Apple2SlotCard card = selectedC800Card();
         if (card != null) {
-            card.writeC800(normalized - C800_EXPANSION_START, value & 0xFF);
+            card.writeC800(normalized - Apple2Memory.C800_EXPANSION_START, value & 0xFF);
         }
     }
 

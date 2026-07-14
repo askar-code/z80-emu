@@ -51,10 +51,6 @@ public final class Apple2LanguageCard implements Apple2SlotCard {
         return writeEnabled;
     }
 
-    public int readHighMemory(int address) {
-        return readHighMemory(address, false);
-    }
-
     public int readHighMemory(int address, boolean auxiliary) {
         int normalized = address & 0xFFFF;
         Bank bank = auxiliary ? auxiliaryBank : mainBank;
@@ -65,10 +61,6 @@ public final class Apple2LanguageCard implements Apple2SlotCard {
             return Byte.toUnsignedInt(bank.common[normalized - COMMON_START]);
         }
         throw new IllegalArgumentException("Apple II language-card address out of range: 0x%04X".formatted(normalized));
-    }
-
-    public void writeHighMemory(int address, int value) {
-        writeHighMemory(address, value, false);
     }
 
     public void writeHighMemory(int address, int value, boolean auxiliary) {
