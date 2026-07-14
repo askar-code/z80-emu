@@ -85,9 +85,11 @@ public final class TzxLoader {
         byte[] data = cursor.readBytes(length);
         boolean header = length > 0 && (data[0] & 0xFF) == 0x00;
         return TapeBlock.dataBlock(
-                TapLoader.buildStandardDataPulses(header ? 8_063 : 3_223),
-                855,
-                1_710,
+                TapLoader.buildStandardDataPulses(
+                        header ? TapLoader.HEADER_PILOT_PULSES : TapLoader.DATA_PILOT_PULSES
+                ),
+                TapLoader.ZERO_BIT_PULSE_LENGTH,
+                TapLoader.ONE_BIT_PULSE_LENGTH,
                 8,
                 pauseAfterMillis,
                 data

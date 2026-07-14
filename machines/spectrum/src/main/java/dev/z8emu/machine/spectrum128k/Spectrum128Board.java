@@ -18,8 +18,6 @@ import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Objects;
 
 public final class Spectrum128Board implements SpectrumBoard {
-    private static final int ULA_SCANLINES_PER_FRAME_128K = 311;
-
     private final SpectrumModelConfig modelConfig;
     private final SpectrumMachineState machineState;
     private final Spectrum48kMemoryMap memory;
@@ -42,8 +40,12 @@ public final class Spectrum128Board implements SpectrumBoard {
         this.ay = new Ay38912Device(modelConfig.cpuClockHz());
         this.audio = new MixedPcmMonoSource(beeper, ay);
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), false);
-        this.ula = new SpectrumUlaDevice(modelConfig.frameTStates(), ULA_SCANLINES_PER_FRAME_128K);
-        this.bus = new Spectrum128Bus(clock, memory, pagingController, ula, keyboard, beeper, tape, ay);
+        this.ula = new SpectrumUlaDevice(
+                modelConfig.frameTStates(),
+                modelConfig.scanlinesPerFrame(),
+                modelConfig.floatingBusDisplayStartTState()
+        );
+        this.bus = new Spectrum128Bus(clock, memory, pagingController, ula, keyboard, beeper, tape, ay, modelConfig);
     }
 
     @Override
@@ -67,8 +69,7 @@ public final class Spectrum128Board implements SpectrumBoard {
         keyboard.onTStatesElapsed(tStates);
         beeper.onTStatesElapsed(tStates);
         ay.onTStatesElapsed(tStates);
-        tape.syncToTState(currentTState);
-        beeper.setTapeInputLevel(tape.isPlaying() && tape.earHigh());
+        beeper.setTapeInputLevel(tape.syncAndReadEarLevel(currentTState));
         ula.onTStatesElapsed(tStates, memory);
     }
 

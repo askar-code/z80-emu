@@ -32,8 +32,12 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         this.keyboard = new KeyboardMatrixDevice();
         this.beeper = new BeeperDevice(modelConfig.cpuClockHz());
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), true);
-        this.ula = new SpectrumUlaDevice();
-        this.bus = new Spectrum48kBus(clock, memory, ula, keyboard, beeper, tape);
+        this.ula = new SpectrumUlaDevice(
+                modelConfig.frameTStates(),
+                modelConfig.scanlinesPerFrame(),
+                modelConfig.floatingBusDisplayStartTState()
+        );
+        this.bus = new Spectrum48kBus(clock, memory, ula, keyboard, beeper, tape, modelConfig);
     }
 
     @Override
@@ -55,8 +59,7 @@ public final class Spectrum48kBoard implements SpectrumBoard {
     public void onTStatesElapsed(int tStates, long currentTState) {
         keyboard.onTStatesElapsed(tStates);
         beeper.onTStatesElapsed(tStates);
-        tape.syncToTState(currentTState);
-        beeper.setTapeInputLevel(tape.isPlaying() && tape.earHigh());
+        beeper.setTapeInputLevel(tape.syncAndReadEarLevel(currentTState));
         ula.onTStatesElapsed(tStates, memory);
     }
 
