@@ -11,7 +11,7 @@ extra gate or land here as deferred items. After each tranche: full
 ## Tranche queue
 
 - [x] 1. `platform` — platform/core + chips/ay (~1.7k lines) — DONE 2026-07-14
-- [ ] 2. `cpu-z80` — cpu/z80 (~3.8k lines)
+- [x] 2. `cpu-z80` — cpu/z80 (~3.8k lines) — DONE 2026-07-14
 - [ ] 3. `cpu-6502-i8080` — cpu/mos6502 + cpu/i8080 (~4.4k lines)
 - [ ] 4. `machine-spectrum` — machines/spectrum (~3.9k lines)
 - [ ] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines)
@@ -25,6 +25,20 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 2: `cpu-z80` (cpu/z80) — 2026-07-14
+
+- Review: 30 raw findings → 29 confirmed / 1 rejected; 11 unique after dedup
+  (all four angles converged on the same core spots: compare8/subtract8,
+  LD A,I/R, SZP flag helpers, repeating-block epilogue).
+- Applied: 11/11 via Codex, 0 skipped, 0 deferred. Merged as 988128d.
+  Net −92 lines in the Z80 core.
+- Verified bit-identity by hand for the coverage-thin spots: ED 70/71
+  routing (writeRegisterOperand code-6 no-op, outRegisterToPortC code-6→0),
+  executeHaltCycle body match, subtract8 flag block vs deleted compare8,
+  0x40-0x7F divert guards; ED 70/71 also covered by Z80CpuTest:608.
+- Verification: `./gradlew build` + `:cpu-z80:zexTest` (zexdoc+zexall)
+  green in worktree and again in main after merge.
 
 ### Tranche 1: `platform` (platform/core + chips/ay) — 2026-07-14
 
