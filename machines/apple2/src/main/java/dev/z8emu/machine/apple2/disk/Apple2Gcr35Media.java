@@ -1,8 +1,7 @@
 package dev.z8emu.machine.apple2.disk;
 
-import java.util.ArrayList;
+import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
 
 public final class Apple2Gcr35Media {
@@ -87,20 +86,16 @@ public final class Apple2Gcr35Media {
     private byte[] buildTrack(int track, int head) {
         int sectors = sectorsPerTrack(track);
         Sector[] physicalSectors = physicalSectors(track, head, sectors);
-        List<Integer> bytes = new ArrayList<>(INITIAL_SYNC_BYTES + (sectors * 800));
-        appendSync(bytes, INITIAL_SYNC_BYTES);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(INITIAL_SYNC_BYTES + (sectors * 800));
+        appendSync(out, INITIAL_SYNC_BYTES);
         for (Sector sector : physicalSectors) {
-            appendSync(bytes, ADDRESS_SYNC_BYTES);
-            appendAddressField(bytes, track, head, sector.logicalSector());
-            appendSync(bytes, ADDRESS_TO_DATA_SYNC_BYTES);
-            appendDataField(bytes, sector.logicalSector(), sector.data());
-            appendSync(bytes, DATA_TO_ADDRESS_SYNC_BYTES);
+            appendSync(out, ADDRESS_SYNC_BYTES);
+            appendAddressField(out, track, head, sector.logicalSector());
+            appendSync(out, ADDRESS_TO_DATA_SYNC_BYTES);
+            appendDataField(out, sector.logicalSector(), sector.data());
+            appendSync(out, DATA_TO_ADDRESS_SYNC_BYTES);
         }
-        byte[] stream = new byte[bytes.size()];
-        for (int i = 0; i < bytes.size(); i++) {
-            stream[i] = (byte) (bytes.get(i) & 0xFF);
-        }
-        return stream;
+        return out.toByteArray();
     }
 
     private Sector[] physicalSectors(int track, int head, int sectors) {
@@ -119,33 +114,33 @@ public final class Apple2Gcr35Media {
         return physicalSectors;
     }
 
-    private static void appendAddressField(List<Integer> bytes, int track, int head, int sector) {
+    private static void appendAddressField(ByteArrayOutputStream out, int track, int head, int sector) {
         int side = ((track & 0x40) != 0 ? 0x01 : 0x00) | (head != 0 ? 0x20 : 0x00);
         int check = track ^ sector ^ side ^ FORMAT_DOUBLE_SIDED;
-        bytes.add(0xD5);
-        bytes.add(0xAA);
-        bytes.add(0x96);
-        bytes.add(Apple2GcrEncoding.encode6And2(track));
-        bytes.add(Apple2GcrEncoding.encode6And2(sector));
-        bytes.add(Apple2GcrEncoding.encode6And2(side));
-        bytes.add(Apple2GcrEncoding.encode6And2(FORMAT_DOUBLE_SIDED));
-        bytes.add(Apple2GcrEncoding.encode6And2(check));
-        bytes.add(0xDE);
-        bytes.add(0xAA);
-        bytes.add(0xFF);
+        out.write(0xD5);
+        out.write(0xAA);
+        out.write(0x96);
+        out.write(Apple2GcrEncoding.encode6And2(track));
+        out.write(Apple2GcrEncoding.encode6And2(sector));
+        out.write(Apple2GcrEncoding.encode6And2(side));
+        out.write(Apple2GcrEncoding.encode6And2(FORMAT_DOUBLE_SIDED));
+        out.write(Apple2GcrEncoding.encode6And2(check));
+        out.write(0xDE);
+        out.write(0xAA);
+        out.write(0xFF);
     }
 
-    private static void appendDataField(List<Integer> bytes, int sector, byte[] data) {
+    private static void appendDataField(ByteArrayOutputStream out, int sector, byte[] data) {
         if (data.length != SECTOR_SIZE) {
             throw new IllegalArgumentException("Apple 3.5 sector must be exactly 512 bytes");
         }
         byte[] payload = new byte[12 + SECTOR_SIZE];
         System.arraycopy(data, 0, payload, 12, data.length);
 
-        bytes.add(0xD5);
-        bytes.add(0xAA);
-        bytes.add(0xAD);
-        bytes.add(Apple2GcrEncoding.encode6And2(sector));
+        out.write(0xD5);
+        out.write(0xAA);
+        out.write(0xAD);
+        out.write(Apple2GcrEncoding.encode6And2(sector));
 
         int checksumA = 0;
         int checksumB = 0;
@@ -167,24 +162,24 @@ public final class Apple2Gcr35Media {
             }
             valueC ^= checksumB;
 
-            appendEncodedTriple(bytes, valueA, valueB, valueC, i == 174 ? 3 : 4);
+            appendEncodedTriple(out, valueA, valueB, valueC, i == 174 ? 3 : 4);
         }
-        appendEncodedTriple(bytes, checksumA, checksumB, checksumC, 4);
-        bytes.add(0xDE);
-        bytes.add(0xAA);
-        bytes.add(0xFF);
+        appendEncodedTriple(out, checksumA, checksumB, checksumC, 4);
+        out.write(0xDE);
+        out.write(0xAA);
+        out.write(0xFF);
     }
 
-    private static void appendEncodedTriple(List<Integer> bytes, int a, int b, int c, int byteCount) {
+    private static void appendEncodedTriple(ByteArrayOutputStream out, int a, int b, int c, int byteCount) {
         int encoded = Apple2GcrEncoding.encodeMacTriple(a, b, c);
         for (int shift = 24; shift >= 32 - (byteCount * 8); shift -= 8) {
-            bytes.add((encoded >>> shift) & 0xFF);
+            out.write((encoded >>> shift) & 0xFF);
         }
     }
 
-    private static void appendSync(List<Integer> bytes, int count) {
+    private static void appendSync(ByteArrayOutputStream out, int count) {
         for (int i = 0; i < count; i++) {
-            bytes.add(0xFF);
+            out.write(0xFF);
         }
     }
 

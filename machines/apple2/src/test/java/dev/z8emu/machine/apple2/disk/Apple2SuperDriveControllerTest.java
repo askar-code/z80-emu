@@ -90,15 +90,9 @@ class Apple2SuperDriveControllerTest {
 
     @Test
     void onboardControllerCpuRunsFromControllerRom() {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        rom[offset] = (byte) 0xE6; // INC $20
-        rom[offset + 1] = (byte) 0x20;
-        rom[offset + 2] = (byte) 0x4C; // JMP $9000
-        rom[offset + 3] = (byte) 0x00;
-        rom[offset + 4] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
+        byte[] rom = controllerProgram()
+                .incZp(0x20)
+                .toRom(0);
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, rom);
 
         controller.onHostTStatesElapsed(1);
@@ -110,21 +104,11 @@ class Apple2SuperDriveControllerTest {
 
     @Test
     void tracesOnboardControllerIoAccesses() {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        rom[offset] = (byte) 0xA9; // LDA #$5A
-        rom[offset + 1] = (byte) 0x5A;
-        rom[offset + 2] = (byte) 0x8D; // STA $0A80
-        rom[offset + 3] = (byte) 0x80;
-        rom[offset + 4] = (byte) 0x0A;
-        rom[offset + 5] = (byte) 0xAD; // LDA $0A80
-        rom[offset + 6] = (byte) 0x80;
-        rom[offset + 7] = (byte) 0x0A;
-        rom[offset + 8] = (byte) 0x4C; // JMP $9008
-        rom[offset + 9] = (byte) 0x08;
-        rom[offset + 10] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
+        byte[] rom = controllerProgram()
+                .lda(0x5A)
+                .staAbs(0x0A80)
+                .ldaAbs(0x0A80)
+                .toRom();
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, rom);
         List<Apple2SuperDriveTraceEvent> events = new ArrayList<>();
         controller.setTraceSink(events::add);
@@ -181,18 +165,10 @@ class Apple2SuperDriveControllerTest {
 
     @Test
     void tracesOnboardControllerAccessesToHostTouchedSharedRam() {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        rom[offset] = (byte) 0xAD; // LDA $0002
-        rom[offset + 1] = (byte) 0x02;
-        rom[offset + 2] = (byte) 0x00;
-        rom[offset + 3] = (byte) 0x85; // STA $20
-        rom[offset + 4] = (byte) 0x20;
-        rom[offset + 5] = (byte) 0x4C; // JMP $9005
-        rom[offset + 6] = (byte) 0x05;
-        rom[offset + 7] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
+        byte[] rom = controllerProgram()
+                .ldaAbs(0x0002)
+                .staZp(0x20)
+                .toRom();
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, rom);
         List<Apple2SuperDriveTraceEvent> events = new ArrayList<>();
         controller.setTraceSink(events::add);
@@ -213,50 +189,22 @@ class Apple2SuperDriveControllerTest {
 
     @Test
     void swimModeStatusAndHandshakeRegistersAreVisibleToOnboardCpu() {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        int i = offset;
-        rom[i++] = (byte) 0xAD; // LDA $0A0E
-        rom[i++] = (byte) 0x0E;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x85; // STA $20
-        rom[i++] = (byte) 0x20;
-        rom[i++] = (byte) 0xA9; // LDA #$1F
-        rom[i++] = (byte) 0x1F;
-        rom[i++] = (byte) 0x2C; // BIT $0A0D
-        rom[i++] = (byte) 0x0D;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x8D; // STA $0A0F
-        rom[i++] = (byte) 0x0F;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0xAD; // LDA $0A0E
-        rom[i++] = (byte) 0x0E;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x85; // STA $21
-        rom[i++] = (byte) 0x21;
-        rom[i++] = (byte) 0xA9; // LDA #$00
-        rom[i++] = (byte) 0x00;
-        rom[i++] = (byte) 0x8D; // STA $0A0F
-        rom[i++] = (byte) 0x0F;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0xAD; // LDA $0A0E
-        rom[i++] = (byte) 0x0E;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x85; // STA $22
-        rom[i++] = (byte) 0x22;
-        rom[i++] = (byte) 0x2C; // BIT $0A0F
-        rom[i++] = (byte) 0x0F;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0xAD; // LDA $0A0C
-        rom[i++] = (byte) 0x0C;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x85; // STA $23
-        rom[i++] = (byte) 0x23;
-        rom[i++] = (byte) 0x4C; // JMP $9024
-        rom[i++] = (byte) 0x24;
-        rom[i] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
+        byte[] rom = controllerProgram()
+                .ldaAbs(0x0A0E)
+                .staZp(0x20)
+                .lda(0x1F)
+                .bit(0x0A0D)
+                .staAbs(0x0A0F)
+                .ldaAbs(0x0A0E)
+                .staZp(0x21)
+                .lda(0x00)
+                .staAbs(0x0A0F)
+                .ldaAbs(0x0A0E)
+                .staZp(0x22)
+                .bit(0x0A0F)
+                .ldaAbs(0x0A0C)
+                .staZp(0x23)
+                .toRom();
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, rom);
 
         controller.onHostTStatesElapsed(100);
@@ -269,39 +217,19 @@ class Apple2SuperDriveControllerTest {
 
     @Test
     void onboardControllerCpuCanReadBytesFromSwimMediaStream() {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        int i = offset;
-        rom[i++] = (byte) 0xA9; // LDA #$1F
-        rom[i++] = (byte) 0x1F;
-        rom[i++] = (byte) 0x2C; // BIT $0A0D
-        rom[i++] = (byte) 0x0D;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x8D; // STA $0A0F
-        rom[i++] = (byte) 0x0F;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0xAD; // LDA $0A0E
-        rom[i++] = (byte) 0x0E;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x85; // STA $20
-        rom[i++] = (byte) 0x20;
-        rom[i++] = (byte) 0x10; // BPL $9008
-        rom[i++] = (byte) 0xF9;
-        rom[i++] = (byte) 0x2C; // BIT $0A0C
-        rom[i++] = (byte) 0x0C;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0xAD; // LDA $0A00
-        rom[i++] = (byte) 0x00;
-        rom[i++] = (byte) 0x0A;
-        rom[i++] = (byte) 0x85; // STA $21
-        rom[i++] = (byte) 0x21;
-        rom[i++] = (byte) 0x4C; // JMP $9017
-        rom[i++] = (byte) 0x17;
-        rom[i] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
+        byte[] rom = controllerProgram()
+                .lda(0x1F)
+                .bit(0x0A0D)
+                .staAbs(0x0A0F)
+                .ldaAbs(0x0A0E)
+                .staZp(0x20)
+                .bplBack(0x08)
+                .bit(0x0A0C)
+                .ldaAbs(0x0A00)
+                .staZp(0x21)
+                .toRom();
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, rom);
-        controller.insertSwimMediaStream(new CyclingStream(0xD5));
+        controller.insertSwimMediaStream(new CyclingSwimMediaStream(0xD5));
 
         controller.onHostTStatesElapsed(200);
 
@@ -311,22 +239,11 @@ class Apple2SuperDriveControllerTest {
 
     @Test
     void auxiliaryControllerIoTracksLedAndSideSelectLine() {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        rom[offset] = (byte) 0x8D; // STA $0A80
-        rom[offset + 1] = (byte) 0x80;
-        rom[offset + 2] = (byte) 0x0A;
-        rom[offset + 3] = (byte) 0x8D; // STA $0A41
-        rom[offset + 4] = (byte) 0x41;
-        rom[offset + 5] = (byte) 0x0A;
-        rom[offset + 6] = (byte) 0x8D; // STA $0A81
-        rom[offset + 7] = (byte) 0x81;
-        rom[offset + 8] = (byte) 0x0A;
-        rom[offset + 9] = (byte) 0x4C; // JMP $9009
-        rom[offset + 10] = (byte) 0x09;
-        rom[offset + 11] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
+        byte[] rom = controllerProgram()
+                .staAbs(0x0A80)
+                .staAbs(0x0A41)
+                .staAbs(0x0A81)
+                .toRom();
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, rom);
 
         controller.onHostTStatesElapsed(20);
@@ -346,7 +263,7 @@ class Apple2SuperDriveControllerTest {
         readDrive35Status(program, 0x06, 0x24);
         readDrive35Status(program, 0x0D, 0x25);
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, program.toRom());
-        controller.insertSwimMediaStream(new CyclingStream(0xFF));
+        controller.insertSwimMediaStream(new CyclingSwimMediaStream(0xFF));
 
         controller.onHostTStatesElapsed(500);
 
@@ -382,7 +299,7 @@ class Apple2SuperDriveControllerTest {
         readDrive35Status(program, 0x0F, 0x20);
         readDrive35Status(program, 0x08, 0x21);
         Apple2SuperDriveController controller = new Apple2SuperDriveController(5, program.toRom());
-        controller.insertSwimMediaStream(new CyclingStream(0xFF));
+        controller.insertSwimMediaStream(new CyclingSwimMediaStream(0xFF));
 
         controller.onHostTStatesElapsed(500);
 
@@ -463,19 +380,10 @@ class Apple2SuperDriveControllerTest {
     }
 
     private static byte[] romWritingRam(int address, int value) {
-        byte[] rom = new byte[Apple2SuperDriveController.CONTROLLER_ROM_SIZE];
-        int offset = 0x1000;
-        rom[offset] = (byte) 0xA9; // LDA #value
-        rom[offset + 1] = (byte) value;
-        rom[offset + 2] = (byte) 0x8D; // STA address
-        rom[offset + 3] = (byte) address;
-        rom[offset + 4] = (byte) (address >>> 8);
-        rom[offset + 5] = (byte) 0x4C; // JMP $9005
-        rom[offset + 6] = (byte) 0x05;
-        rom[offset + 7] = (byte) 0x90;
-        rom[0x7FFC] = (byte) 0x00;
-        rom[0x7FFD] = (byte) 0x90;
-        return rom;
+        return controllerProgram()
+                .lda(value)
+                .staAbs(address)
+                .toRom();
     }
 
     private static void writeRomVector(byte[] rom, int vectorAddress, int target) {
@@ -513,13 +421,32 @@ class Apple2SuperDriveControllerTest {
             return this;
         }
 
+        private ControllerProgram incZp(int address) {
+            emit(0xE6, address & 0xFF);
+            return this;
+        }
+
         private ControllerProgram bit(int address) {
             emit(0x2C, address & 0xFF, address >>> 8);
             return this;
         }
 
+        private ControllerProgram bplBack(int targetOffset) {
+            int instructionOffset = offset - PROGRAM_OFFSET;
+            int displacement = targetOffset - instructionOffset - 2;
+            if (displacement < -128 || displacement > 127) {
+                throw new IllegalArgumentException("BPL target is outside relative branch range");
+            }
+            emit(0x10, displacement);
+            return this;
+        }
+
         private byte[] toRom() {
-            int loopAddress = ROM_START + offset;
+            return toRom(offset - PROGRAM_OFFSET);
+        }
+
+        private byte[] toRom(int loopTargetOffset) {
+            int loopAddress = PROGRAM_START + loopTargetOffset;
             emit(0x4C, loopAddress & 0xFF, loopAddress >>> 8);
             rom[0x7FFC] = (byte) (PROGRAM_START & 0xFF);
             rom[0x7FFD] = (byte) (PROGRAM_START >>> 8);
@@ -533,24 +460,4 @@ class Apple2SuperDriveControllerTest {
         }
     }
 
-    private static final class CyclingStream implements Apple2SwimMediaStream {
-        private final int[] bytes;
-        private int offset;
-
-        private CyclingStream(int... bytes) {
-            this.bytes = bytes;
-        }
-
-        @Override
-        public int nextByte() {
-            int value = bytes[offset];
-            offset = (offset + 1) % bytes.length;
-            return value;
-        }
-
-        @Override
-        public void reset() {
-            offset = 0;
-        }
-    }
 }

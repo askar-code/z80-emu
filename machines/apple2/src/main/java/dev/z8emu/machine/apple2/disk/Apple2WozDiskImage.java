@@ -1,9 +1,8 @@
 package dev.z8emu.machine.apple2.disk;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
 
 public final class Apple2WozDiskImage {
@@ -134,7 +133,7 @@ public final class Apple2WozDiskImage {
         }
         int availableBits = bytesUsed * 8;
         int bitsToRead = bitCount == 0 ? availableBits : Math.min(bitCount, availableBits);
-        List<Integer> nibbles = new ArrayList<>(bytesUsed);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(bytesUsed);
         int shiftRegister = 0;
         int bitsSinceLatch = 0;
         for (int pass = 0; pass < 2; pass++) {
@@ -145,22 +144,17 @@ public final class Apple2WozDiskImage {
                 bitsSinceLatch++;
                 if (bitsSinceLatch >= 8 && (shiftRegister & 0x80) != 0) {
                     if (pass == 1) {
-                        nibbles.add(shiftRegister);
+                        out.write(shiftRegister);
                     }
                     shiftRegister = 0;
                     bitsSinceLatch = 0;
                 }
             }
         }
-        if (nibbles.isEmpty()) {
+        if (out.size() == 0) {
             return emptyTrack();
         }
-
-        byte[] stream = new byte[nibbles.size()];
-        for (int i = 0; i < nibbles.size(); i++) {
-            stream[i] = (byte) (nibbles.get(i) & 0xFF);
-        }
-        return stream;
+        return out.toByteArray();
     }
 
     private static byte[] emptyTrack() {

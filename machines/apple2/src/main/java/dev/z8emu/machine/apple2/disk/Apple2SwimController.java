@@ -55,26 +55,7 @@ final class Apple2SwimController {
     private boolean q7;
 
     void reset() {
-        readDataRegister = 0xFF;
-        writeDataRegister = 0xFF;
-        modeRegister = 0x1F;
-        ismModeRegister = 0x00;
-        ismSetupRegister = 0x00;
-        ismPhasesRegister = 0xF0;
-        ismParameterIndex = 0;
-        iwmToIsmCounter = 0;
-        shiftPatternIndex = 0;
-        mediaCycleCredit = 0;
-        phaseRegister = 0;
-        modeInitialized = false;
-        dataReady = false;
-        active = false;
-        drive2Selected = false;
-        q6 = false;
-        q7 = false;
-        for (int i = 0; i < ismParameters.length; i++) {
-            ismParameters[i] = 0;
-        }
+        resetIwmSelfTestState();
         if (mediaStream != null) {
             mediaStream.reset();
         }

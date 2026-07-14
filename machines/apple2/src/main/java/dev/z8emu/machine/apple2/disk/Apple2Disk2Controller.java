@@ -15,7 +15,6 @@ public final class Apple2Disk2Controller implements Apple2SlotCard {
     public static final int SLOT_INDEX = SLOT << 4;
     public static final int SLOT_ROM_START = 0xC000 | (SLOT << 8);
     public static final int SLOT_ROM_SIZE = 0x100;
-    public static final int SLOT_ROM_END_EXCLUSIVE = SLOT_ROM_START + 0x100;
 
     private final TStateCounter clock;
     private Apple2DosDiskImage diskImage;

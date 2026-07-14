@@ -78,10 +78,6 @@ public final class Apple2SuperDriveController implements Apple2SlotCard {
         return slot;
     }
 
-    public int slotIndex() {
-        return slot << 4;
-    }
-
     public int bankSelect() {
         return bankSelect;
     }
@@ -253,6 +249,9 @@ public final class Apple2SuperDriveController implements Apple2SlotCard {
     }
 
     private void traceHostAccess(boolean read, String region, int address, int offset, int value) {
+        if (traceSink == Apple2SuperDriveTraceSink.NONE) {
+            return;
+        }
         traceSink.traceSuperDrive(new Apple2SuperDriveTraceEvent(
                 Apple2SuperDriveTraceEvent.Source.HOST,
                 region,
@@ -400,7 +399,7 @@ public final class Apple2SuperDriveController implements Apple2SlotCard {
             if (normalized < 0x10) {
                 value = swimController.read(normalized);
             } else {
-                applyAuxiliaryIoReadSideEffects(normalized);
+                applyAuxiliaryIoSideEffects(normalized);
                 value = Byte.toUnsignedInt(controllerIo[normalized]);
             }
             traceControllerIo(true, normalized, value);
@@ -414,23 +413,12 @@ public final class Apple2SuperDriveController implements Apple2SlotCard {
                 swimController.write(normalized, byteValue);
             } else {
                 controllerIo[normalized] = (byte) byteValue;
-                applyAuxiliaryIoWriteSideEffects(normalized);
+                applyAuxiliaryIoSideEffects(normalized);
             }
             traceControllerIo(false, normalized, byteValue);
         }
 
-        private void applyAuxiliaryIoReadSideEffects(int offset) {
-            switch (offset) {
-                case 0x40 -> drive35State.selectSide(0);
-                case 0x41 -> drive35State.selectSide(1);
-                case 0x80 -> diagnosticLedOn = true;
-                case 0x81 -> diagnosticLedOn = false;
-                default -> {
-                }
-            }
-        }
-
-        private void applyAuxiliaryIoWriteSideEffects(int offset) {
+        private void applyAuxiliaryIoSideEffects(int offset) {
             switch (offset) {
                 case 0x40 -> drive35State.selectSide(0);
                 case 0x41 -> drive35State.selectSide(1);
@@ -442,6 +430,9 @@ public final class Apple2SuperDriveController implements Apple2SlotCard {
         }
 
         private void traceControllerIo(boolean read, int offset, int value) {
+            if (traceSink == Apple2SuperDriveTraceSink.NONE) {
+                return;
+            }
             traceSink.traceSuperDrive(new Apple2SuperDriveTraceEvent(
                     Apple2SuperDriveTraceEvent.Source.CONTROLLER,
                     "controller-io",
@@ -456,6 +447,9 @@ public final class Apple2SuperDriveController implements Apple2SlotCard {
         }
 
         private void traceControllerRamAccess(boolean read, int address, int value) {
+            if (traceSink == Apple2SuperDriveTraceSink.NONE) {
+                return;
+            }
             if (!hostTouchedControllerRam[address & (CONTROLLER_RAM_SIZE - 1)]) {
                 return;
             }

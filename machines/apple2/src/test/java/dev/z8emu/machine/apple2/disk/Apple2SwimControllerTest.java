@@ -93,7 +93,7 @@ class Apple2SwimControllerTest {
         controller.reset();
         controller.read(0x0D);
         controller.write(0x0F, 0x1F);
-        controller.insertMediaStream(new CyclingStream(0xD5, 0xAA));
+        controller.insertMediaStream(new CyclingSwimMediaStream(0xD5, 0xAA));
 
         assertEquals(0x5F, controller.read(0x0E));
         controller.onControllerCyclesElapsed(31);
@@ -159,7 +159,7 @@ class Apple2SwimControllerTest {
         controller.reset();
         controller.read(0x0D);
         controller.write(0x0F, 0x08);
-        controller.insertMediaStream(new CyclingStream(0xC3));
+        controller.insertMediaStream(new CyclingSwimMediaStream(0xC3));
         controller.onControllerCyclesElapsed(32);
         assertEquals(0xC8, controller.statusRegister());
 
@@ -208,7 +208,7 @@ class Apple2SwimControllerTest {
         controller.read(0x0D);
         controller.write(0x0F, 0x1F);
         controller.read(0x09);
-        controller.insertMediaStream(new CyclingStream(0xD5));
+        controller.insertMediaStream(new CyclingSwimMediaStream(0xD5));
         controller.onControllerCyclesElapsed(32);
 
         assertEquals(0xFF, controller.statusRegister());
@@ -224,7 +224,7 @@ class Apple2SwimControllerTest {
     void ismReadModeFeedsSyntheticMediaWhenActionBitIsSet() {
         Apple2SwimController controller = new Apple2SwimController();
         controller.reset();
-        controller.insertMediaStream(new CyclingStream(0xD5));
+        controller.insertMediaStream(new CyclingSwimMediaStream(0xD5));
         switchToIsmMode(controller);
 
         controller.onControllerCyclesElapsed(32);
@@ -244,24 +244,4 @@ class Apple2SwimControllerTest {
         controller.write(0x0F, 0x4F);
     }
 
-    private static final class CyclingStream implements Apple2SwimMediaStream {
-        private final int[] bytes;
-        private int offset;
-
-        private CyclingStream(int... bytes) {
-            this.bytes = bytes;
-        }
-
-        @Override
-        public int nextByte() {
-            int value = bytes[offset];
-            offset = (offset + 1) % bytes.length;
-            return value;
-        }
-
-        @Override
-        public void reset() {
-            offset = 0;
-        }
-    }
 }
