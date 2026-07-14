@@ -92,7 +92,7 @@ battle-tested by the Apple II machines.)
 ## Phase queue
 
 - [x] 0. Module skeleton, memory + PLA + 6510 port, Klaus gate
-- [ ] 1. CIA 6526 pair + NMI platform plumbing
+- [x] 1. CIA 6526 pair + NMI platform plumbing
 - [ ] 2. VIC-II text mode + raster + boot to READY. (headless probe)
 - [ ] 3. Keyboard matrix + desktop runner + BASIC smoke
 - [ ] 4. PRG loading (probe option + desktop media)
@@ -160,6 +160,20 @@ fade not modeled (inputs without pull-ups read 0 immediately).
   read-clear both directions, mask write polarity, DDR port mixing,
   runtime NMI edge detector (no retrigger while held).
 - Gate: `:machine-c64:test` + `:emu-platform:test` green.
+
+Landed 2026-07-15 (Codex batch `codex/c64-p1-cia`, adversarially reviewed +
+fault-injected 6/6). Frozen Phase 1 conventions: ICR IR bit is a set-only
+latch (cleared only by ICR read/reset — clearing a mask bit does not drop
+an asserted line, per VICE/MAME); TOD is halted after reset with HR=$01
+until the first 10THS write, ticks via a 98 525-t-state accumulator
+(deliberate deviation from the plan's original "frame-driven" wording —
+the board has no frame notion), models the hour-12 write PM flip and
+re-latches HR reads only when not already latched; CIA external port
+inputs are fixed 0xFF until the Phase 3 keyboard; CNT/SP/FLAG/alarm/PB
+timer outputs inert stubs; CRB INMODE 11 treated as 10 (CNT assumed high).
+End-to-end NMI verified through MachineRuntime with a phase-safe stop-timer
+re-arm protocol (a bare mid-stream ICR read is not phase-safe — underflow
+can re-latch within the next instruction).
 
 ### Phase 2: VIC-II text mode + raster + READY.
 
