@@ -10,6 +10,7 @@ include(
     "machine-radio86rk",
     "machine-cpc",
     "machine-apple2",
+    "machine-c64",
     "app-desktop",
 )
 
@@ -23,3 +24,4 @@ project(":machine-spectrum").projectDir = file("machines/spectrum")
 project(":machine-radio86rk").projectDir = file("machines/radio86rk")
 project(":machine-cpc").projectDir = file("machines/cpc")
 project(":machine-apple2").projectDir = file("machines/apple2")
+project(":machine-c64").projectDir = file("machines/c64")
