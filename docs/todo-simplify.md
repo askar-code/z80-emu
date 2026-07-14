@@ -16,7 +16,7 @@ extra gate or land here as deferred items. After each tranche: full
 - [x] 4. `machine-spectrum` — machines/spectrum (~3.9k lines) — DONE 2026-07-14
 - [x] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines) — DONE 2026-07-14
 - [x] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines) — DONE 2026-07-14
-- [ ] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines)
+- [x] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines) — DONE 2026-07-14
 - [ ] 8. `app-desktop` — apps/desktop (~5.9k lines)
 - [ ] 9. `cross-reuse` + `cross-altitude` — whole repo, run last
 
@@ -25,6 +25,25 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 7: `apple2-disk` (machines/apple2 disk/) — 2026-07-14
+
+- Review: 19 confirmed / 2 rejected → 8 unique (aux-IO dup found by three
+  angles, CyclingStream fixture by four).
+- Applied: 8/8 via Codex, net −144 lines. Headliners: three track builders
+  moved from List<Integer>+unbox loops to ByteArrayOutputStream; unified
+  aux-IO side-effect switch; SWIM reset delegation; NONE-gated trace
+  events; six hand-emitted 65C02 controller-ROM tests rebuilt on the
+  ControllerProgram builder (own added helpers incl. correct backward BPL).
+- Codex's own byte gates: track-stream hashes vs clean HEAD identical for
+  all DOS tracks (224,000 B), all 3.5" GCR tracks (1,211,840 B), and WOZ
+  streams; every converted test ROM byte-for-byte identical.
+- Agent diff review: 8/8 CLEAN, incl. the (byte)(x & 0xFF) ≡ BAOS.write(int)
+  truncation proof at every append site, SWIM field-set equality (fill
+  in place, no realloc aliasing), bplBack displacement 0xF9 proof, and
+  trace-arg purity under the NONE sink.
+- Verification on main: `./gradlew build` + PoP frame-CRC smoke + ProDOS
+  banner smoke + BASIC smoke green. @Test 3/13/16 unchanged.
 
 ### Tranche 6: `apple2-core` (machines/apple2, non-disk) — 2026-07-14
 
