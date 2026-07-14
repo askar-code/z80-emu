@@ -11,3 +11,10 @@ tmp/
 *.dsk
 *.z80
 *.sna
+*.bin
+*.po
+*.woz
+*.chr
+*.e8
+*.e10
+*.e12
