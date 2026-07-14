@@ -1,15 +1,13 @@
 package dev.z8emu.machine.radio86rk;
 
-import dev.z8emu.machine.radio86rk.device.Radio86KeyMap;
-import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.BooleanSupplier;
 
 final class Radio86MonitorDriver {
     private static final long DEFAULT_MAX_BOOT_INSTRUCTIONS = 200_000L;
-    private static final int PRESS_FRAMES = 2;
-    private static final int GAP_FRAMES = 2;
+    private static final int PREDICATE_POLL_INTERVAL = 2_000;
 
     private final Radio86Machine machine;
     private long steps;
@@ -27,21 +25,7 @@ final class Radio86MonitorDriver {
     }
 
     static Path locateMonitorRom() {
-        String explicitPath = System.getProperty("radio86.monitorRom");
-        if (explicitPath != null && !explicitPath.isBlank()) {
-            Path path = Path.of(explicitPath).toAbsolutePath().normalize();
-            return Files.exists(path) ? path : null;
-        }
-
-        Path current = Path.of("").toAbsolutePath().normalize();
-        while (current != null) {
-            Path candidate = current.resolve("mon32.bin");
-            if (Files.exists(candidate)) {
-                return candidate;
-            }
-            current = current.getParent();
-        }
-        return null;
+        return Radio86RomLocator.locate("radio86.monitorRom", "mon32.bin");
     }
 
     static Radio86MonitorDriver boot(byte[] romImage) {
@@ -60,35 +44,16 @@ final class Radio86MonitorDriver {
 
     void typeText(String text) {
         for (int i = 0; i < text.length(); i++) {
-            typeCharacter(text.charAt(i));
+            steps += Radio86MonitorConsole.typeCharacter(machine, text.charAt(i));
         }
     }
 
     String[] visibleLines() {
-        String[] lines = new String[Radio86VideoDevice.VISIBLE_ROWS];
-        for (int row = 0; row < lines.length; row++) {
-            StringBuilder line = new StringBuilder(Radio86VideoDevice.VISIBLE_COLUMNS);
-            int offset = Radio86VideoDevice.VISIBLE_OFFSET + (row * Radio86VideoDevice.TOTAL_COLUMNS);
-            for (int column = 0; column < Radio86VideoDevice.VISIBLE_COLUMNS; column++) {
-                int code = machine.board().memory().readVideoByte(offset + column);
-                line.append(renderCharacter(code));
-            }
-            lines[row] = line.toString();
-        }
-        return lines;
+        return Radio86MonitorConsole.visibleLines(machine);
     }
 
     boolean monitorReady() {
-        String[] screen = visibleLines();
-        if (!screen[0].contains("radio-86rk")) {
-            return false;
-        }
-        for (String line : screen) {
-            if (line.stripTrailing().endsWith("-->")) {
-                return true;
-            }
-        }
-        return false;
+        return Radio86MonitorConsole.monitorReady(machine);
     }
 
     void runUntilPrompt(long maxInstructions) {
@@ -100,7 +65,7 @@ final class Radio86MonitorDriver {
     }
 
     String screenText() {
-        return String.join("\n", visibleLines());
+        return Radio86MonitorConsole.screenText(machine);
     }
 
     private boolean screenContains(String expectedText) {
@@ -112,50 +77,16 @@ final class Radio86MonitorDriver {
         return false;
     }
 
-    private void typeCharacter(char character) {
-        Radio86KeyMap.KeyChord chord = Radio86KeyMap.forCharacter(character);
-        setChordState(chord, true);
-        runFrames(PRESS_FRAMES);
-        setChordState(chord, false);
-        runFrames(GAP_FRAMES);
-    }
-
-    private void setChordState(Radio86KeyMap.KeyChord chord, boolean pressed) {
-        for (Radio86KeyMap.MatrixKey key : chord.keys()) {
-            machine.board().keyboard().setKeyPressed(key.row(), key.column(), pressed);
-        }
-    }
-
-    private void runFrames(int frames) {
-        for (int frameIndex = 0; frameIndex < frames; frameIndex++) {
-            long targetTState = machine.currentTState() + machine.frameTStates();
-            while (machine.currentTState() < targetTState) {
+    private void runUntil(BooleanSupplier predicate, long maxInstructions) {
+        while (steps < maxInstructions) {
+            if (predicate.getAsBoolean()) {
+                return;
+            }
+            long batch = Math.min(PREDICATE_POLL_INTERVAL, maxInstructions - steps);
+            for (long i = 0; i < batch; i++) {
                 machine.runInstruction();
                 steps++;
             }
         }
-    }
-
-    private void runUntil(ScreenPredicate predicate, long maxInstructions) {
-        while (steps < maxInstructions && !predicate.matches()) {
-            machine.runInstruction();
-            steps++;
-        }
-    }
-
-    private static char renderCharacter(int code) {
-        int normalized = code & 0x7F;
-        if (normalized == 0) {
-            return ' ';
-        }
-        if (normalized >= 0x20 && normalized <= 0x7E) {
-            return (char) normalized;
-        }
-        return '.';
-    }
-
-    @FunctionalInterface
-    private interface ScreenPredicate {
-        boolean matches();
     }
 }

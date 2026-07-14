@@ -1,6 +1,5 @@
 package dev.z8emu.machine.radio86rk.tape;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -13,7 +12,7 @@ public final class Radio86RkTapeLoader {
     }
 
     public static Radio86TapeFile load(InputStream input) throws IOException {
-        byte[] payload = readAllBytes(input);
+        byte[] payload = input.readAllBytes();
         int totalBytes = HEADER_ZERO_BYTES + 1 + payload.length;
         boolean[] levels = new boolean[totalBytes * 16];
         int[] durations = new int[totalBytes * 16];
@@ -41,11 +40,5 @@ public final class Radio86RkTapeLoader {
             index++;
         }
         return index;
-    }
-
-    private static byte[] readAllBytes(InputStream input) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        input.transferTo(output);
-        return output.toByteArray();
     }
 }

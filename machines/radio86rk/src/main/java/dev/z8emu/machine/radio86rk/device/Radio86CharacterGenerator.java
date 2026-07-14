@@ -1,5 +1,6 @@
 package dev.z8emu.machine.radio86rk.device;
 
+import dev.z8emu.machine.radio86rk.Radio86RomLocator;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,21 +63,7 @@ final class Radio86CharacterGenerator {
     }
 
     private static Path locateFontRom() {
-        String explicitPath = System.getProperty(FONT_OVERRIDE_PROPERTY);
-        if (explicitPath != null && !explicitPath.isBlank()) {
-            Path path = Path.of(explicitPath).toAbsolutePath().normalize();
-            return Files.exists(path) ? path : null;
-        }
-
-        Path current = Path.of("").toAbsolutePath().normalize();
-        while (current != null) {
-            Path candidate = current.resolve(DEFAULT_FONT_FILE);
-            if (Files.exists(candidate)) {
-                return candidate;
-            }
-            current = current.getParent();
-        }
-        return null;
+        return Radio86RomLocator.locate(FONT_OVERRIDE_PROPERTY, DEFAULT_FONT_FILE);
     }
 
     private record FontData(byte[] glyphs, boolean activeLowEncoding) {

@@ -2,8 +2,7 @@ package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.radio86rk.Radio86Machine;
 import dev.z8emu.machine.radio86rk.Radio86Bus;
-import dev.z8emu.machine.radio86rk.device.Radio86KeyMap;
-import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
+import dev.z8emu.machine.radio86rk.Radio86MonitorConsole;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.machine.radio86rk.tape.Radio86TapeLoaders;
 import java.io.IOException;
@@ -50,7 +49,7 @@ public final class Radio86RomProbeLauncher {
 
         long steps = 0;
         try {
-            while (steps < maxInstructions && (!typeAfterPrompt || !monitorReady(machine))) {
+            while (steps < maxInstructions && (!typeAfterPrompt || !Radio86MonitorConsole.monitorReady(machine))) {
                 machine.runInstruction();
                 steps++;
             }
@@ -61,7 +60,7 @@ public final class Radio86RomProbeLauncher {
             if (scriptSequence != null && !scriptSequence.isEmpty()) {
                 String[] parts = scriptSequence.split("\\|", -1);
                 for (String part : parts) {
-                    while (steps < maxInstructions && !monitorReady(machine)) {
+                    while (steps < maxInstructions && !Radio86MonitorConsole.monitorReady(machine)) {
                         machine.runInstruction();
                         steps++;
                     }
@@ -99,7 +98,7 @@ public final class Radio86RomProbeLauncher {
         int pc = machine.cpu().registers().pc();
         int opcode = machine.board().cpuBus().readMemory(pc);
 
-        String[] visibleLines = visibleLines(machine);
+        String[] visibleLines = Radio86MonitorConsole.visibleLines(machine);
         String visibleText = String.join("\n", visibleLines);
 
         System.out.println("steps=" + steps);
@@ -130,32 +129,7 @@ public final class Radio86RomProbeLauncher {
         }
     }
 
-    private static String[] visibleLines(Radio86Machine machine) {
-        String[] lines = new String[Radio86VideoDevice.VISIBLE_ROWS];
-        for (int row = 0; row < lines.length; row++) {
-            StringBuilder line = new StringBuilder(Radio86VideoDevice.VISIBLE_COLUMNS);
-            int offset = Radio86VideoDevice.VISIBLE_OFFSET + (row * Radio86VideoDevice.TOTAL_COLUMNS);
-            for (int column = 0; column < Radio86VideoDevice.VISIBLE_COLUMNS; column++) {
-                int code = machine.board().memory().readVideoByte(offset + column);
-                line.append(renderCharacter(code));
-            }
-            lines[row] = line.toString();
-        }
-        return lines;
-    }
 
-    private static boolean monitorReady(Radio86Machine machine) {
-        String[] screen = visibleLines(machine);
-        if (!screen[0].contains("radio-86rk")) {
-            return false;
-        }
-        for (String line : screen) {
-            if (line.stripTrailing().endsWith("-->")) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     private static long typeScript(Radio86Machine machine, long steps, String script) {
         for (int i = 0; i < script.length(); i++) {
@@ -170,35 +144,13 @@ public final class Radio86RomProbeLauncher {
                     default -> escaped;
                 };
             }
-            steps = typeCharacter(machine, steps, character);
+            steps += Radio86MonitorConsole.typeCharacter(machine, character);
         }
         return steps;
     }
 
-    private static long typeCharacter(Radio86Machine machine, long steps, char character) {
-        Radio86KeyMap.KeyChord chord = Radio86KeyMap.forCharacter(character);
-        setChordState(machine, chord, true);
-        steps = runFrames(machine, steps, 2);
-        setChordState(machine, chord, false);
-        return runFrames(machine, steps, 2);
-    }
 
-    private static void setChordState(Radio86Machine machine, Radio86KeyMap.KeyChord chord, boolean pressed) {
-        for (Radio86KeyMap.MatrixKey key : chord.keys()) {
-            machine.board().keyboard().setKeyPressed(key.row(), key.column(), pressed);
-        }
-    }
 
-    private static long runFrames(Radio86Machine machine, long steps, int frames) {
-        for (int frameIndex = 0; frameIndex < frames; frameIndex++) {
-            long targetTState = machine.currentTState() + machine.frameTStates();
-            while (machine.currentTState() < targetTState) {
-                machine.runInstruction();
-                steps++;
-            }
-        }
-        return steps;
-    }
 
     private static int countVisibleCharacters(String[] visibleLines) {
         int count = 0;
@@ -212,16 +164,6 @@ public final class Radio86RomProbeLauncher {
         return count;
     }
 
-    private static char renderCharacter(int code) {
-        int normalized = code & 0x7F;
-        if (normalized == 0) {
-            return ' ';
-        }
-        if (normalized >= 0x20 && normalized <= 0x7E) {
-            return (char) normalized;
-        }
-        return '.';
-    }
 
     private static String crc32Hex(byte[] data) {
         CRC32 crc32 = new CRC32();

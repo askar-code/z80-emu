@@ -49,13 +49,6 @@ public final class Radio86Memory {
         return rom.read((address - ROM_START) & (ROM_SIZE_4K - 1));
     }
 
-    public int readVideoByte(int offset) {
-        if (offset < 0 || offset >= VIDEO_MEMORY_LENGTH) {
-            return 0x20;
-        }
-        return ram.read(VIDEO_MEMORY_START + offset);
-    }
-
     public int peekRam(int address) {
         return ram.read(address & 0x7FFF);
     }

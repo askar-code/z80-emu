@@ -5,12 +5,10 @@ import dev.z8emu.machine.radio86rk.device.Radio86KeyboardDevice;
 import dev.z8emu.machine.radio86rk.device.Radio86VideoDevice;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.platform.bus.ClockedCpuBus;
-import dev.z8emu.platform.bus.io.IoAccess;
 import dev.z8emu.platform.bus.io.IoAddressSpace;
 import dev.z8emu.platform.bus.io.IoSelector;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
-import java.util.function.IntUnaryOperator;
 
 public final class Radio86Bus extends ClockedCpuBus {
     private static final int KEYBOARD_BASE = 0x8000;
@@ -21,7 +19,6 @@ public final class Radio86Bus extends ClockedCpuBus {
     private final Radio86KeyboardDevice keyboard;
     private final Radio86DmaDevice dma;
     private final Radio86VideoDevice video;
-    private final AccessTraceListener traceListener;
     private final IoAddressSpace memoryMappedIo;
 
     public Radio86Bus(
@@ -47,8 +44,19 @@ public final class Radio86Bus extends ClockedCpuBus {
         this.keyboard = Objects.requireNonNull(keyboard, "keyboard");
         this.dma = Objects.requireNonNull(dma, "dma");
         this.video = Objects.requireNonNull(video, "video");
-        this.traceListener = traceListener;
         this.memoryMappedIo = buildMemoryMappedIo();
+        if (traceListener != null) {
+            memoryMappedIo.setTraceSink((mappingName, read, access, value) -> {
+                if (!mappingName.startsWith("radio86.")) {
+                    return;
+                }
+                if (read) {
+                    traceListener.onRead(access.address(), value, access.tState());
+                } else {
+                    traceListener.onWrite(access.address(), value, access.tState());
+                }
+            });
+        }
     }
 
     @Override
@@ -93,55 +101,27 @@ public final class Radio86Bus extends ClockedCpuBus {
         ioMap.mapReadWrite(
                 "radio86.keyboard",
                 IoSelector.mask(0xFFFC, KEYBOARD_BASE, 0x0003, 0),
-                access -> readRegister(access, keyboard::readRegister),
-                (access, value) -> writeRegister(access, value, keyboard::writeRegister)
+                access -> keyboard.readRegister(access.offset()),
+                (access, value) -> keyboard.writeRegister(access.offset(), value)
         );
         ioMap.mapReadWrite(
                 "radio86.video",
                 IoSelector.mask(0xFFFE, VIDEO_BASE, 0x0001, 0),
-                access -> readRegister(access, video::readRegister),
-                (access, value) -> writeRegister(access, value, video::writeRegister)
+                access -> video.readRegister(access.offset()),
+                (access, value) -> video.writeRegister(access.offset(), value)
         );
         ioMap.mapReadWrite(
                 "radio86.dma",
                 IoSelector.mask(0xE000, DMA_BASE, 0x000F, 0),
-                access -> readRegister(access, dma::readRegister),
-                (access, value) -> writeRegister(access, value, dma::writeRegister)
+                access -> dma.readRegister(access.offset()),
+                (access, value) -> dma.writeRegister(access.offset(), value)
         );
         return ioMap;
-    }
-
-    private int readRegister(IoAccess access, IntUnaryOperator reader) {
-        int value = reader.applyAsInt(access.offset());
-        traceRead(access.address(), value);
-        return value;
-    }
-
-    private void writeRegister(IoAccess access, int value, RegisterWriter writer) {
-        writer.write(access.offset(), value);
-        traceWrite(access.address(), value);
-    }
-
-    private void traceRead(int address, int value) {
-        if (traceListener != null) {
-            traceListener.onRead(address & 0xFFFF, value & 0xFF, clockValue());
-        }
-    }
-
-    private void traceWrite(int address, int value) {
-        if (traceListener != null) {
-            traceListener.onWrite(address & 0xFFFF, value & 0xFF, clockValue());
-        }
     }
 
     public interface AccessTraceListener {
         void onRead(int address, int value, long tState);
 
         void onWrite(int address, int value, long tState);
-    }
-
-    @FunctionalInterface
-    private interface RegisterWriter {
-        void write(int register, int value);
     }
 }
