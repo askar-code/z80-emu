@@ -1,190 +1,237 @@
 # Commodore 64 Platform Plan
 
-This is the working checklist for adding a Commodore 64 platform. Keep this
-file updated as work lands, so the next debugging pass can resume from the
-current state.
+Working contract for adding a Commodore 64 (PAL) machine. Delivery model:
+per-phase ТЗ is derived from this plan, implementation is delegated to Codex
+in worktree batches (`codex/c64-pN-*`), every phase ends with an adversarial
+diff review plus an executable gate run on main. Keep this file updated as
+phases land. (Rewritten 2026-07-14 after a foundation audit; the original
+checklist predated the `cpu-mos6502` module, which now exists and is
+battle-tested by the Apple II machines.)
 
 ## Status Legend
 
-- `[ ]` Not started
-- `[~]` In progress
-- `[x]` Done
+`[ ]` not started · `[~]` in progress · `[x]` done
 
-## Target
+## Already in place (audited, do not re-plan)
 
-- [x] Choose target platform: `Commodore 64`
-- [x] Keep the first platform milestone explicit: boot to a usable BASIC `READY.` prompt
-- [ ] Run a tiny machine-code or BASIC `PRG` without disk-drive emulation
-- [ ] Render the first text-mode BASIC screen through VIC-II character mode
-- [ ] Accept desktop keyboard input through the C64 keyboard matrix
-- [ ] Play a simple SID tone through the shared PCM path
-- [ ] Load and run a known simple game or demo from `PRG`
-- [ ] Add `.d64` and 1541 drive support only after the main machine is stable
+- `:cpu-mos6502` — NMOS/65C02 variants (`Mos6502Variant`, ctor-selected).
+  All documented opcodes with page-cross/branch cycle adjustments;
+  `runInstruction()` returns consumed cycles. IRQ/NMI via
+  `requestMaskableInterrupt()` / `clearMaskableInterrupt()` /
+  `requestNonMaskableInterrupt()`; `serviceInterrupt` pushes PC + status
+  (B clear), sets I, reads FFFE/FFFA, costs 7 cycles. NMI has priority and
+  is edge-latched.
+- Level-triggered IRQ delivery: `MachineRuntime.runInstruction()` polls
+  `MachineBoard.maskableInterruptLineActive(t)` after every instruction and
+  re-asserts/clears the CPU pending flag. C64 board ORs CIA1 + VIC-II lines.
+  Precedents: Spectrum ULA (stateless, derived from frame offset), CPC Gate
+  Array (latched + ack).
+- Desktop/probe infrastructure is shared and thin after the simplify sweep:
+  non-generic `AbstractFrameDesktopSession` + `bindKeyboardController`,
+  `AbstractMappedHostKeyboardController<K>` (implement `keysFor`/`updateKey`),
+  `ProbeOutput`, `CrashReportWriter`, `--expect-screen`/`--expect-frame-crc`
+  smoke pattern with exit-code pass/fail (template: `apple2BasicSmoke`).
+- Audio contract: `ClockedPcmMonoSource(sourceClockHz, sampleRate)` with one
+  abstract `short nextPcmSample()`, ticked from the board's
+  `onTStatesElapsed`; drained by the desktop engine (Beeper/AY/Apple II
+  speaker precedents).
 
-## Phase 1: CPU Core
+## Known gaps the plan must close (from the audit)
 
-- [ ] Add Gradle module `cpu-mos6502`
-- [ ] Implement registers, flags, stack, reset vector, IRQ, and NMI
-- [ ] Implement core addressing modes
-- [ ] Implement documented NMOS 6502 opcodes first
-- [ ] Add focused instruction tests for arithmetic, branches, stack, interrupts, and page crossing
-- [ ] Decide whether undocumented opcodes are needed before the first real software target
-- [ ] Add a thin 6510 wrapper or mode for the C64 CPU port behavior
-- [ ] Keep CPU memory and I/O access fully behind `CpuBus`
+- **No NMI plumbing** in `MachineBoard`/`MachineRuntime` — nothing calls
+  `requestNonMaskableInterrupt()`. Closed in Phase 1.
+- **6502 core never calls `bus.acknowledgeInterrupt()`** (Z80-only path) —
+  so CIA "ICR read clears IRQ" and VIC "write $D019 clears raster IRQ" MUST
+  live in the device register handlers; the board line just reflects
+  latched device state. (Design consequence, not a platform change.)
+- **No RDY/DMA-stall hook in the CPU** — VIC-II badline cycle stealing has
+  no CPU-side mechanism. Deferred; first lands as board-level clock skew
+  (extra t-states in `onTStatesElapsed`), documented approximation.
+- **Illegal NMOS opcodes throw `IllegalStateException`** — good loud
+  diagnostics for bring-up; stable illegals (LAX/SAX/DCP/...) are a
+  backlog phase, needed by many games/demos.
+- **Decimal mode is textbook BCD, not bug-exact NMOS** (V from binary
+  result, N/Z from adjusted result; invalid-BCD nibbles not NMOS-quirky).
+  Fine for BASIC/KERNAL; the Klaus functional test may fail its decimal
+  section — contingency in Phase 0.
+- **No 6502 functional-test harness** (Z80 has zexdoc/zexall). Closed in
+  Phase 0 with Klaus Dormann's test, modeled on `ZexHarness` + the
+  tag-excluded `zexTest` Gradle task pattern.
+- 6510 on-chip port ($00/$01) is not a CPU concern — implemented as a board
+  bus intercept.
 
-## Phase 2: Machine Skeleton
+## Global decisions (sanctioned, do not re-litigate per phase)
 
-- [ ] Add Gradle module `machine-c64`
-- [ ] Add `C64ModelConfig` for clock, frame timing, RAM size, and video geometry
-- [ ] Add `C64Machine`
-- [ ] Add `C64Board`
-- [ ] Add `C64Bus`
-- [ ] Add `C64Memory`
-- [ ] Wire `cpu-mos6502` into the C64 board
-- [ ] Add minimal tests for machine creation and CPU/bus execution
-- [ ] Register `--machine=c64` in the desktop machine definitions
-- [ ] Add a thin C64 desktop runner using the shared desktop session plumbing
+- **PAL only** for now: 985 248 Hz CPU clock, 63 cycles/line × 312 lines =
+  19 656 t-states/frame (~50.12 Hz). 1 t-state = 1 PHI2 cycle.
+- **NMOS 6510** = `Mos6502Cpu` with `Mos6502Variant.NMOS_6502`.
+- **No cartridge port** in v1: EXROM/GAME inactive; PLA table covers the 8
+  LORAM/HIRAM/CHAREN combinations only.
+- **Memory-mapped I/O dispatch**: PLA decides whether $D000–$DFFF is I/O,
+  CHAR ROM, or RAM in `C64Bus`; when I/O, register dispatch goes through a
+  memory-mapped `IoAddressSpace` (Radio-86RK precedent — buys IoTraceSink
+  debugging for free during bring-up): VIC $D000–$D3FF mirror, SID
+  $D400–$D7FF mirror, color RAM $D800–$DBFF, CIA1 $DC00–$DCFF mirror,
+  CIA2 $DD00–$DDFF mirror, IO1/IO2 open-bus.
+- **Full-frame snapshot rendering** first (Radio-86RK / Apple II pattern):
+  `renderVideoFrame()` renders once per frame from current state. The
+  raster counter ($D012 + $D011.7) is timeline-derived from the master
+  clock, so raster polling and raster IRQs work even though rendering is
+  per-frame. Cycle-exact per-line rendering, badlines, and mid-frame
+  register splits are OUT until a target program needs them.
+- **ROM files** (user-provided, repo root, gitignored, never committed):
+  `basic.901226-01.bin` (8K), `kernal.901227-03.bin` (8K),
+  `chargen.901225-01.bin` (4K). Loader accepts a directory argument plus
+  `-Dc64.basicRom= / -Dc64.kernalRom= / -Dc64.chargenRom=` overrides,
+  following `Apple2RomImageLoader` conventions.
+- Frame geometry: 384×272 visible PAL window (borders included), 320×200
+  text window centered; exact numbers frozen in Phase 2 for CRC baselines.
+- PETSCII→ASCII screen scrape for `--expect-screen` uses screen-code
+  mapping (0x01–0x1A → A–Z, 0x30–0x39 digits, 0x20 space, rest '.').
 
-## Phase 3: ROM And Memory Banking
+## Phase queue
 
-- [ ] Model the 6510 64K address space over 64 KB RAM
-- [ ] Support BASIC ROM mapping at `$A000-$BFFF`
-- [ ] Support KERNAL ROM mapping at `$E000-$FFFF`
-- [ ] Support character ROM visibility behind I/O banking
-- [ ] Implement the 6510 processor port at `$0000/$0001`
-- [ ] Implement RAM-under-ROM writes and reads according to active banking state
-- [ ] Add tests for BASIC/KERNAL/character ROM visibility
-- [ ] Add tests for RAM-under-ROM behavior
-- [ ] Keep cartridge mapping out of the first milestone
+- [ ] 0. Module skeleton, memory + PLA + 6510 port, Klaus gate
+- [ ] 1. CIA 6526 pair + NMI platform plumbing
+- [ ] 2. VIC-II text mode + raster + boot to READY. (headless probe)
+- [ ] 3. Keyboard matrix + desktop runner + BASIC smoke
+- [ ] 4. PRG loading (probe option + desktop media)
+- [ ] 5. SID minimal (3 voices, ADSR, no filter) through PCM
+- [ ] 6. Accuracy/games backlog (illegals, badlines, sprites, bitmap, tape/disk)
 
-## Phase 4: VIC-II Text Video
+---
 
-- [ ] Add a `C64VicIiDevice`
-- [ ] Implement enough VIC-II registers for reset-time firmware and text mode
-- [ ] Render standard 40x25 character text mode
-- [ ] Support border color and background color registers
-- [ ] Support character ROM glyph lookup
-- [ ] Support screen RAM and color RAM lookup
-- [ ] Expose C64 video through `VideoMachineBoard.renderVideoFrame()`
-- [ ] Add framebuffer tests for known text and color RAM patterns
-- [ ] Defer sprites, bitmap modes, badlines, and raster tricks until real software needs them
+### Phase 0: skeleton + memory/PLA + Klaus gate
 
-## Phase 5: CIA, Keyboard, And Timers
+New Gradle project `:machine-c64` (`machines/c64`), api :emu-platform +
+:cpu-mos6502 (mirror `machines/apple2/build.gradle.kts`).
 
-- [ ] Add `C64CiaDevice` for CIA 1
-- [ ] Add `C64CiaDevice` for CIA 2 when VIC banking or serial I/O needs it
-- [ ] Implement enough port A/B behavior for keyboard scanning
-- [ ] Add C64 keyboard matrix model
-- [ ] Add desktop keyboard controller for C64 keys
-- [ ] Implement timer behavior required by KERNAL/BASIC
-- [ ] Wire CIA interrupt output into the CPU interrupt line
-- [ ] Add tests for key matrix scanning through CIA ports
-- [ ] Add tests for timer underflow and interrupt behavior
+- `C64Memory`: 64K RAM; BASIC ROM $A000–$BFFF; KERNAL $E000–$FFFF; CHAR ROM
+  $D000–$DFFF when banked in; 1K color RAM nibbles (separate array; upper
+  nibble reads — pick a convention in the ТЗ and freeze it); writes under
+  ROM always hit RAM.
+- 6510 port intercept at $0000/$0001: DDR + data, bits 0–2
+  LORAM/HIRAM/CHAREN with pull-ups on input bits, bits 3–5 datasette stubs;
+  reset state $2F/$37.
+- `C64Bus implements CpuBus` + `C64Board implements VideoMachineBoard`
+  (renderVideoFrame stubbed black frame for now); PLA banking decode; the
+  I/O window via memory-mapped `IoAddressSpace` with stub open-bus devices.
+- `C64Machine implements BoardBackedMachine<C64Board>` on the standard
+  five-machine scaffold (TStateCounter → board → cpu(NMOS) → runtime).
+- **Klaus Dormann functional test**: `Functional6502Harness` in
+  cpu/mos6502 tests (flat-64K bus, load binary at $0000, PC=$0400, loop
+  until PC self-loop; success PC asserted, any other trap reports PC),
+  tag-gated Gradle task `:cpu-mos6502:klausTest` (zexTest pattern), binary
+  gitignored in repo root. Contingency: if the decimal section fails on
+  textbook-BCD flags, fix `decimalAdd`/`decimalSubtract` NMOS flag
+  semantics in the core (preferred) rather than assembling a
+  decimal-disabled binary.
+- Tests: full 8-row PLA truth table (per-region read source per combo),
+  write-under-ROM, $00/$01 DDR semantics, reset defaults, color RAM width.
+- Gate: `:machine-c64:test` + `:cpu-mos6502:klausTest` green.
 
-## Phase 6: BASIC Prompt Bring-Up
+### Phase 1: CIA 6526 ×2 + NMI plumbing
 
-- [ ] Acquire known-good BASIC, KERNAL, and character ROM images outside the repository
-- [ ] Boot the C64 ROM set headlessly
-- [ ] Trace reset vector execution through KERNAL init
-- [ ] Reach the BASIC `READY.` loop
-- [ ] Render the prompt through the desktop runner
-- [ ] Type a simple BASIC line from the host keyboard
-- [ ] Verify `PRINT` output appears in screen RAM and framebuffer
-- [ ] Add a headless regression test for reaching the prompt or stable idle loop
+- **Platform (minimal, machine-agnostic)**: add
+  `default boolean nonMaskableInterruptLineActive(long t) { return false; }`
+  to `MachineBoard`; `MachineRuntime` edge-detects it (falling→rising edge
+  calls `cpu.requestNonMaskableInterrupt()` once). Unit-test in platform.
+- Single `C64CiaDevice` class, two instances. Ports A/B with DDR mixing;
+  timers A/B: 16-bit down-counters, latch reload, one-shot/continuous,
+  start/stop/force-load, B-counts-A-underflows cascade; ICR read-clears
+  (and drops the line), write with bit 7 sets/clears mask; underflow raises
+  the line when masked in. TOD minimal (frame-driven), serial register
+  stub — note stubs explicitly.
+- Clocked from `onTStatesElapsed` (1 cycle = 1 t-state), allocation-free.
+- Board: `maskableInterruptLineActive` = CIA1 line (VIC ORs in at Phase 2);
+  `nonMaskableInterruptLineActive` = CIA2 line (RESTORE joins in Phase 3).
+- Tests: cycle-exact underflow timing, reload/one-shot, cascade, ICR
+  read-clear both directions, mask write polarity, DDR port mixing,
+  runtime NMI edge detector (no retrigger while held).
+- Gate: `:machine-c64:test` + `:emu-platform:test` green.
 
-## Phase 7: PRG Loader
+### Phase 2: VIC-II text mode + raster + READY.
 
-- [ ] Add a simple `.prg` loader utility
-- [ ] Load two-byte little-endian start address plus payload into C64 RAM
-- [ ] Add an app-side autoload path for `--machine=c64 <rom-bundle> [program.prg]`
-- [ ] Decide whether autoload should jump directly or inject a BASIC `LOAD`/`RUN` workflow
-- [ ] Add tests for PRG parsing and memory placement
-- [ ] Run a tiny hand-made PRG that writes to screen RAM
-- [ ] Run a tiny hand-made PRG that writes to SID registers
-- [ ] Defer `.d64` until PRG execution, video, keyboard, and SID basics are stable
+- `C64VideoDevice`: register file $D000–$D02E (mirrored through $D3FF);
+  timeline-derived raster counter; raster-compare IRQ ($D012/$D011.7 →
+  latch in $D019, mask $D01A, ack by writing 1s to $D019); $D018 matrix/
+  charset pointers + CIA2 port A VIC bank; standard text mode (ECM/BMM/MCM
+  = 0): 40×25, charset from CHAR ROM or RAM per bank rules, color RAM low
+  nibbles, border $D020 / background $D021; fixed 16-color PAL palette
+  (Pepto values as named ARGB constants — hand-tuned, deliberate).
+  Rendering reuses the FrameBuffer (Apple II scratch-reuse pattern).
+- `C64RomProbeLauncher` (lean `Apple2RomProbeLauncher` descendant): boot
+  with the three ROMs, run N instructions, screen scrape via the PETSCII
+  map, `--expect-screen=`, `--dump-frame=` + CRC via `ProbeOutput`,
+  `--stop-pc` + pc-profile debug aids. Gradle tasks `c64RomProbe` +
+  `c64ReadySmoke` (expect `READY.`; banner
+  `**** COMMODORE 64 BASIC V2 ****` on the scrape).
+- Boot dependencies to watch: KERNAL RAM test length, jiffy IRQ via CIA1
+  timer A, screen-editor init; debug hangs with the pc-profile.
+- Gate: `c64ReadySmoke` green; frame PNG dumped, CRC recorded here as the
+  Phase-2 baseline.
 
-## Phase 8: SID Audio
+### Phase 3: keyboard + desktop runner
 
-- [ ] Add Gradle module `chip-sid` only if the SID model is useful beyond C64
-- [ ] Otherwise keep the first SID subset inside `machine-c64`
-- [ ] Implement register writes and basic oscillator state
-- [ ] Implement at least one pulse or triangle voice well enough for audible tests
-- [ ] Connect SID output to `PcmMonoSource`
-- [ ] Add tests for register state and non-zero generated PCM
-- [ ] Defer filters and exact analog behavior until real software needs them
+- `C64KeyboardDevice`: 8×8 matrix through CIA1 port A (column select,
+  active-low) / port B (row read) honoring DDR; joystick overlay deferred
+  (note the port-B collision). RESTORE key → NMI line (OR into the board's
+  `nonMaskableInterruptLineActive`).
+- Probe `--keys=` script (Apple II syntax) typing through the matrix with
+  press/gap frames.
+- Desktop: `DesktopMachineKind.C64`; `C64Definition` in
+  `DesktopMachineDefinitions` (+ registration list, aliases, `loadRom`
+  switch, `DesktopMachineDefinitionsTest` case); `C64DesktopRunner` Session
+  (post-sweep ~80 lines: panel, statusTitle, runSlice, renderVideoFrame,
+  bindKeyboardController); `C64KeyboardController extends
+  AbstractMappedHostKeyboardController<matrix-position>` host mapping.
+- Gate: `c64BasicSmoke` = boot → `--keys=PRINT<SP>2+2<CR>` →
+  `--expect-screen= 4`; manual desktop launch (`--machine=c64 .`).
 
-## Phase 9: Desktop And Debug Workflow
+### Phase 4: PRG loading
 
-- [ ] Define canonical C64 desktop launch command
-- [ ] Support C64 ROM bundle and optional `PRG` argument in `DesktopLaunchConfig`
-- [ ] Add optional memory banking trace
-- [ ] Add optional VIC-II register trace
-- [ ] Add optional CIA interrupt/timer trace
-- [ ] Add framebuffer PNG dump support for C64 debug runs
-- [ ] Add a C64 headless probe launcher after BASIC prompt is stable
-- [ ] Document the C64 run/debug workflow
+- `.prg` = 2-byte LE load address + payload. Probe `--prg=` and desktop
+  media arg: run to READY (screen scrape), inject payload, fix BASIC
+  pointers ($2B TXTTAB … $2D–$33 VARTAB/ARYTAB/STREND chain) when the load
+  address is $0801, then inject `RUN<CR>`; `--prg-sys=<addr>` overrides
+  with `SYS`.
+- Deterministic gate with no external asset: tokenized BASIC hello program
+  built byte-by-byte in the test, run via probe, scrape asserted. Then one
+  real freeware PRG checked by hand in the desktop.
 
-## Phase 10: First Real Software Target
+### Phase 5: SID minimal
 
-- [ ] Pick a simple `PRG` demo or game that does not require 1541 disk behavior
-- [ ] Record exact launch command and ROM set assumptions
-- [ ] Run it in the desktop shell
-- [ ] Trace the first failure point
-- [ ] Add a focused regression test or probe for each emulator bug found
-- [ ] Reach stable visible output
-- [ ] Verify keyboard controls if the target is interactive
-- [ ] Capture a reference screenshot once the target runs
+- `C64SidDevice extends ClockedPcmMonoSource(985_248, 44_100)`: 3 voices —
+  tri/saw/pulse/noise (23-bit LFSR), 16-bit frequency, pulse width, ADSR
+  with the standard rate table, voice-3 readback $D41B/$D41C, master
+  volume $D418. **No filter in v1** (registers accepted, documented inert).
+- Gate: deterministic register-script → PCM CRC test (self-baseline), plus
+  an audible desktop check.
 
-## Phase 11: Disk And 1541 Support
+### Phase 6: accuracy & games backlog (unordered, pull as needed)
 
-- [ ] Add `.d64` image parsing after the PRG milestone
-- [ ] Decide whether to model enough IEC serial protocol in the C64 machine first
-- [ ] Add a 1541 drive model only when a concrete disk target needs it
-- [ ] Reuse `cpu-mos6502` for the 1541 CPU
-- [ ] Add 1541 memory, VIA devices, and disk image sector access
-- [ ] Implement enough DOS command behavior for `LOAD`
-- [ ] Add synthetic `.d64` tests before using real game disks
-- [ ] Keep the 1541 path separate from the main C64 prompt milestone
+- Stable NMOS illegals in `:cpu-mos6502` (LAX SAX DCP ISC SLO RLA SRE RRA
+  ANC ALR ARR SBX + multi-byte NOPs) behind the NMOS variant, per-opcode
+  tests; re-run Klaus extended/illegal suites if adopted.
+- Badline/cycle-stealing approximation (board clock skew; possibly a CPU
+  stall hook later), sprites + collision registers, multicolor text,
+  bitmap modes, $D016/$D011 scroll, border tricks. Each lands with new
+  frame-CRC baselines.
+- CIA TOD alarm, datasette (.tap), KERNAL LOAD/SAVE vector trap for fast
+  host/.d64 file access; true 1541 is far-future.
+- SID filter (multimode 12dB) once something audible needs it.
 
-## Phase 12: Compatibility Polish
+## Verification model (every phase)
 
-- [ ] Tighten VIC-II timing if raster interrupts or badlines expose drift
-- [ ] Add sprite rendering
-- [ ] Add bitmap and multicolor modes
-- [ ] Add more complete CIA behavior
-- [ ] Improve SID envelope and waveform behavior
-- [ ] Add undocumented 6502 opcodes if real software depends on them
-- [ ] Add C64-specific notes to `docs/architecture.md`
-- [ ] Keep Spectrum, Radio-86RK, and CPC tests green after C64 changes
-
-## First Implementation Slice
-
-The first code slice should stay deliberately small:
-
-- [ ] Create `cpu-mos6502`
-- [ ] Implement enough 6502 reset and instruction execution for a tiny test program
-- [ ] Create `machine-c64`
-- [ ] Add the C64 model, machine, board, bus, and memory shell
-- [ ] Wire CPU execution through the C64 bus
-- [ ] Add RAM read/write tests and reset-vector execution tests
-- [ ] Add desktop launcher recognition for `--machine=c64`
-
-Do not start with SID, VIC-II raster timing, sprites, `.d64`, or 1541 drive
-emulation before the CPU, memory map, and reset path are testable.
-
-## Known Risk Areas
-
-- [ ] The 6510 processor port is small but central; banking bugs can look like ROM or CPU bugs
-- [ ] VIC-II timing can become a large project if raster effects are allowed into the first milestone
-- [ ] CIA timer/interrupt behavior may be required earlier than expected by KERNAL routines
-- [ ] SID can absorb a lot of time; start with audible, testable basics
-- [ ] Real C64 software may rely on undocumented 6502 opcodes
-- [ ] 1541 is effectively a second 6502 machine; keep it out of the first vertical slice
-- [ ] ROM images and game images should stay outside the repository
-
-## Progress Log
-
-- 2026-04-25: Selected Commodore 64 as the next ambitious target platform after
-  Spectrum, Radio-86RK, and Amstrad CPC. The first milestone is a usable BASIC
-  `READY.` prompt plus a simple `PRG` loader, with `.d64` and 1541 support
-  deliberately deferred.
+1. Codex batch in a worktree from HEAD (`codex/c64-pN-*`), ТЗ generated
+   from the phase section + frozen guardrails (no changes outside named
+   modules, no committed ROMs/binaries, test parity, allocation-free hot
+   paths, DELIBERATE list from the simplify sweep).
+2. Codex self-gates: module tests + the phase's headless gate (ROMs copied
+   into the worktree like the Apple II media).
+3. Adversarial review agent on the diff; differential CRC where a baseline
+   exists.
+4. Merge from the main checkout (check pwd), full `./gradlew build` + all
+   existing machine smokes (Apple II ×3, Spectrum pixel gate when touched)
+   + the new C64 gates on main.
+5. Update this file (checkboxes, baseline CRCs, deviations), commit.
