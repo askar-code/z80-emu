@@ -9,17 +9,21 @@ public final class Apple2SoftSwitches {
     private static final int PAGE_2 = 0xC055;
     private static final int LORES = 0xC056;
     private static final int HIRES = 0xC057;
+    private static final int DOUBLE_HIRES = 0xC05E;
+    private static final int SINGLE_HIRES = 0xC05F;
 
     private boolean textMode;
     private boolean mixedMode;
     private boolean page2;
     private boolean hires;
+    private boolean doubleHires;
 
     public void reset() {
         textMode = true;
         mixedMode = false;
         page2 = false;
         hires = false;
+        doubleHires = false;
     }
 
     public int read(int address) {
@@ -47,6 +51,10 @@ public final class Apple2SoftSwitches {
         return hires;
     }
 
+    public boolean doubleHires() {
+        return doubleHires;
+    }
+
     private void touch(int address) {
         switch (address & 0xFFFF) {
             case GRAPHICS_MODE -> textMode = false;
@@ -57,6 +65,8 @@ public final class Apple2SoftSwitches {
             case PAGE_2 -> page2 = true;
             case LORES -> hires = false;
             case HIRES -> hires = true;
+            case DOUBLE_HIRES -> doubleHires = true;
+            case SINGLE_HIRES -> doubleHires = false;
             default -> {
             }
         }

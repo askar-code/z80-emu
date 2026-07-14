@@ -116,7 +116,7 @@ tasks.register<JavaExec>("apple2SuperDrivePopSmoke") {
         "--superdrive35-media=$popDisk",
         "--superdrive35-slot=5",
         "--superdrive35-warmup-tstates=2000000",
-        "--expect-frame-crc=F386BEDD"
+        "--expect-frame-crc=54BCF7D0"
     )
     systemProperties(System.getProperties().stringPropertyNames()
         .filter { it.startsWith("z8emu.") || it.startsWith("apple2.") }

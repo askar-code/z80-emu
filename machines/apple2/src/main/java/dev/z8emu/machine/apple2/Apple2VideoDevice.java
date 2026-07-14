@@ -15,30 +15,25 @@ public final class Apple2VideoDevice {
     public static final int HIRES_ROWS = FRAME_HEIGHT;
     public static final int HIRES_BYTE_COLUMNS = 40;
 
-    // DHGR color comes from a rolling composite signal, not a fixed 16-color
-    // RGB lookup. These offsets keep the 560 half-pixel stream aligned with the
-    // current 280-pixel framebuffer.
+    // HGR and DHGR color comes from a rolling 14 MHz composite signal. Each
+    // mode keeps its own phase/alignment when sampled into the 280-pixel frame.
     private static final int DOUBLE_HIRES_NTSC_INITIAL_PHASE = 3;
     private static final int DOUBLE_HIRES_NTSC_SIGNAL_OFFSET = 2;
-    private static final int DOUBLE_HIRES_NTSC_SEQUENCE_MASK = 0x0FFF;
-    private static final double DOUBLE_HIRES_NTSC_RED_I = 1.55;
-    private static final double DOUBLE_HIRES_NTSC_RED_Q = 0.25;
-    private static final double DOUBLE_HIRES_NTSC_GREEN_I = -0.04;
-    private static final double DOUBLE_HIRES_NTSC_GREEN_Q = -0.76;
-    private static final double DOUBLE_HIRES_NTSC_BLUE_I = -2.55;
-    private static final double DOUBLE_HIRES_NTSC_BLUE_Q = 1.60;
-    private static final NtscSample[][] DOUBLE_HIRES_NTSC_TABLE = buildDoubleHiResNtscTable();
+    private static final int HIRES_NTSC_INITIAL_PHASE = 0;
+    private static final int HIRES_NTSC_SIGNAL_OFFSET = 0;
+    private static final int NTSC_SEQUENCE_MASK = 0x0FFF;
+    private static final double NTSC_RED_I = 1.55;
+    private static final double NTSC_RED_Q = 0.25;
+    private static final double NTSC_GREEN_I = -0.04;
+    private static final double NTSC_GREEN_Q = -0.76;
+    private static final double NTSC_BLUE_I = -2.55;
+    private static final double NTSC_BLUE_Q = 1.60;
+    private static final NtscSample[][] NTSC_TABLE = buildNtscTable();
 
     private static final int FLASH_PHASE_FRAMES = 16;
     private static final int MIXED_TEXT_ROWS = 4;
     private static final int BACKGROUND_ARGB = 0xFF101010;
     private static final int FOREGROUND_ARGB = 0xFF66FF66;
-    private static final int HIRES_BLACK_ARGB = 0xFF000000;
-    private static final int HIRES_WHITE_ARGB = 0xFFFFFFFF;
-    private static final int HIRES_VIOLET_ARGB = 0xFFDD22FF;
-    private static final int HIRES_GREEN_ARGB = 0xFF00CC00;
-    private static final int HIRES_BLUE_ARGB = 0xFF2222FF;
-    private static final int HIRES_ORANGE_ARGB = 0xFFFF6600;
     private static final int[] LORES_PALETTE = {
             0xFF000000,
             0xFFDD22DD,
@@ -116,6 +111,7 @@ public final class Apple2VideoDevice {
         return auxMemory != null
                 && auxMemory.installed()
                 && softSwitches.hires()
+                && softSwitches.doubleHires()
                 && auxMemory.eightyColumn();
     }
 
@@ -167,21 +163,30 @@ public final class Apple2VideoDevice {
     }
 
     private static void drawHiRes(FrameBuffer frame, Apple2Memory memory, int pageBase, int graphicsHeight) {
-        boolean[] lineBits = new boolean[FRAME_WIDTH];
-        boolean[] shiftedPixels = new boolean[FRAME_WIDTH];
+        boolean[] lineBits = new boolean[FRAME_WIDTH * 2 + 6];
+        NtscSample[] ntscSamples = new NtscSample[FRAME_WIDTH * 2 + 2];
         for (int y = 0; y < graphicsHeight; y++) {
+            boolean previousHalfPixel = false;
             for (int byteColumn = 0; byteColumn < HIRES_BYTE_COLUMNS; byteColumn++) {
                 int screenByte = memory.read(Apple2Memory.hiresPageAddress(pageBase, y, byteColumn));
                 boolean shifted = (screenByte & 0x80) != 0;
-                for (int bit = 0; bit < 7; bit++) {
-                    int x = (byteColumn * CELL_WIDTH) + bit;
-                    lineBits[x] = ((screenByte >>> bit) & 0x01) != 0;
-                    shiftedPixels[x] = shifted;
+                int x = byteColumn * CELL_WIDTH * 2;
+                for (int halfPixel = 0; halfPixel < CELL_WIDTH * 2; halfPixel++) {
+                    int sourceHalfPixel = shifted ? halfPixel - 1 : halfPixel;
+                    lineBits[x + halfPixel] = sourceHalfPixel < 0
+                            ? previousHalfPixel
+                            : ((screenByte >>> (sourceHalfPixel / 2)) & 0x01) != 0;
                 }
+                previousHalfPixel = shifted && (screenByte & 0x40) != 0;
             }
-            for (int x = 0; x < FRAME_WIDTH; x++) {
-                frame.setPixel(x, y, hiResArtifactColor(lineBits, shiftedPixels, x));
-            }
+            drawNtscScanline(
+                    frame,
+                    lineBits,
+                    ntscSamples,
+                    y,
+                    HIRES_NTSC_INITIAL_PHASE,
+                    HIRES_NTSC_SIGNAL_OFFSET
+            );
         }
     }
 
@@ -205,38 +210,42 @@ public final class Apple2VideoDevice {
                     lineBits[x + CELL_WIDTH + bit] = ((mainByte >>> bit) & 0x01) != 0;
                 }
             }
-            for (int x = FRAME_WIDTH * 2; x < lineBits.length; x++) {
-                lineBits[x] = false;
-            }
-            int signalBits = 0;
-            int colorPhase = DOUBLE_HIRES_NTSC_INITIAL_PHASE;
-            for (int halfPixel = 0; halfPixel < ntscSamples.length; halfPixel++) {
-                boolean signal = lineBits[halfPixel + DOUBLE_HIRES_NTSC_SIGNAL_OFFSET];
-                signalBits = ((signalBits << 1) | (signal ? 1 : 0)) & DOUBLE_HIRES_NTSC_SEQUENCE_MASK;
-                ntscSamples[halfPixel] = DOUBLE_HIRES_NTSC_TABLE[colorPhase][signalBits];
-                colorPhase = (colorPhase + 1) & 0x03;
-            }
-            for (int x = 0; x < FRAME_WIDTH; x++) {
-                frame.setPixel(x, y, sampleDoubleHiResNtscPixel(ntscSamples, x * 2));
-            }
+            drawNtscScanline(
+                    frame,
+                    lineBits,
+                    ntscSamples,
+                    y,
+                    DOUBLE_HIRES_NTSC_INITIAL_PHASE,
+                    DOUBLE_HIRES_NTSC_SIGNAL_OFFSET
+            );
         }
     }
 
-    private static int hiResArtifactColor(boolean[] lineBits, boolean[] shiftedPixels, int x) {
-        if (!lineBits[x]) {
-            return HIRES_BLACK_ARGB;
+    private static void drawNtscScanline(
+            FrameBuffer frame,
+            boolean[] lineBits,
+            NtscSample[] ntscSamples,
+            int y,
+            int initialPhase,
+            int signalOffset
+    ) {
+        for (int x = FRAME_WIDTH * 2; x < lineBits.length; x++) {
+            lineBits[x] = false;
         }
-        if ((x > 0 && lineBits[x - 1]) || (x + 1 < lineBits.length && lineBits[x + 1])) {
-            return HIRES_WHITE_ARGB;
+        int signalBits = 0;
+        int colorPhase = initialPhase;
+        for (int halfPixel = 0; halfPixel < ntscSamples.length; halfPixel++) {
+            boolean signal = lineBits[halfPixel + signalOffset];
+            signalBits = ((signalBits << 1) | (signal ? 1 : 0)) & NTSC_SEQUENCE_MASK;
+            ntscSamples[halfPixel] = NTSC_TABLE[colorPhase][signalBits];
+            colorPhase = (colorPhase + 1) & 0x03;
         }
-        boolean oddPixel = (x & 0x01) != 0;
-        if (shiftedPixels[x]) {
-            return oddPixel ? HIRES_ORANGE_ARGB : HIRES_BLUE_ARGB;
+        for (int x = 0; x < FRAME_WIDTH; x++) {
+            frame.setPixel(x, y, sampleNtscPixel(ntscSamples, x * 2));
         }
-        return oddPixel ? HIRES_GREEN_ARGB : HIRES_VIOLET_ARGB;
     }
 
-    private static NtscSample[][] buildDoubleHiResNtscTable() {
+    private static NtscSample[][] buildNtscTable() {
         NtscSample[][] table = new NtscSample[4][4096];
         NtscFilter signalFilter = new NtscFilter(7.614490548, -0.2718798058, 0.7465656072, false);
         NtscFilter chromaFilter = new NtscFilter(7.438011255, -0.7318893645, 1.2336442711, true);
@@ -269,8 +278,8 @@ public final class Apple2VideoDevice {
         return table;
     }
 
-    private static int sampleDoubleHiResNtscPixel(NtscSample[] samples, int halfPixel) {
-        // The 280-pixel framebuffer samples a 560 half-pixel DHGR signal. A
+    private static int sampleNtscPixel(NtscSample[] samples, int halfPixel) {
+        // The 280-pixel framebuffer samples a 560 half-pixel composite signal. A
         // slight late-sample luma bias keeps sharp ornament edges readable,
         // while chroma is sampled across a wider YIQ aperture before RGB clamp.
         NtscSample first = samples[halfPixel];
@@ -284,9 +293,9 @@ public final class Apple2VideoDevice {
     }
 
     private static int ntscRgb(int sequence, double luma, double chromaI, double chromaQ) {
-        double red = luma + (DOUBLE_HIRES_NTSC_RED_I * chromaI) + (DOUBLE_HIRES_NTSC_RED_Q * chromaQ);
-        double green = luma + (DOUBLE_HIRES_NTSC_GREEN_I * chromaI) + (DOUBLE_HIRES_NTSC_GREEN_Q * chromaQ);
-        double blue = luma + (DOUBLE_HIRES_NTSC_BLUE_I * chromaI) + (DOUBLE_HIRES_NTSC_BLUE_Q * chromaQ);
+        double red = luma + (NTSC_RED_I * chromaI) + (NTSC_RED_Q * chromaQ);
+        double green = luma + (NTSC_GREEN_I * chromaI) + (NTSC_GREEN_Q * chromaQ);
+        double blue = luma + (NTSC_BLUE_I * chromaI) + (NTSC_BLUE_Q * chromaQ);
         int color = sequence & 0x0F;
         if (color == 0x0F) {
             red = 1.0;

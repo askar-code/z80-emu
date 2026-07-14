@@ -14,10 +14,10 @@ class Apple2MachineTest {
     private static final int FOREGROUND_ARGB = 0xFF66FF66;
     private static final int HIRES_BLACK_ARGB = 0xFF000000;
     private static final int HIRES_WHITE_ARGB = 0xFFFFFFFF;
-    private static final int HIRES_VIOLET_ARGB = 0xFFDD22FF;
-    private static final int HIRES_GREEN_ARGB = 0xFF00CC00;
-    private static final int HIRES_BLUE_ARGB = 0xFF2222FF;
-    private static final int HIRES_ORANGE_ARGB = 0xFFFF6600;
+    private static final int HIRES_VIOLET_ARGB = 0xFFC389C5;
+    private static final int HIRES_GREEN_ARGB = 0xFF8AC489;
+    private static final int HIRES_BLUE_ARGB = 0xFF377CFF;
+    private static final int HIRES_ORANGE_ARGB = 0xFFC78300;
     private static final int LORES_DARK_BLUE_ARGB = 0xFF000099;
     private static final int LORES_DARK_GREEN_ARGB = 0xFF007722;
     private static final int LORES_GREEN_ARGB = 0xFF00CC00;
@@ -692,46 +692,58 @@ class Apple2MachineTest {
     @Test
     void hiresGraphicsRendersArtifactColorForIsolatedPixels() {
         Apple2Machine machine = Apple2Machine.withBlankMemory();
-        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x41);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 4), 0x41);
         machine.board().cpuBus().readMemory(0xC050);
         machine.board().cpuBus().readMemory(0xC057);
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
-        assertEquals(HIRES_VIOLET_ARGB, pixel(frame, 0, 0));
-        assertEquals(HIRES_BLACK_ARGB, pixel(frame, 1, 0));
-        assertEquals(HIRES_VIOLET_ARGB, pixel(frame, 6, 0));
+        assertEquals(HIRES_BLACK_ARGB, pixel(frame, 27, 0));
+        assertEquals(HIRES_VIOLET_ARGB, pixel(frame, 29, 0));
+        assertEquals(HIRES_VIOLET_ARGB, pixel(frame, 35, 0));
     }
 
     @Test
     void hiresGraphicsRendersAdjacentPixelsAsWhite() {
         Apple2Machine machine = Apple2Machine.withBlankMemory();
-        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x03);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 4), 0x03);
         machine.board().cpuBus().readMemory(0xC050);
         machine.board().cpuBus().readMemory(0xC057);
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
-        assertEquals(HIRES_WHITE_ARGB, pixel(frame, 0, 0));
-        assertEquals(HIRES_WHITE_ARGB, pixel(frame, 1, 0));
+        assertEquals(HIRES_WHITE_ARGB, pixel(frame, 29, 0));
     }
 
     @Test
     void hiresGraphicsUsesHighBitForAlternateArtifactColorSet() {
         Apple2Machine machine = Apple2Machine.withBlankMemory();
-        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x81);
-        machine.board().memory().write(Apple2Memory.hiresPage1Address(1, 0), 0x82);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 4), 0x81);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(1, 4), 0x82);
         machine.board().cpuBus().readMemory(0xC050);
         machine.board().cpuBus().readMemory(0xC057);
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
-        assertEquals(HIRES_BLUE_ARGB, pixel(frame, 0, 0));
-        assertEquals(HIRES_ORANGE_ARGB, pixel(frame, 1, 1));
+        assertEquals(HIRES_BLUE_ARGB, pixel(frame, 30, 0));
+        assertEquals(HIRES_ORANGE_ARGB, pixel(frame, 31, 1));
     }
 
     @Test
-    void appleIIeDoubleHiresRendersAuxPageWhenEightyColumnHiresIsActive() {
+    void hiresGraphicsCarriesShiftedHalfPixelAcrossByteBoundary() {
+        Apple2Machine machine = Apple2Machine.withBlankMemory();
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 4), 0xC0);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 5), 0x80);
+        machine.board().cpuBus().readMemory(0xC050);
+        machine.board().cpuBus().readMemory(0xC057);
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+
+        assertEquals(HIRES_BLUE_ARGB, pixel(frame, 36, 0));
+    }
+
+    @Test
+    void appleIIeDoubleHiresRequiresItsOwnSoftSwitchAlongsideEightyColumnHires() {
         Apple2Machine machine = Apple2Machine.fromLaunchImage(
                 Apple2ModelConfig.appleIIe128K(),
                 resetImageJumpingTo(0x0800)
@@ -741,14 +753,16 @@ class Apple2MachineTest {
         machine.board().cpuBus().writeMemory(0xC050, 0x00);
         machine.board().cpuBus().writeMemory(0xC057, 0x00);
         machine.board().cpuBus().writeMemory(0xC00D, 0x00);
+        machine.board().cpuBus().writeMemory(0xC05E, 0x00);
 
         FrameBuffer doubleHiresFrame = machine.board().renderVideoFrame();
 
         assertTrue(pixel(doubleHiresFrame, 0, 0) != HIRES_BLACK_ARGB);
 
-        machine.board().cpuBus().writeMemory(0xC00C, 0x00);
+        machine.board().cpuBus().writeMemory(0xC05F, 0x00);
         FrameBuffer hiresFrame = machine.board().renderVideoFrame();
 
+        assertTrue(machine.board().auxMemory().eightyColumn());
         assertEquals(HIRES_BLACK_ARGB, pixel(hiresFrame, 0, 0));
     }
 
@@ -765,14 +779,14 @@ class Apple2MachineTest {
 
         assertEquals(LORES_DARK_BLUE_ARGB, pixel(loresFrame, 1, 1));
 
-        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 0), 0x01);
-        machine.board().memory().write(Apple2Memory.hiresPage2Address(0, 0), 0x02);
+        machine.board().memory().write(Apple2Memory.hiresPage1Address(0, 4), 0x01);
+        machine.board().memory().write(Apple2Memory.hiresPage2Address(0, 4), 0x02);
         machine.board().cpuBus().readMemory(0xC057);
 
         FrameBuffer hiresFrame = machine.board().renderVideoFrame();
 
-        assertEquals(HIRES_BLACK_ARGB, pixel(hiresFrame, 0, 0));
-        assertEquals(HIRES_GREEN_ARGB, pixel(hiresFrame, 1, 0));
+        assertEquals(HIRES_BLACK_ARGB, pixel(hiresFrame, 27, 0));
+        assertEquals(HIRES_GREEN_ARGB, pixel(hiresFrame, 30, 0));
     }
 
     @Test

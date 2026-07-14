@@ -191,6 +191,10 @@ public final class Apple2Bus extends ClockedCpuBus {
                     access -> verticalBlankStatus(access.effectiveTState()),
                     1
             );
+            ioMap.mapReadWrite("apple2e.double-hires-soft-switches", IoSelector.range(0xC05E, 0xC05F),
+                    access -> softSwitches.read(access.address()),
+                    (access, value) -> softSwitches.write(access.address(), value)
+            );
         }
         ioMap.mapReadWrite("apple2.keyboard-strobe-clear", IoSelector.exact(KEYBOARD_STROBE_CLEAR),
                 access -> {
