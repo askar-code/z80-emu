@@ -52,25 +52,16 @@ public final class Apple2VideoDevice {
             0xFF44FFCC,
             0xFFFFFFFF
     };
+    private static final int[][] GLYPHS = buildGlyphs();
 
-    private final int frameWidth;
-    private final int frameHeight;
+    private final FrameBuffer frame = new FrameBuffer(FRAME_WIDTH, FRAME_HEIGHT);
+    private final boolean[] lineBits = new boolean[FRAME_WIDTH * 2 + 6];
+    private final NtscSample[] ntscSamples = new NtscSample[FRAME_WIDTH * 2 + 2];
 
     public Apple2VideoDevice(int frameWidth, int frameHeight) {
         if (frameWidth != FRAME_WIDTH || frameHeight != FRAME_HEIGHT) {
             throw new IllegalArgumentException("Apple II frame must be 280x192");
         }
-        this.frameWidth = frameWidth;
-        this.frameHeight = frameHeight;
-    }
-
-    public FrameBuffer renderFrame(
-            Apple2Memory memory,
-            Apple2SoftSwitches softSwitches,
-            long currentTState,
-            int frameTStates
-    ) {
-        return renderFrame(memory, null, softSwitches, currentTState, frameTStates);
     }
 
     public FrameBuffer renderFrame(
@@ -80,7 +71,6 @@ public final class Apple2VideoDevice {
             long currentTState,
             int frameTStates
     ) {
-        FrameBuffer frame = new FrameBuffer(frameWidth, frameHeight);
         frame.clear(BACKGROUND_ARGB);
         boolean flashInverse = flashInverse(currentTState, frameTStates);
         int textPageBase = textPageBase(softSwitches);
@@ -108,8 +98,7 @@ public final class Apple2VideoDevice {
     }
 
     private static boolean doubleHiRes(Apple2AuxMemory auxMemory, Apple2SoftSwitches softSwitches) {
-        return auxMemory != null
-                && auxMemory.installed()
+        return auxMemory.installed()
                 && softSwitches.hires()
                 && softSwitches.doubleHires()
                 && auxMemory.eightyColumn();
@@ -162,9 +151,7 @@ public final class Apple2VideoDevice {
         }
     }
 
-    private static void drawHiRes(FrameBuffer frame, Apple2Memory memory, int pageBase, int graphicsHeight) {
-        boolean[] lineBits = new boolean[FRAME_WIDTH * 2 + 6];
-        NtscSample[] ntscSamples = new NtscSample[FRAME_WIDTH * 2 + 2];
+    private void drawHiRes(FrameBuffer frame, Apple2Memory memory, int pageBase, int graphicsHeight) {
         for (int y = 0; y < graphicsHeight; y++) {
             boolean previousHalfPixel = false;
             for (int byteColumn = 0; byteColumn < HIRES_BYTE_COLUMNS; byteColumn++) {
@@ -190,15 +177,13 @@ public final class Apple2VideoDevice {
         }
     }
 
-    private static void drawDoubleHiRes(
+    private void drawDoubleHiRes(
             FrameBuffer frame,
             Apple2Memory memory,
             Apple2AuxMemory auxMemory,
             int pageBase,
             int graphicsHeight
     ) {
-        boolean[] lineBits = new boolean[FRAME_WIDTH * 2 + 6];
-        NtscSample[] ntscSamples = new NtscSample[FRAME_WIDTH * 2 + 2];
         for (int y = 0; y < graphicsHeight; y++) {
             for (int byteColumn = 0; byteColumn < HIRES_BYTE_COLUMNS; byteColumn++) {
                 int address = Apple2Memory.hiresPageAddress(pageBase, y, byteColumn);
@@ -249,7 +234,6 @@ public final class Apple2VideoDevice {
         NtscSample[][] table = new NtscSample[4][4096];
         NtscFilter signalFilter = new NtscFilter(7.614490548, -0.2718798058, 0.7465656072, false);
         NtscFilter chromaFilter = new NtscFilter(7.438011255, -0.7318893645, 1.2336442711, true);
-        NtscFilter lumaFilter = new NtscFilter(13.71331570, -0.3961075449, 1.1044202472, false);
         NtscFilter colorTvLumaFilter = new NtscFilter(13.71331570, -0.3961075449, 1.1044202472, false);
         for (int phase = 0; phase < table.length; phase++) {
             double phi = (phase * Math.PI / 2.0) + (Math.PI / 4.0);
@@ -264,7 +248,6 @@ public final class Apple2VideoDevice {
                     for (int sample = 0; sample < 2; sample++) {
                         double filteredSignal = signalFilter.filter(signal);
                         double chroma = chromaFilter.filter(filteredSignal);
-                        lumaFilter.filter(filteredSignal);
                         luma = colorTvLumaFilter.filter(filteredSignal - chroma);
                         chroma *= 2.0;
                         chromaI += ((chroma * Math.cos(phi)) - chromaI) / 8.0;
@@ -377,7 +360,7 @@ public final class Apple2VideoDevice {
 
     private static void drawCharacter(FrameBuffer frame, int cellX, int cellY, int screenCode, boolean flashInverse) {
         char character = decodeScreenCode(screenCode);
-        int[] glyph = glyph(character);
+        int[] glyph = GLYPHS[character - 0x20];
         boolean inverse = inverse(screenCode, flashInverse);
         for (int y = 0; y < 7; y++) {
             int bits = glyph[y];
@@ -405,6 +388,14 @@ public final class Apple2VideoDevice {
             normalized += 0x40;
         }
         return (char) normalized;
+    }
+
+    private static int[][] buildGlyphs() {
+        int[][] glyphs = new int[64][];
+        for (int i = 0; i < glyphs.length; i++) {
+            glyphs[i] = glyph((char) (0x20 + i));
+        }
+        return glyphs;
     }
 
     private static int[] glyph(char character) {

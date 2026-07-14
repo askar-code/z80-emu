@@ -22,9 +22,6 @@ public final class Apple2Bus extends ClockedCpuBus {
     private static final int PADDLE_TRIGGER = 0xC070;
     private static final int SLOT_3_ROM_START = 0xC300;
     private static final int SLOT_3_ROM_END_EXCLUSIVE = 0xC400;
-    private static final int PERIPHERAL_ROM_END_EXCLUSIVE = 0xC800;
-    private static final int C800_EXPANSION_ROM_START = 0xC800;
-    private static final int C800_EXPANSION_ROM_END_EXCLUSIVE = 0xD000;
     private static final int VBLANK_TSTATES = 4_550;
 
     private final Apple2Memory memory;
@@ -131,11 +128,12 @@ public final class Apple2Bus extends ClockedCpuBus {
     }
 
     private static boolean isPeripheralRomAddress(int address) {
-        return address >= Apple2Memory.SLOT_ROM_START && address < PERIPHERAL_ROM_END_EXCLUSIVE;
+        return address >= Apple2Memory.SLOT_ROM_START && address < Apple2Memory.C800_EXPANSION_START;
     }
 
     private static boolean isC800ExpansionRomAddress(int address) {
-        return address >= C800_EXPANSION_ROM_START && address < C800_EXPANSION_ROM_END_EXCLUSIVE;
+        return address >= Apple2Memory.C800_EXPANSION_START
+                && address < Apple2Memory.C800_EXPANSION_END_EXCLUSIVE;
     }
 
     private boolean usesInternalCxRom(int address) {

@@ -795,15 +795,18 @@ class Apple2MachineTest {
         Apple2SoftSwitches softSwitches = new Apple2SoftSwitches();
         softSwitches.reset();
         Apple2VideoDevice video = new Apple2VideoDevice(Apple2VideoDevice.FRAME_WIDTH, Apple2VideoDevice.FRAME_HEIGHT);
+        Apple2AuxMemory auxMemory = new Apple2AuxMemory(false);
         int frameTStates = Apple2ModelConfig.appleIIPlus().frameTStates();
         memory.write(Apple2Memory.textPage1Address(0, 0), 0x60);
         memory.write(Apple2Memory.textPage1Address(0, 1), 0xE0);
 
-        FrameBuffer visibleCursor = video.renderFrame(memory, softSwitches, 0, frameTStates);
-        FrameBuffer hiddenCursor = video.renderFrame(memory, softSwitches, 16L * frameTStates, frameTStates);
+        FrameBuffer visibleCursor = video.renderFrame(memory, auxMemory, softSwitches, 0, frameTStates);
 
         assertEquals(FOREGROUND_ARGB, pixel(visibleCursor, 1, 0));
         assertEquals(BACKGROUND_ARGB, pixel(visibleCursor, Apple2VideoDevice.CELL_WIDTH + 1, 0));
+
+        FrameBuffer hiddenCursor = video.renderFrame(memory, auxMemory, softSwitches, 16L * frameTStates, frameTStates);
+
         assertEquals(BACKGROUND_ARGB, pixel(hiddenCursor, 1, 0));
     }
 

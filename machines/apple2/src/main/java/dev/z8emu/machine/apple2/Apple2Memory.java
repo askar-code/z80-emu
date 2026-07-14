@@ -12,7 +12,8 @@ public final class Apple2Memory {
     public static final int IO_START = 0xC000;
     public static final int IO_END_EXCLUSIVE = 0xC100;
     public static final int SLOT_ROM_START = 0xC100;
-    public static final int SLOT_ROM_END_EXCLUSIVE = 0xD000;
+    public static final int C800_EXPANSION_START = 0xC800;
+    public static final int C800_EXPANSION_END_EXCLUSIVE = 0xD000;
     public static final int FIRMWARE_ROM_START_16K = 0xC000;
     public static final int SYSTEM_ROM_START = 0xD000;
     public static final int SYSTEM_ROM_MAX_SIZE = ADDRESS_SPACE_SIZE - SYSTEM_ROM_START;
@@ -88,10 +89,6 @@ public final class Apple2Memory {
         return systemRomStart;
     }
 
-    public int systemRomSize() {
-        return systemRom.length;
-    }
-
     public int readSystemRomOffset(int offset) {
         if (offset < 0 || offset >= systemRom.length) {
             throw new IllegalArgumentException("Apple II system ROM offset out of range: 0x%04X".formatted(offset));
@@ -154,14 +151,4 @@ public final class Apple2Memory {
         return baseAddress + ((row & 0x07) * 0x80) + ((row >>> 3) * 0x28) + column;
     }
 
-    public static boolean isSupportedSystemRomSize(int length) {
-        return length == SYSTEM_ROM_SIZE_4K
-                || length == SYSTEM_ROM_SIZE_8K
-                || length == SYSTEM_ROM_SIZE_12K
-                || length == SYSTEM_ROM_SIZE_16K;
-    }
-
-    public static boolean isSupportedLaunchImageSize(int length) {
-        return length == ADDRESS_SPACE_SIZE || isSupportedSystemRomSize(length);
-    }
 }
