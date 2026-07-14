@@ -33,7 +33,6 @@ public final class CpcMemory {
     private boolean upperRomEnabled = true;
     private int selectedUpperRomIndex;
     private int ramConfiguration;
-    private int screenMode;
 
     public CpcMemory(byte[] combinedRomImage) {
         this(splitCombinedRomImage(combinedRomImage));
@@ -69,7 +68,6 @@ public final class CpcMemory {
         upperRomEnabled = true;
         selectedUpperRomIndex = 0;
         ramConfiguration = 0;
-        screenMode = 0;
     }
 
     public int read(int address) {
@@ -103,7 +101,6 @@ public final class CpcMemory {
     public void writeGateArrayControl(int value) {
         int normalized = value & 0xFF;
         if ((normalized & 0xC0) == 0x80) {
-            screenMode = normalized & 0x03;
             lowerRomEnabled = (normalized & 0x04) == 0;
             upperRomEnabled = (normalized & 0x08) == 0;
         } else if ((normalized & 0xC0) == 0xC0) {
@@ -136,10 +133,6 @@ public final class CpcMemory {
 
     public int ramConfiguration() {
         return ramConfiguration;
-    }
-
-    public int screenMode() {
-        return screenMode;
     }
 
     public int visibleRamBankIndexForSlot(int slot) {

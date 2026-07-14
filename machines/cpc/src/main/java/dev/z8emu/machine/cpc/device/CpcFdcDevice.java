@@ -30,8 +30,12 @@ public final class CpcFdcDevice {
     private CpcDskImage disk;
     private boolean motorOn;
     private final int[] presentCylinderByDrive = new int[4];
-    private final Queue<Integer> dataQueue = new ArrayDeque<>();
-    private final Queue<Integer> resultQueue = new ArrayDeque<>();
+    private int[] dataQueue = new int[0];
+    private int dataQueueHead;
+    private int dataQueueCount;
+    private int[] resultQueue = new int[0];
+    private int resultQueueHead;
+    private int resultQueueCount;
     private final Queue<SeekCompletion> seekCompletions = new ArrayDeque<>();
     private final List<Integer> commandBytes = new ArrayList<>(9);
     private int expectedCommandLength;
@@ -39,8 +43,10 @@ public final class CpcFdcDevice {
     public void reset() {
         motorOn = false;
         Arrays.fill(presentCylinderByDrive, 0);
-        dataQueue.clear();
-        resultQueue.clear();
+        dataQueueHead = 0;
+        dataQueueCount = 0;
+        resultQueueHead = 0;
+        resultQueueCount = 0;
         seekCompletions.clear();
         commandBytes.clear();
         expectedCommandLength = 0;
@@ -52,8 +58,10 @@ public final class CpcFdcDevice {
 
     public void ejectDisk() {
         disk = null;
-        dataQueue.clear();
-        resultQueue.clear();
+        dataQueueHead = 0;
+        dataQueueCount = 0;
+        resultQueueHead = 0;
+        resultQueueCount = 0;
     }
 
     public boolean diskPresent() {
@@ -69,10 +77,10 @@ public final class CpcFdcDevice {
     }
 
     public int readMainStatusRegister() {
-        if (!dataQueue.isEmpty()) {
+        if (dataQueueCount != 0) {
             return MSR_REQUEST_FOR_MASTER | MSR_DATA_TO_CPU | MSR_EXECUTION_MODE | MSR_FDC_BUSY;
         }
-        if (!resultQueue.isEmpty()) {
+        if (resultQueueCount != 0) {
             return MSR_REQUEST_FOR_MASTER | MSR_DATA_TO_CPU | MSR_FDC_BUSY;
         }
         if (expectedCommandLength != 0) {
@@ -82,12 +90,27 @@ public final class CpcFdcDevice {
     }
 
     public int readDataRegister() {
-        if (!dataQueue.isEmpty()) {
-            return dataQueue.remove();
+        if (dataQueueCount != 0) {
+            int value = dataQueue[dataQueueHead];
+            dataQueueHead++;
+            if (dataQueueHead == dataQueue.length) {
+                dataQueueHead = 0;
+            }
+            dataQueueCount--;
+            if (dataQueueCount == 0) {
+                dataQueueHead = 0;
+            }
+            return value;
         }
-        if (!resultQueue.isEmpty()) {
-            int value = resultQueue.remove();
-            if (resultQueue.isEmpty()) {
+        if (resultQueueCount != 0) {
+            int value = resultQueue[resultQueueHead];
+            resultQueueHead++;
+            if (resultQueueHead == resultQueue.length) {
+                resultQueueHead = 0;
+            }
+            resultQueueCount--;
+            if (resultQueueCount == 0) {
+                resultQueueHead = 0;
                 expectedCommandLength = 0;
             }
             return value;
@@ -96,7 +119,7 @@ public final class CpcFdcDevice {
     }
 
     public void writeDataRegister(int value) {
-        if (!dataQueue.isEmpty() || !resultQueue.isEmpty()) {
+        if (dataQueueCount != 0 || resultQueueCount != 0) {
             return;
         }
 
@@ -110,7 +133,7 @@ public final class CpcFdcDevice {
         if (commandBytes.size() == expectedCommandLength) {
             executeCommand();
             commandBytes.clear();
-            if (dataQueue.isEmpty() && resultQueue.isEmpty()) {
+            if (dataQueueCount == 0 && resultQueueCount == 0) {
                 expectedCommandLength = 0;
             }
         }
@@ -169,13 +192,7 @@ public final class CpcFdcDevice {
                             currentRecord,
                             sizeCode);
                 } else {
-                    queueResult(st0(0x00, drive, head),
-                            lastSector.status1(),
-                            lastSector.status2(),
-                            lastSector.track(),
-                            lastSector.side(),
-                            lastSector.sectorId(),
-                            lastSector.sizeCode());
+                    queueSectorResult(st0(0x00, drive, head), lastSector);
                 }
                 return;
             }
@@ -183,13 +200,7 @@ public final class CpcFdcDevice {
             lastSector = sector.get();
             queueSectorData(lastSector, transferLength(sizeCode, dataLength, lastSector));
             if (currentRecord == endOfTrack) {
-                queueResult(st0(0x00, drive, head),
-                        lastSector.status1(),
-                        lastSector.status2(),
-                        lastSector.track(),
-                        lastSector.side(),
-                        lastSector.sectorId(),
-                        lastSector.sizeCode());
+                queueSectorResult(st0(0x00, drive, head), lastSector);
                 return;
             }
             currentRecord = (currentRecord + 1) & 0xFF;
@@ -218,13 +229,7 @@ public final class CpcFdcDevice {
         }
 
         CpcDiskSector firstSector = sector.get();
-        queueResult(st0(0x00, drive, head),
-                firstSector.status1(),
-                firstSector.status2(),
-                firstSector.track(),
-                firstSector.side(),
-                firstSector.sectorId(),
-                firstSector.sizeCode());
+        queueSectorResult(st0(0x00, drive, head), firstSector);
     }
 
     private void executeRecalibrate() {
@@ -269,19 +274,34 @@ public final class CpcFdcDevice {
     private void queueSectorData(CpcDiskSector sector, int length) {
         byte[] data = sector.data();
         int copyLength = Math.min(length, data.length);
+        if (length <= 0) {
+            return;
+        }
+
+        ensureDataQueueCapacity(dataQueueCount + length);
+        int tail = (dataQueueHead + dataQueueCount) % dataQueue.length;
         for (int i = 0; i < copyLength; i++) {
-            dataQueue.add(data[i] & 0xFF);
+            dataQueue[tail] = data[i] & 0xFF;
+            tail++;
+            if (tail == dataQueue.length) {
+                tail = 0;
+            }
         }
         for (int i = copyLength; i < length; i++) {
-            dataQueue.add(0x00);
+            dataQueue[tail] = 0x00;
+            tail++;
+            if (tail == dataQueue.length) {
+                tail = 0;
+            }
         }
+        dataQueueCount += length;
     }
 
     private int transferLength(int sizeCode, int dataLength, CpcDiskSector sector) {
         if (sizeCode == 0) {
-            return dataLength == 0 ? sector.data().length : dataLength;
+            return dataLength == 0 ? sector.dataLength() : dataLength;
         }
-        return Math.min(128 << Math.min(sizeCode, 6), Math.max(sector.data().length, sector.declaredSize()));
+        return Math.min(128 << Math.min(sizeCode, 6), Math.max(sector.dataLength(), sector.declaredSize()));
     }
 
     private boolean driveReady(int drive) {
@@ -301,10 +321,63 @@ public final class CpcFdcDevice {
         };
     }
 
+    private void queueSectorResult(int st0, CpcDiskSector sector) {
+        queueResult(
+                st0,
+                sector.status1(),
+                sector.status2(),
+                sector.track(),
+                sector.side(),
+                sector.sectorId(),
+                sector.sizeCode()
+        );
+    }
+
     private void queueResult(int... values) {
-        for (int value : values) {
-            resultQueue.add(value & 0xFF);
+        if (values.length == 0) {
+            return;
         }
+
+        ensureResultQueueCapacity(resultQueueCount + values.length);
+        int tail = (resultQueueHead + resultQueueCount) % resultQueue.length;
+        for (int value : values) {
+            resultQueue[tail] = value & 0xFF;
+            tail++;
+            if (tail == resultQueue.length) {
+                tail = 0;
+            }
+        }
+        resultQueueCount += values.length;
+    }
+
+    private void ensureDataQueueCapacity(int requiredCapacity) {
+        if (requiredCapacity <= dataQueue.length) {
+            return;
+        }
+
+        int oldCapacity = dataQueue.length;
+        int newCapacity = Math.max(requiredCapacity, Math.max(16, oldCapacity * 2));
+        int[] grown = Arrays.copyOf(dataQueue, newCapacity);
+        if (dataQueueCount > 0 && dataQueueHead + dataQueueCount > oldCapacity) {
+            int wrappedCount = dataQueueHead + dataQueueCount - oldCapacity;
+            System.arraycopy(grown, 0, grown, oldCapacity, wrappedCount);
+        }
+        dataQueue = grown;
+    }
+
+    private void ensureResultQueueCapacity(int requiredCapacity) {
+        if (requiredCapacity <= resultQueue.length) {
+            return;
+        }
+
+        int oldCapacity = resultQueue.length;
+        int newCapacity = Math.max(requiredCapacity, Math.max(8, oldCapacity * 2));
+        int[] grown = Arrays.copyOf(resultQueue, newCapacity);
+        if (resultQueueCount > 0 && resultQueueHead + resultQueueCount > oldCapacity) {
+            int wrappedCount = resultQueueHead + resultQueueCount - oldCapacity;
+            System.arraycopy(grown, 0, grown, oldCapacity, wrappedCount);
+        }
+        resultQueue = grown;
     }
 
     private static int driveNumber(int driveAndHead) {
