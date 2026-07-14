@@ -17,7 +17,6 @@ import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Objects;
 
 public final class CpcBoard implements VideoMachineBoard {
-    private static final int CRTC_SCANLINE_TSTATES = 256;
     private static final int VSYNC_SCANLINES = 16;
 
     private final CpcModelConfig modelConfig;
@@ -133,8 +132,8 @@ public final class CpcBoard implements VideoMachineBoard {
     }
 
     private static int portBInput(long currentTState, int frameTStates) {
-        int frameOffset = Math.floorMod((int) (currentTState % frameTStates), frameTStates);
-        boolean vsyncActive = frameOffset < VSYNC_SCANLINES * CRTC_SCANLINE_TSTATES;
+        int frameOffset = Math.floorMod(currentTState, frameTStates);
+        boolean vsyncActive = frameOffset < VSYNC_SCANLINES * CpcGateArrayDevice.T_STATES_PER_HSYNC;
         return vsyncActive ? 0xFF : 0xFE;
     }
 }

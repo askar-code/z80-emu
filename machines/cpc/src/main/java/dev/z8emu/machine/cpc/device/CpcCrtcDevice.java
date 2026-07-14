@@ -70,10 +70,26 @@ public final class CpcCrtcDevice {
     }
 
     public int displayMemoryAddress(int rasterLine, int byteColumn) {
-        int scanline = Math.floorMod(rasterLine, scanlinesPerCharacter());
-        int characterRow = Math.max(0, rasterLine / scanlinesPerCharacter());
+        return displayMemoryAddress(
+                rasterLine,
+                byteColumn,
+                scanlinesPerCharacter(),
+                horizontalDisplayedChars(),
+                startAddress()
+        );
+    }
+
+    int displayMemoryAddress(
+            int rasterLine,
+            int byteColumn,
+            int scanlinesPerChar,
+            int horizChars,
+            int startAddr
+    ) {
+        int scanline = Math.floorMod(rasterLine, scanlinesPerChar);
+        int characterRow = Math.max(0, rasterLine / scanlinesPerChar);
         int characterColumn = Math.max(0, byteColumn / 2);
-        int ma = (startAddress() + (characterRow * horizontalDisplayedChars()) + characterColumn) & 0x3FFF;
+        int ma = (startAddr + (characterRow * horizChars) + characterColumn) & 0x3FFF;
         return displayAddress(ma, scanline, byteColumn);
     }
 

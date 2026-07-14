@@ -14,10 +14,10 @@ public final class CpcGateArrayDevice {
     public static final int FRAME_WIDTH = BORDER_LEFT + DISPLAY_WIDTH + BORDER_RIGHT;
     public static final int FRAME_HEIGHT = BORDER_TOP + DISPLAY_HEIGHT + BORDER_BOTTOM;
     public static final int DISPLAY_BYTES_PER_LINE = 80;
+    public static final int T_STATES_PER_HSYNC = 256;
 
-    private static final int T_STATES_PER_HSYNC = 256;
     private static final int INTERRUPT_HSYNC_PERIOD = 52;
-    private static final int FRAME_TSTATES = T_STATES_PER_HSYNC * INTERRUPT_HSYNC_PERIOD * 6;
+    public static final int FRAME_TSTATES = T_STATES_PER_HSYNC * INTERRUPT_HSYNC_PERIOD * 6;
     private static final int DISPLAY_START_TSTATES = 112;
     private static final int DISPLAY_BYTE_TSTATES = 2;
     private static final int LOWER_RASTER_SPLIT_REFERENCE_DISPLAY_LINE = DISPLAY_HEIGHT - 7;
@@ -71,10 +71,6 @@ public final class CpcGateArrayDevice {
         frameBuffer.clear(argbForHardwareColor(DEFAULT_BLACK_HARDWARE_COLOR));
     }
 
-    public void writeRegister(int value, CpcMemory memory) {
-        writeRegister(value, memory, elapsedTStates);
-    }
-
     public void writeRegister(int value, CpcMemory memory, long eventTState) {
         syncRasterState(eventTState);
         int normalized = value & 0xFF;
@@ -101,10 +97,6 @@ public final class CpcGateArrayDevice {
             return;
         }
         memory.writeGateArrayControl(normalized);
-    }
-
-    public void onTStatesElapsed(int tStates) {
-        onTStatesElapsed(tStates, elapsedTStates + tStates);
     }
 
     public void onTStatesElapsed(int tStates, long currentTState) {
@@ -146,9 +138,18 @@ public final class CpcGateArrayDevice {
         int mode = normalizedScreenMode();
         int visibleLines = Math.min(DISPLAY_HEIGHT, crtc.visibleRasterLines());
         int visibleBytes = Math.min(DISPLAY_BYTES_PER_LINE, crtc.horizontalDisplayedBytes());
+        int scanlinesPerChar = crtc.scanlinesPerCharacter();
+        int horizChars = crtc.horizontalDisplayedChars();
+        int startAddr = crtc.startAddress();
         for (int y = 0; y < visibleLines; y++) {
             for (int byteColumn = 0; byteColumn < visibleBytes; byteColumn++) {
-                int address = crtc.displayMemoryAddress(y, byteColumn);
+                int address = crtc.displayMemoryAddress(
+                        y,
+                        byteColumn,
+                        scanlinesPerChar,
+                        horizChars,
+                        startAddr
+                );
                 int value = memory.readDisplayMemory(address);
                 renderDisplayByte(mode, value, byteColumn, y, hardwareInkByPen);
             }
@@ -160,35 +161,39 @@ public final class CpcGateArrayDevice {
 
         int visibleLines = Math.min(DISPLAY_HEIGHT, crtc.visibleRasterLines());
         int visibleBytes = Math.min(DISPLAY_BYTES_PER_LINE, crtc.horizontalDisplayedBytes());
+        int scanlinesPerChar = crtc.scanlinesPerCharacter();
+        int horizChars = crtc.horizontalDisplayedChars();
+        int startAddr = crtc.startAddress();
         int displayEventTop = displayEventTop();
         for (int y = 0; y < visibleLines; y++) {
             int frameLine = displayEventTop + y;
             int eventIndex = eventIndexAt(
                     completedFrameEventTimes,
                     completedFrameEventCount,
+                    0,
                     displayByteFrameOffset(frameLine, 0)
             );
             for (int byteColumn = 0; byteColumn < visibleBytes; byteColumn++) {
                 int frameOffset = displayByteFrameOffset(frameLine, byteColumn);
-                while (eventIndex + 1 < completedFrameEventCount
-                        && completedFrameEventTimes[eventIndex + 1] <= frameOffset) {
-                    eventIndex++;
-                }
-                int address = crtc.displayMemoryAddress(y, byteColumn);
+                eventIndex = eventIndexAt(
+                        completedFrameEventTimes,
+                        completedFrameEventCount,
+                        eventIndex,
+                        frameOffset
+                );
+                int address = crtc.displayMemoryAddress(
+                        y,
+                        byteColumn,
+                        scanlinesPerChar,
+                        horizChars,
+                        startAddr
+                );
                 int value = memory.readDisplayMemory(address);
                 int mode = completedFrameEventModes[eventIndex];
                 int[] lineInks = completedFrameEventInks[eventIndex];
                 renderDisplayByte(mode, value, byteColumn, y, lineInks);
             }
         }
-    }
-
-    public int screenMode() {
-        return screenMode;
-    }
-
-    public int selectedPen() {
-        return selectedPen;
     }
 
     public int hardwareInkForPen(int pen) {
@@ -305,22 +310,55 @@ public final class CpcGateArrayDevice {
         }
 
         int eventIndex = 0;
-        for (int y = 0; y < FRAME_HEIGHT; y++) {
-            int rowBase = y * FRAME_WIDTH;
-            for (int x = 0; x < FRAME_WIDTH; x++) {
-                if (x >= BORDER_LEFT
-                        && x < BORDER_LEFT + DISPLAY_WIDTH
-                        && y >= BORDER_TOP
-                        && y < BORDER_TOP + DISPLAY_HEIGHT) {
-                    continue;
-                }
-                int frameOffset = (y * T_STATES_PER_HSYNC) + DISPLAY_START_TSTATES + (x / 4);
-                while (eventIndex + 1 < eventCount && eventTimes[eventIndex + 1] <= frameOffset) {
-                    eventIndex++;
-                }
-                frameBuffer.pixels()[rowBase + x] = argbForHardwareColor(eventInks[eventIndex][BORDER_PEN_INDEX]);
-            }
+        for (int y = 0; y < BORDER_TOP; y++) {
+            eventIndex = paintBorderStrip(eventTimes, eventInks, eventCount, eventIndex, y, 0, FRAME_WIDTH);
         }
+        for (int y = BORDER_TOP; y < BORDER_TOP + DISPLAY_HEIGHT; y++) {
+            eventIndex = paintBorderStrip(eventTimes, eventInks, eventCount, eventIndex, y, 0, BORDER_LEFT);
+            eventIndex = paintBorderStrip(
+                    eventTimes,
+                    eventInks,
+                    eventCount,
+                    eventIndex,
+                    y,
+                    BORDER_LEFT + DISPLAY_WIDTH,
+                    FRAME_WIDTH
+            );
+        }
+        for (int y = BORDER_TOP + DISPLAY_HEIGHT; y < FRAME_HEIGHT; y++) {
+            eventIndex = paintBorderStrip(eventTimes, eventInks, eventCount, eventIndex, y, 0, FRAME_WIDTH);
+        }
+    }
+
+    private int paintBorderStrip(
+            int[] eventTimes,
+            int[][] eventInks,
+            int eventCount,
+            int eventIndex,
+            int y,
+            int fromX,
+            int toX
+    ) {
+        int[] pixels = frameBuffer.pixels();
+        int rowBase = y * FRAME_WIDTH;
+        int lineFrameOffset = (y * T_STATES_PER_HSYNC) + DISPLAY_START_TSTATES;
+        int x = fromX;
+        while (x < toX) {
+            int frameOffset = lineFrameOffset + (x / 4);
+            eventIndex = eventIndexAt(eventTimes, eventCount, eventIndex, frameOffset);
+
+            int runEnd = toX;
+            if (eventIndex + 1 < eventCount) {
+                int nextEventX = (eventTimes[eventIndex + 1] - lineFrameOffset) * 4;
+                if (nextEventX > x && nextEventX < runEnd) {
+                    runEnd = nextEventX;
+                }
+            }
+            int argb = argbForHardwareColor(eventInks[eventIndex][BORDER_PEN_INDEX]);
+            Arrays.fill(pixels, rowBase + x, rowBase + runEnd, argb);
+            x = runEnd;
+        }
+        return eventIndex;
     }
 
     private void appendCurrentFrameEvent(int frameOffset) {
@@ -382,8 +420,8 @@ public final class CpcGateArrayDevice {
         return eventTop;
     }
 
-    private static int eventIndexAt(int[] eventTimes, int eventCount, int frameOffset) {
-        int eventIndex = 0;
+    private static int eventIndexAt(int[] eventTimes, int eventCount, int fromIndex, int frameOffset) {
+        int eventIndex = fromIndex;
         while (eventIndex + 1 < eventCount && eventTimes[eventIndex + 1] <= frameOffset) {
             eventIndex++;
         }

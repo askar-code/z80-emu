@@ -207,19 +207,7 @@ class CpcMachineTest {
         setPen(machine, 3, 27);
         setMode(machine, 0);
 
-        int hudModeTState = (hudFrameLine * 256) + 70;
-        int pen1TState = (hudFrameLine * 256) + 101;
-        int pen2TState = (hudFrameLine * 256) + 136;
-        int pen3TState = (hudFrameLine * 256) + 171;
-        machine.board().gateArray().onTStatesElapsed(hudModeTState, hudModeTState);
-        machine.board().gateArray().writeRegister(0x81, machine.board().memory(), hudModeTState);
-        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), pen1TState);
-        machine.board().gateArray().writeRegister(0x4C, machine.board().memory(), pen1TState);
-        machine.board().gateArray().writeRegister(0x02, machine.board().memory(), pen2TState);
-        machine.board().gateArray().writeRegister(0x55, machine.board().memory(), pen2TState);
-        machine.board().gateArray().writeRegister(0x03, machine.board().memory(), pen3TState);
-        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), pen3TState);
-        machine.board().gateArray().onTStatesElapsed(machine.frameTStates() - pen3TState, machine.frameTStates());
+        writeHudPaletteSequence(machine, hudFrameLine, 0);
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
@@ -251,19 +239,7 @@ class CpcMachineTest {
         machine.board().gateArray().writeRegister(0x81, machine.board().memory(), staleTopTState);
         machine.board().gateArray().writeRegister(0x80, machine.board().memory(), staleTopTState + 190);
 
-        int hudModeTState = (shiftedHudFrameLine * 256) + 70;
-        int pen1TState = (shiftedHudFrameLine * 256) + 101;
-        int pen2TState = (shiftedHudFrameLine * 256) + 136;
-        int pen3TState = (shiftedHudFrameLine * 256) + 171;
-        machine.board().gateArray().onTStatesElapsed(hudModeTState - staleTopTState, hudModeTState);
-        machine.board().gateArray().writeRegister(0x81, machine.board().memory(), hudModeTState);
-        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), pen1TState);
-        machine.board().gateArray().writeRegister(0x4C, machine.board().memory(), pen1TState);
-        machine.board().gateArray().writeRegister(0x02, machine.board().memory(), pen2TState);
-        machine.board().gateArray().writeRegister(0x55, machine.board().memory(), pen2TState);
-        machine.board().gateArray().writeRegister(0x03, machine.board().memory(), pen3TState);
-        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), pen3TState);
-        machine.board().gateArray().onTStatesElapsed(machine.frameTStates() - pen3TState, machine.frameTStates());
+        writeHudPaletteSequence(machine, shiftedHudFrameLine, staleTopTState);
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
@@ -448,6 +424,25 @@ class CpcMachineTest {
 
     private static void setMode(CpcMachine machine, int mode) {
         machine.board().cpuBus().writePort(0x7F00, 0x80 | (mode & 0x03));
+    }
+
+    private static void writeHudPaletteSequence(CpcMachine machine, int hudFrameLine, long alreadyElapsedTStates) {
+        int hudModeTState = (hudFrameLine * 256) + 70;
+        int pen1TState = (hudFrameLine * 256) + 101;
+        int pen2TState = (hudFrameLine * 256) + 136;
+        int pen3TState = (hudFrameLine * 256) + 171;
+        machine.board().gateArray().onTStatesElapsed(
+                (int) (hudModeTState - alreadyElapsedTStates),
+                hudModeTState
+        );
+        machine.board().gateArray().writeRegister(0x81, machine.board().memory(), hudModeTState);
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), pen1TState);
+        machine.board().gateArray().writeRegister(0x4C, machine.board().memory(), pen1TState);
+        machine.board().gateArray().writeRegister(0x02, machine.board().memory(), pen2TState);
+        machine.board().gateArray().writeRegister(0x55, machine.board().memory(), pen2TState);
+        machine.board().gateArray().writeRegister(0x03, machine.board().memory(), pen3TState);
+        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), pen3TState);
+        machine.board().gateArray().onTStatesElapsed(machine.frameTStates() - pen3TState, machine.frameTStates());
     }
 
     private static int readKeyboardLine(CpcMachine machine, int line) {

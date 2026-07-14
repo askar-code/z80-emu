@@ -25,6 +25,10 @@ public record CpcDiskSector(
         return 128 << (sizeCode & 0x07);
     }
 
+    public int dataLength() {
+        return data.length;
+    }
+
     public boolean matches(int cylinder, int head, int record, int requestedSizeCode) {
         return track == (cylinder & 0xFF)
                 && side == (head & 0xFF)
