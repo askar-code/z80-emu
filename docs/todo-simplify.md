@@ -15,7 +15,7 @@ extra gate or land here as deferred items. After each tranche: full
 - [x] 3. `cpu-6502-i8080` — cpu/mos6502 + cpu/i8080 (~4.4k lines) — DONE 2026-07-14
 - [x] 4. `machine-spectrum` — machines/spectrum (~3.9k lines) — DONE 2026-07-14
 - [x] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines) — DONE 2026-07-14
-- [ ] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines)
+- [x] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines) — DONE 2026-07-14
 - [ ] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines)
 - [ ] 8. `app-desktop` — apps/desktop (~5.9k lines)
 - [ ] 9. `cross-reuse` + `cross-altitude` — whole repo, run last
@@ -25,6 +25,27 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 6: `apple2-core` (machines/apple2, non-disk) — 2026-07-14
+
+- Review: 16 confirmed / 0 rejected → 8 unique (record convergence: all four
+  angles independently found the per-frame glyph rebuild).
+- Applied: 8/8 via Codex. Headliners: static GLYPHS table (was ~60k
+  allocations + ~400k string-char parses per second of text rendering);
+  framebuffer + NTSC scratch reuse (was a fresh 215 KB buffer per frame);
+  dead luma filter removed from the NTSC builder; auxMemory-null convention
+  and 4-arg renderFrame overload removed; dead ROM-size policy / language
+  card overloads / frame dimension fields deleted; C800-CFFF bounds unified.
+- Codex ran its own deterministic pre/post frame CRCs in all six video
+  modes (text/lo-res/mixed-lores/hi-res/mixed-hires/DHGR) — all matched.
+  It also correctly adapted the one test that held two frames across the
+  now-reused buffer (reorder only; equal assertion strength, verified).
+- Review gates: agent diff review 6/6 CLEAN — proved glyph index covers all
+  256 screen bytes, NtscFilter.filter mutates only its own state, no
+  renderFrame caller retains the buffer, II Plus aux path identical
+  (installed()==false ≡ old null), C800 exclusivity conventions matched.
+- Verification on main: `./gradlew build` + all three Apple II smokes
+  (BASIC, PoP frame CRC, ProDOS system banner) green. @Test 46→46.
 
 ### Tranche 5: `machine-rk` + `machine-cpc` — 2026-07-14
 
