@@ -4,7 +4,6 @@ import dev.z8emu.machine.apple2.Apple2Machine;
 import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.apple2.Apple2ModelConfig;
 import dev.z8emu.machine.apple2.Apple2VideoDevice;
-import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import dev.z8emu.machine.apple2.disk.Apple2Disk2TraceEvent;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImageLoader;
 import dev.z8emu.machine.apple2.disk.Apple2Gcr35Media;
@@ -14,7 +13,6 @@ import dev.z8emu.machine.apple2.disk.Apple2SuperDriveTraceEvent;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.platform.bus.io.IoAccess;
 import dev.z8emu.platform.video.FrameBuffer;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,7 +21,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.CRC32;
-import javax.imageio.ImageIO;
+
+import static dev.z8emu.app.desktop.ProbeOutput.countVisibleCharacters;
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+import static dev.z8emu.app.desktop.ProbeOutput.hex8;
+import static dev.z8emu.app.desktop.ProbeOutput.writePng;
 
 public final class Apple2RomProbeLauncher {
     private static final long DEFAULT_MAX_INSTRUCTIONS = 2_000_000L;
@@ -98,7 +100,7 @@ public final class Apple2RomProbeLauncher {
         }
         applyInitialRegisters(machine, config);
         if (config.disk2RomPath() != null) {
-            machine.loadDisk2SlotRom(readDisk2Rom(config.disk2RomPath()));
+            machine.loadDisk2SlotRom(Apple2RomImageLoader.loadDisk2SlotRom(config.disk2RomPath()));
         }
         if (config.diskPath() != null) {
             insertDisk2Media(machine, config.diskPath());
@@ -165,39 +167,96 @@ public final class Apple2RomProbeLauncher {
                     screenExpectationFailed,
                     frameExpectationFailed
             ));
-            printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen,
-                    config.watchAddrs(), lastExecutedPc, lastExecutedOpcode, config.traceOptions().traceSuperDrive());
-            printProDosBootLoad(proDosBootLoad);
-            printSuperDrive35MediaLoad(superDrive35MediaLoad);
-            printStopPc(stopPc);
-            printPokesApplied(pokesApplied);
-            printPcProfile(pcHits, config.profilePcTop());
-            printPcCallerProfile(pcCallerHits, config.profilePcCallers(), config.profilePcTop());
-            traceCollector.print();
-            printFrameResult(frameResult);
+            printProbeReport(
+                    machine,
+                    steps,
+                    imagePath,
+                    image,
+                    keyScript,
+                    injectedKeys,
+                    expectedScreen,
+                    config,
+                    lastExecutedPc,
+                    lastExecutedOpcode,
+                    proDosBootLoad,
+                    superDrive35MediaLoad,
+                    stopPc,
+                    pokesApplied,
+                    pcHits,
+                    pcCallerHits,
+                    traceCollector,
+                    () -> frameResult
+            );
             if (screenExpectationFailed || frameExpectationFailed) {
                 System.exit(1);
             }
         } catch (Throwable failure) {
             traceCollector.pause();
             System.out.println("status=failure");
-            printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen,
-                    config.watchAddrs(), lastExecutedPc, lastExecutedOpcode, config.traceOptions().traceSuperDrive());
-            printProDosBootLoad(proDosBootLoad);
-            printSuperDrive35MediaLoad(superDrive35MediaLoad);
-            printStopPc(stopPc);
-            printPokesApplied(pokesApplied);
-            printPcProfile(pcHits, config.profilePcTop());
-            printPcCallerProfile(pcCallerHits, config.profilePcCallers(), config.profilePcTop());
-            traceCollector.print();
-            printFrameResult(renderFrameIfRequested(
+            printProbeReport(
                     machine,
-                    config.dumpFramePath(),
-                    config.expectedFrameCrc32()
-            ));
+                    steps,
+                    imagePath,
+                    image,
+                    keyScript,
+                    injectedKeys,
+                    expectedScreen,
+                    config,
+                    lastExecutedPc,
+                    lastExecutedOpcode,
+                    proDosBootLoad,
+                    superDrive35MediaLoad,
+                    stopPc,
+                    pokesApplied,
+                    pcHits,
+                    pcCallerHits,
+                    traceCollector,
+                    () -> renderFrameIfRequested(
+                            machine,
+                            config.dumpFramePath(),
+                            config.expectedFrameCrc32()
+                    )
+            );
             System.out.println("failure=" + failure.getClass().getName() + ": " + failure.getMessage());
             throw failure;
         }
+    }
+
+    private static void printProbeReport(
+            Apple2Machine machine,
+            long steps,
+            Path imagePath,
+            byte[] image,
+            String keyScript,
+            int injectedKeys,
+            String expectedScreen,
+            ProbeConfig config,
+            int lastExecutedPc,
+            int lastExecutedOpcode,
+            ProDosBootLoad proDosBootLoad,
+            SuperDrive35MediaLoad superDrive35MediaLoad,
+            int stopPc,
+            long pokesApplied,
+            long[] pcHits,
+            long[][] pcCallerHits,
+            TraceCollector traceCollector,
+            FrameResultSupplier frameResultSupplier
+    ) throws IOException {
+        printState(machine, steps, imagePath, image.length, keyScript.length(), injectedKeys, expectedScreen,
+                config.watchAddrs(), lastExecutedPc, lastExecutedOpcode, config.traceOptions().traceSuperDrive());
+        printProDosBootLoad(proDosBootLoad);
+        printSuperDrive35MediaLoad(superDrive35MediaLoad);
+        printStopPc(stopPc);
+        printPokesApplied(pokesApplied);
+        printPcProfile(pcHits, config.profilePcTop());
+        printPcCallerProfile(pcCallerHits, config.profilePcCallers(), config.profilePcTop());
+        traceCollector.print();
+        printFrameResult(frameResultSupplier.get());
+    }
+
+    @FunctionalInterface
+    private interface FrameResultSupplier {
+        FrameProbeResult get() throws IOException;
     }
 
     private static ProbeConfig parseArgs(String[] args) {
@@ -398,14 +457,6 @@ public final class Apple2RomProbeLauncher {
 
     private static boolean isSupportedProbeImageSize(DesktopMachineKind kind, int length) {
         return modelConfigFor(kind).supportsLaunchImageSize(length);
-    }
-
-    private static byte[] readDisk2Rom(Path romPath) throws IOException {
-        byte[] rom = Files.readAllBytes(romPath);
-        if (rom.length != Apple2Disk2Controller.SLOT_ROM_SIZE) {
-            throw new IllegalArgumentException("Disk II slot ROM must be exactly 256 bytes: " + romPath);
-        }
-        return rom;
     }
 
     private static byte[] readSuperDrive35ControllerRom(Path romPath) throws IOException {
@@ -909,12 +960,6 @@ public final class Apple2RomProbeLauncher {
         }
     }
 
-    private static void writePng(FrameBuffer frame, Path target) throws IOException {
-        BufferedImage image = new BufferedImage(frame.width(), frame.height(), BufferedImage.TYPE_INT_ARGB);
-        image.setRGB(0, 0, frame.width(), frame.height(), frame.pixels(), 0, frame.width());
-        ImageIO.write(image, "png", target.toFile());
-    }
-
     private static boolean screenContains(Apple2Machine machine, String expectedScreen) {
         return String.join("\n", visibleLines(machine)).contains(expectedScreen);
     }
@@ -946,18 +991,6 @@ public final class Apple2RomProbeLauncher {
         return '.';
     }
 
-    private static int countVisibleCharacters(String[] visibleLines) {
-        int count = 0;
-        for (String line : visibleLines) {
-            for (int i = 0; i < line.length(); i++) {
-                if (line.charAt(i) != ' ') {
-                    count++;
-                }
-            }
-        }
-        return count;
-    }
-
     private static String crc32Hex(byte[] data) {
         return "%08X".formatted(crc32(data));
     }
@@ -981,14 +1014,6 @@ public final class Apple2RomProbeLauncher {
             crc32.update(pixel & 0xFF);
         }
         return crc32.getValue();
-    }
-
-    private static String hex8(int value) {
-        return "%02X".formatted(value & 0xFF);
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
     }
 
     private static String printable(String value) {

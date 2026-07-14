@@ -8,13 +8,15 @@ import dev.z8emu.machine.spectrum48k.tape.TapeBlock;
 import dev.z8emu.machine.spectrum48k.tape.TapeFile;
 import dev.z8emu.machine.spectrum48k.tape.TapeLoaders;
 import dev.z8emu.platform.video.FrameBuffer;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import javax.imageio.ImageIO;
+
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+import static dev.z8emu.app.desktop.ProbeOutput.hex8;
+import static dev.z8emu.app.desktop.ProbeOutput.writePng;
 
 public final class SpectrumTapeProbeLauncher {
     private static final int TAPE_LOADER_MENU_PC = 0x3685;
@@ -227,12 +229,6 @@ public final class SpectrumTapeProbeLauncher {
         Path imagePath = outputDir.resolve(fileName);
         writePng(frame, imagePath);
         return statusLine(machine, label, imagePath);
-    }
-
-    private static void writePng(FrameBuffer frame, Path target) throws IOException {
-        BufferedImage image = new BufferedImage(frame.width(), frame.height(), BufferedImage.TYPE_INT_ARGB);
-        image.setRGB(0, 0, frame.width(), frame.height(), frame.pixels(), 0, frame.width());
-        ImageIO.write(image, "png", target.toFile());
     }
 
     private static String statusLine(SpectrumMachine machine, String label, Path imagePath) {
@@ -497,13 +493,5 @@ public final class SpectrumTapeProbeLauncher {
                 Integer.parseInt(parts[1].trim()),
                 Integer.parseInt(parts[2].trim())
         };
-    }
-
-    private static String hex8(int value) {
-        return "%02X".formatted(value & 0xFF);
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
     }
 }

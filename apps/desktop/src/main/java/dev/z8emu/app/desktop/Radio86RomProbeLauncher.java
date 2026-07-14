@@ -11,7 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.zip.CRC32;
+
+import static dev.z8emu.app.desktop.ProbeOutput.countVisibleCharacters;
+import static dev.z8emu.app.desktop.ProbeOutput.crc32Hex;
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+import static dev.z8emu.app.desktop.ProbeOutput.hex8;
 
 public final class Radio86RomProbeLauncher {
     private static final long DEFAULT_MAX_INSTRUCTIONS = 2_000_000L;
@@ -147,36 +151,6 @@ public final class Radio86RomProbeLauncher {
             steps += Radio86MonitorConsole.typeCharacter(machine, character);
         }
         return steps;
-    }
-
-
-
-
-    private static int countVisibleCharacters(String[] visibleLines) {
-        int count = 0;
-        for (String line : visibleLines) {
-            for (int i = 0; i < line.length(); i++) {
-                if (line.charAt(i) != ' ') {
-                    count++;
-                }
-            }
-        }
-        return count;
-    }
-
-
-    private static String crc32Hex(byte[] data) {
-        CRC32 crc32 = new CRC32();
-        crc32.update(data, 0, data.length);
-        return "%08X".formatted(crc32.getValue());
-    }
-
-    private static String hex8(int value) {
-        return "%02X".formatted(value & 0xFF);
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
     }
 
     private static final class TraceCollector implements Radio86Bus.AccessTraceListener {

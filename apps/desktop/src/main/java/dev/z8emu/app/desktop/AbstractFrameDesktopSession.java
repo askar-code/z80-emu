@@ -44,6 +44,15 @@ abstract class AbstractFrameDesktopSession<P extends JComponent> implements Desk
     }
 
     @Override
+    public final String title(Throwable failure) {
+        if (failure == null) {
+            return statusTitle();
+        }
+        String message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+        return statusTitle() + "  stopped: " + message;
+    }
+
+    @Override
     public final long frameDurationNanos() {
         return frameDurationNanos;
     }
@@ -93,6 +102,8 @@ abstract class AbstractFrameDesktopSession<P extends JComponent> implements Desk
 
     protected void closeMachineResources() {
     }
+
+    protected abstract String statusTitle();
 
     protected abstract FrameBuffer renderVideoFrame();
 

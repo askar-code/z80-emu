@@ -35,18 +35,12 @@ final class CpcDesktopRunner {
         }
 
         @Override
-        public String title(Throwable failure) {
+        protected String statusTitle() {
             String base = "z8-emu " + machine.board().modelName();
             String status = "source=" + config.sourceLabel()
                     + "  disk=" + diskStatus()
                     + "  cpu=z80";
-
-            if (failure == null) {
-                return base + "  " + status;
-            }
-
-            String message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-            return base + "  " + status + "  stopped: " + message;
+            return base + "  " + status;
         }
 
         @Override
