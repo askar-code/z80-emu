@@ -53,6 +53,16 @@ extra gate or land here as deferred items. After each tranche: full
   hand route is ~2x cheaper in Claude tokens; Codex's fixed overhead
   (spec + adversarial review) pays off on bigger/gnarlier batches (e.g.
   tranche 3's 450-line 6502 diff) and runs fully parallel to other work.
+- IMPORTANT caveat (not captured by the token table): Codex is also an
+  independent CROSS-MODEL validation layer — it re-reads the code before
+  every fix and uses its SKIP right (caught the F-13 dummy-operand
+  overgeneralization in tranche 3 and the F-14 package-visibility blocker
+  in tranche 4; ~1-2 verifier corrections per ~12-fix batch). The hand
+  route is Claude end-to-end (finder→verifier→applier), so correlated
+  misreadings survive unless an EMPIRICAL gate (CRC differential, zex,
+  pixel baseline) covers the change. Route choice rule: hand-apply only
+  when a strong empirical gate exists or the compiler trivially catches
+  errors; delegate timing/flag-critical changes without such a gate.
 - Process note: hit the known merge-inside-worktree no-op pitfall; re-merged
   from the main checkout.
 - Verification: `./gradlew build` green on main after both halves.
