@@ -18,13 +18,41 @@ extra gate or land here as deferred items. After each tranche: full
 - [x] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines) — DONE 2026-07-14
 - [x] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines) — DONE 2026-07-14
 - [x] 8. `app-desktop` — apps/desktop (~5.9k lines) — DONE 2026-07-14
-- [ ] 9. `cross-reuse` + `cross-altitude` — whole repo, run last
+- [x] 9. `cross-reuse` + `cross-altitude` — whole repo, run last — DONE 2026-07-14
+
+**Sweep complete: 9/9 tranches, cumulative net ≈ −1270 lines, behavior
+bit-identical everywhere (zex, frame CRCs, pixel baselines, byte gates).**
 
 ## Deferred findings
 
 (none yet)
 
 ## Tranche log
+
+### Tranche 9: `cross-reuse` + `cross-altitude` (whole repo) — 2026-07-14
+
+- Review: 7 confirmed / 2 rejected → 6 unique. Applied BY HAND in the main
+  checkout (small batch, all glue/test code, every fix compiler-checked or
+  smoke-covered — per the tranche-5 route rule), net −143 lines diff
+  (≈ −85 with the new test-fixture file).
+- Fixes: Apple2BlockDevice.readBootProgram default method (block-0/1 boot
+  layout was hand-rolled in machine core + ROM probe + catalog tool); WOZ1
+  synthetic-image builder moved to machine-apple2 java-test-fixtures
+  (Apple2WozTestImages), deleting byte-identical copies in two modules;
+  DesktopMachineKind→Apple2ModelConfig mapping single-sourced in
+  Apple2RomImageLoader; AbstractFrameDesktopSession de-genericized
+  (P served exactly one panel type) with keyboard release/close handled
+  once in the base via abstract releaseAllKeys(); Spectrum loader PCs
+  (LD_BYTES/LD_EDGE_1/2/LD_SAMPLE) named once in
+  SpectrumTapeAutostartSupport and reused by the HUD switch; leftover
+  crc32Hex(byte[]) copy in Apple2RomProbeLauncher retired.
+- Empirical gates: full build green; all three Apple II smokes green
+  (PoP frame CRC 54BCF7D0 — boot path now goes through readBootProgram);
+  Spectrum pixel gate 4/4 PNGs MD5-identical to the tranche-4 baseline;
+  ProDOS catalog boot-scan output diffed byte-for-byte against a clean
+  HEAD worktree build — identical except the source path line.
+- @Test parity: DesktopMachineDefinitionsTest 10, Apple2WozDiskImageTest 4,
+  Apple2Disk2ControllerTest 6 — all unchanged.
 
 ### Tranche 8: `app-desktop` (apps/desktop) — 2026-07-14
 
