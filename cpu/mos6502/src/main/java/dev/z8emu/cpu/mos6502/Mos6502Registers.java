@@ -71,7 +71,8 @@ public final class Mos6502Registers {
     }
 
     public int p() {
-        return normalizeStatus(p);
+        // All status write paths normalize before storing.
+        return p;
     }
 
     public void setP(int value) {
@@ -94,8 +95,9 @@ public final class Mos6502Registers {
 
     void updateZeroAndNegative(int value) {
         int normalized = value & 0xFF;
-        setFlag(FLAG_Z, normalized == 0);
-        setFlag(FLAG_N, (normalized & 0x80) != 0);
+        p = (p & ~(FLAG_Z | FLAG_N))
+                | (normalized == 0 ? FLAG_Z : 0)
+                | (normalized & FLAG_N);
     }
 
     private static int normalizeStatus(int value) {

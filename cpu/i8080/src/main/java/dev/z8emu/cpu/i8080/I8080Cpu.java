@@ -33,14 +33,6 @@ public final class I8080Cpu implements Cpu {
         return registers;
     }
 
-    public boolean interruptsEnabled() {
-        return interruptsEnabled;
-    }
-
-    public boolean inteOutputHigh() {
-        return interruptsEnabled;
-    }
-
     public void setInteOutputListener(InteOutputListener inteOutputListener) {
         this.inteOutputListener = inteOutputListener;
         notifyInteOutputChanged();
