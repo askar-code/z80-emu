@@ -91,7 +91,7 @@ battle-tested by the Apple II machines.)
 
 ## Phase queue
 
-- [ ] 0. Module skeleton, memory + PLA + 6510 port, Klaus gate
+- [x] 0. Module skeleton, memory + PLA + 6510 port, Klaus gate
 - [ ] 1. CIA 6526 pair + NMI platform plumbing
 - [ ] 2. VIC-II text mode + raster + boot to READY. (headless probe)
 - [ ] 3. Keyboard matrix + desktop runner + BASIC smoke
@@ -129,6 +129,17 @@ New Gradle project `:machine-c64` (`machines/c64`), api :emu-platform +
 - Tests: full 8-row PLA truth table (per-region read source per combo),
   write-under-ROM, $00/$01 DDR semantics, reset defaults, color RAM width.
 - Gate: `:machine-c64:test` + `:cpu-mos6502:klausTest` green.
+
+Landed 2026-07-15 (Codex batch `codex/c64-p0-skeleton`, adversarially
+reviewed + fault-injected; merge `3a4527d`). Klaus baseline: success trap
+$3469 after 30 646 177 instructions / 96 241 367 t-states — the decimal
+contingency did NOT trigger (the default Klaus build checks documented BCD
+behavior only, which the textbook core satisfies); the NMOS flag fix stays
+dormant in the backlog. Frozen Phase 0 conventions recorded: color RAM
+reads return the low nibble with upper nibble 0; CPU writes to $0000/$0001
+leave RAM[0]/RAM[1] untouched (real hardware deposits the VIC phi1 open-bus
+byte — revisit when the VIC exists, Phase 2); 6510 port bits 6/7 capacitor
+fade not modeled (inputs without pull-ups read 0 immediately).
 
 ### Phase 1: CIA 6526 ×2 + NMI plumbing
 
