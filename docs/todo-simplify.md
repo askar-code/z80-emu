@@ -13,7 +13,7 @@ extra gate or land here as deferred items. After each tranche: full
 - [x] 1. `platform` — platform/core + chips/ay (~1.7k lines) — DONE 2026-07-14
 - [x] 2. `cpu-z80` — cpu/z80 (~3.8k lines) — DONE 2026-07-14
 - [x] 3. `cpu-6502-i8080` — cpu/mos6502 + cpu/i8080 (~4.4k lines) — DONE 2026-07-14
-- [ ] 4. `machine-spectrum` — machines/spectrum (~3.9k lines)
+- [x] 4. `machine-spectrum` — machines/spectrum (~3.9k lines) — DONE 2026-07-14
 - [ ] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines)
 - [ ] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines)
 - [ ] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines)
@@ -25,6 +25,26 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 4: `machine-spectrum` (machines/spectrum) — 2026-07-14
+
+- Review: 23 confirmed / 0 rejected → 14 unique. The headline cluster
+  (three angles converged): Spectrum48kBus/Spectrum128Bus ~90-line
+  duplication → new `SpectrumBusBase`; per-model timing moved into
+  SpectrumModelConfig; ULA's `frameTStates == 70_908` machine-sniff
+  replaced by explicit floatingBusDisplayStartTState injection.
+- Applied: 13 fully + F-14 partial (pulse literals stay in the test —
+  package visibility; duplicate helpers deleted). Net −165 lines.
+- Review gates: dedicated-agent old-vs-new sweep (5 categories CLEAN;
+  proved the 48K priority 0→90 and 128K registration-order changes
+  neutral, and that captureDisplayUntil's old min() was a no-op);
+  hand-verified paintBorderBackground 3-loop split and
+  syncAndReadEarLevel boolean equivalence.
+- Pixel gate: STRML128 headless probe (100/250/400M t-states), PNG MD5
+  sets identical pre/post merge; probe determinism pre-verified with a
+  double run. Machine-state summaries identical field-by-field.
+- Verification: `./gradlew build` green (worktree + main), Robocop E2E
+  in-suite. @Test counts 6/4/22 unchanged.
 
 ### Tranche 3: `cpu-6502-i8080` (cpu/mos6502 + cpu/i8080) — 2026-07-14
 
