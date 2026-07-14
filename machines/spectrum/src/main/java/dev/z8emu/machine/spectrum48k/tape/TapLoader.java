@@ -9,10 +9,10 @@ public final class TapLoader {
     private static final int PILOT_PULSE_LENGTH = 2_168;
     private static final int SYNC_FIRST_PULSE_LENGTH = 667;
     private static final int SYNC_SECOND_PULSE_LENGTH = 735;
-    private static final int ZERO_BIT_PULSE_LENGTH = 855;
-    private static final int ONE_BIT_PULSE_LENGTH = 1_710;
-    private static final int HEADER_PILOT_PULSES = 8_063;
-    private static final int DATA_PILOT_PULSES = 3_223;
+    static final int ZERO_BIT_PULSE_LENGTH = 855;
+    static final int ONE_BIT_PULSE_LENGTH = 1_710;
+    static final int HEADER_PILOT_PULSES = 8_063;
+    static final int DATA_PILOT_PULSES = 3_223;
 
     private TapLoader() {
     }
@@ -52,7 +52,7 @@ public final class TapLoader {
         return new TapeFile(List.copyOf(blocks));
     }
 
-    static int[] buildStandardDataPulses(int pilotTonePulses) {
+    public static int[] buildStandardDataPulses(int pilotTonePulses) {
         int[] pulses = new int[pilotTonePulses + 2];
         for (int i = 0; i < pilotTonePulses; i++) {
             pulses[i] = PILOT_PULSE_LENGTH;

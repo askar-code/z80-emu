@@ -10,14 +10,6 @@ public final class KeyboardMatrixDevice implements TimedDevice {
         reset();
     }
 
-    public void setRowState(int row, int activeLowBits) {
-        if (row < 0 || row >= rows.length) {
-            throw new IllegalArgumentException("row must be between 0 and 7");
-        }
-
-        rows[row] = activeLowBits & 0x1F;
-    }
-
     public void setKeyPressed(int row, int column, boolean pressed) {
         if (row < 0 || row >= rows.length) {
             throw new IllegalArgumentException("row must be between 0 and 7");

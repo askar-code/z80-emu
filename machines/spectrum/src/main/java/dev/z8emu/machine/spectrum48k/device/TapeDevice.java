@@ -116,6 +116,11 @@ public final class TapeDevice implements TimedDevice {
         }
     }
 
+    public synchronized boolean syncAndReadEarLevel(long targetTState) {
+        syncToTState(targetTState);
+        return playing && runtime != null && runtime.earHigh();
+    }
+
     private void moveToNextBlock() {
         boolean stopAfterBlock = runtime != null
                 && (runtime.stopTapeAfterBlock()

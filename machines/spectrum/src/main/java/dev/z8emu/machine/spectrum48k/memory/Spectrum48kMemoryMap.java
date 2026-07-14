@@ -59,6 +59,11 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
             return;
         }
 
+        if (writeListener == null) {
+            addressSpace.write(normalized, value);
+            return;
+        }
+
         int oldValue = addressSpace.read(normalized);
         addressSpace.write(normalized, value);
         int newValue = addressSpace.read(normalized);

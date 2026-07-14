@@ -34,10 +34,6 @@ public final class SpectrumContentionModel {
         if (lowBitReset != 0 && highByteContended == 0) {
             return contentionDelayAt(cycle + 1) + contentionDelayAt(cycle + 2) + contentionDelayAt(cycle + 3);
         }
-        if (lowBitReset == 0) {
-            return contentionDelayAt(cycle) + contentionDelayAt(cycle + 1)
-                    + contentionDelayAt(cycle + 2) + contentionDelayAt(cycle + 3);
-        }
         return contentionDelayAt(cycle) + contentionDelayAt(cycle + 1)
                 + contentionDelayAt(cycle + 2) + contentionDelayAt(cycle + 3);
     }

@@ -267,7 +267,7 @@ class Spectrum48kMachineTest {
     void standardHeaderPauseKeepsCurrentLevelForPauseLeadIn() {
         Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
         machine.board().tape().load(new TapeFile(List.of(
-                TapeBlock.dataBlock(standardHeaderPulses(), 855, 1_710, 8, 100, new byte[19])
+                TapeBlock.dataBlock(TapLoader.buildStandardDataPulses(8_063), 855, 1_710, 8, 100, new byte[19])
         )));
 
         machine.board().tape().play();
@@ -286,7 +286,7 @@ class Spectrum48kMachineTest {
         byte[] data = new byte[64];
         data[0] = (byte) 0xFF;
         machine.board().tape().load(new TapeFile(List.of(
-                TapeBlock.dataBlock(standardDataPulses(), 855, 1_710, 8, 100, data)
+                TapeBlock.dataBlock(TapLoader.buildStandardDataPulses(3_223), 855, 1_710, 8, 100, data)
         )));
 
         machine.board().tape().play();
@@ -377,23 +377,4 @@ class Spectrum48kMachineTest {
         return false;
     }
 
-    private int[] standardHeaderPulses() {
-        int[] pulses = new int[8_065];
-        for (int i = 0; i < 8_063; i++) {
-            pulses[i] = 2_168;
-        }
-        pulses[8_063] = 667;
-        pulses[8_064] = 735;
-        return pulses;
-    }
-
-    private int[] standardDataPulses() {
-        int[] pulses = new int[3_225];
-        for (int i = 0; i < 3_223; i++) {
-            pulses[i] = 2_168;
-        }
-        pulses[3_223] = 667;
-        pulses[3_224] = 735;
-        return pulses;
-    }
 }
