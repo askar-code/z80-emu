@@ -114,10 +114,7 @@ public final class Z80Cpu implements Cpu {
     private int releaseHaltOnIgnoredMaskableInterrupt() {
         pendingInterrupt = false;
         halted = false;
-        bus.fetchOpcode(registers.pc());
-        registers.onInstructionFetch();
-        bus.onRefresh(registers.ir());
-        return 4;
+        return executeHaltCycle();
     }
 
     private int serviceNonMaskableInterrupt() {
@@ -256,7 +253,6 @@ public final class Z80Cpu implements Cpu {
             case 0x3E -> loadImmediateIntoOperand(7);
             case 0x3F -> ccf();
 
-            case 0x76 -> halt();
             case 0xC0, 0xC8, 0xD0, 0xD8, 0xE0, 0xE8, 0xF0, 0xF8 -> retConditional(conditionCode((opcode >>> 3) & 0x07));
             case 0xC1, 0xD1, 0xE1, 0xF1 -> popRegisterPair((opcode >>> 4) & 0x03);
             case 0xC2, 0xCA, 0xD2, 0xDA, 0xE2, 0xEA, 0xF2, 0xFA -> jpConditional(conditionCode((opcode >>> 3) & 0x07));
@@ -442,11 +438,7 @@ public final class Z80Cpu implements Cpu {
         return switch (group) {
             case 0 -> {
                 int result = rotateShiftCb(operation, value);
-                writeMemory8(address, result);
-                if (destination != 6) {
-                    writeRegisterOperand(destination, result);
-                }
-                yield 19;
+                yield writeIndexedCbResult(address, destination, result);
             }
             case 1 -> {
                 bit(operation, value);
@@ -454,29 +446,29 @@ public final class Z80Cpu implements Cpu {
             }
             case 2 -> {
                 int result = value & ~(1 << operation);
-                writeMemory8(address, result);
-                if (destination != 6) {
-                    writeRegisterOperand(destination, result);
-                }
-                yield 19;
+                yield writeIndexedCbResult(address, destination, result);
             }
             case 3 -> {
                 int result = value | (1 << operation);
-                writeMemory8(address, result);
-                if (destination != 6) {
-                    writeRegisterOperand(destination, result);
-                }
-                yield 19;
+                yield writeIndexedCbResult(address, destination, result);
             }
             default -> throw new IllegalStateException("Unexpected indexed CB group " + group);
         };
     }
 
+    private int writeIndexedCbResult(int address, int destination, int result) {
+        writeMemory8(address, result);
+        if (destination != 6) {
+            writeRegisterOperand(destination, result);
+        }
+        return 19;
+    }
+
     private int executeEdPrefix(int opcode) {
         int normalized = opcode & 0xFF;
         return switch (normalized) {
-            case 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x78 -> inRegisterFromPortC((opcode >>> 3) & 0x07);
-            case 0x41, 0x49, 0x51, 0x59, 0x61, 0x69, 0x79 -> outRegisterToPortC((opcode >>> 3) & 0x07);
+            case 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78 -> inRegisterFromPortC((opcode >>> 3) & 0x07);
+            case 0x41, 0x49, 0x51, 0x59, 0x61, 0x69, 0x71, 0x79 -> outRegisterToPortC((opcode >>> 3) & 0x07);
             case 0x42, 0x52, 0x62, 0x72 -> sbcHl(getRegisterPair((opcode >>> 4) & 0x03));
             case 0x43, 0x53, 0x63, 0x73 -> storeRegisterPairImmediateAddress((opcode >>> 4) & 0x03);
             case 0x44, 0x4C, 0x54, 0x5C, 0x64, 0x6C, 0x74, 0x7C -> neg();
@@ -492,8 +484,6 @@ public final class Z80Cpu implements Cpu {
             case 0x5F -> ldAFromR();
             case 0x67 -> rrd();
             case 0x6F -> rld();
-            case 0x70 -> inFlagsOnlyFromPortC();
-            case 0x71 -> outZeroToPortC();
             case 0xA0 -> ldi();
             case 0xA1 -> cpi();
             case 0xA2 -> ini();
@@ -1038,24 +1028,13 @@ public final class Z80Cpu implements Cpu {
     private int inRegisterFromPortC(int registerCode) {
         int value = readPort8(registers.bc());
         writeRegisterOperand(registerCode, value);
-        setInFlags(value);
-        return 12;
-    }
-
-    private int inFlagsOnlyFromPortC() {
-        int value = readPort8(registers.bc());
-        setInFlags(value);
+        setSzp53FlagsPreserveCarry(value);
         return 12;
     }
 
     private int outRegisterToPortC(int registerCode) {
         int value = registerCode == 6 ? 0 : readRegisterOperand(registerCode);
         writePort8(registers.bc(), value);
-        return 12;
-    }
-
-    private int outZeroToPortC() {
-        writePort8(registers.bc(), 0);
         return 12;
     }
 
@@ -1066,11 +1045,7 @@ public final class Z80Cpu implements Cpu {
 
     private int ldir() {
         blockTransfer(true);
-        if (registers.bc() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(registers.bc() != 0);
     }
 
     private int ldd() {
@@ -1080,25 +1055,17 @@ public final class Z80Cpu implements Cpu {
 
     private int lddr() {
         blockTransfer(false);
-        if (registers.bc() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(registers.bc() != 0);
     }
 
     private int cpi() {
-        boolean matched = blockCompare(true);
-        return matched ? 16 : 16;
+        blockCompare(true);
+        return 16;
     }
 
     private int cpir() {
         boolean matched = blockCompare(true);
-        if (!matched && registers.bc() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(!matched && registers.bc() != 0);
     }
 
     private int cpd() {
@@ -1108,11 +1075,7 @@ public final class Z80Cpu implements Cpu {
 
     private int cpdr() {
         boolean matched = blockCompare(false);
-        if (!matched && registers.bc() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(!matched && registers.bc() != 0);
     }
 
     private int ini() {
@@ -1137,34 +1100,26 @@ public final class Z80Cpu implements Cpu {
 
     private int inir() {
         blockInput(true);
-        if (registers.b() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(registers.b() != 0);
     }
 
     private int indr() {
         blockInput(false);
-        if (registers.b() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(registers.b() != 0);
     }
 
     private int otir() {
         blockOutput(true);
-        if (registers.b() != 0) {
-            registers.incrementPc(-2);
-            return 21;
-        }
-        return 16;
+        return finishRepeatingBlockOp(registers.b() != 0);
     }
 
     private int otdr() {
         blockOutput(false);
-        if (registers.b() != 0) {
+        return finishRepeatingBlockOp(registers.b() != 0);
+    }
+
+    private int finishRepeatingBlockOp(boolean repeat) {
+        if (repeat) {
             registers.incrementPc(-2);
             return 21;
         }
@@ -1505,25 +1460,7 @@ public final class Z80Cpu implements Cpu {
     }
 
     private void compare8(int left, int right) {
-        int raw = left - right;
-        int result = raw & 0xFF;
-        int flags = result & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
-        flags |= Z80Registers.FLAG_N;
-
-        if (result == 0) {
-            flags |= Z80Registers.FLAG_Z;
-        }
-        if (((left ^ right ^ result) & 0x10) != 0) {
-            flags |= Z80Registers.FLAG_H;
-        }
-        if (((left ^ right) & (left ^ result) & 0x80) != 0) {
-            flags |= Z80Registers.FLAG_PV;
-        }
-        if (raw < 0) {
-            flags |= Z80Registers.FLAG_C;
-        }
-
-        registers.setF(flags);
+        subtract8(left, right, 0);
     }
 
     private void setLogicFlags(int result, boolean halfCarry) {
@@ -1715,24 +1652,14 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int ldAFromI() {
-        int value = registers.i();
-        registers.setA(value);
-
-        int flags = registers.f() & Z80Registers.FLAG_C;
-        flags |= value & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
-        if (value == 0) {
-            flags |= Z80Registers.FLAG_Z;
-        }
-        if (registers.iff2()) {
-            flags |= Z80Registers.FLAG_PV;
-        }
-
-        registers.setF(flags);
-        return 9;
+        return loadAWithIrFlags(registers.i());
     }
 
     private int ldAFromR() {
-        int value = registers.r();
+        return loadAWithIrFlags(registers.r());
+    }
+
+    private int loadAWithIrFlags(int value) {
         registers.setA(value);
 
         int flags = registers.f() & Z80Registers.FLAG_C;
@@ -1756,7 +1683,7 @@ public final class Z80Cpu implements Cpu {
 
         writeMemory8(registers.hl(), updatedMemory);
         registers.setA(updatedAccumulator);
-        setRrdRldFlags(updatedAccumulator);
+        setSzp53FlagsPreserveCarry(updatedAccumulator);
         return 18;
     }
 
@@ -1768,23 +1695,11 @@ public final class Z80Cpu implements Cpu {
 
         writeMemory8(registers.hl(), updatedMemory);
         registers.setA(updatedAccumulator);
-        setRrdRldFlags(updatedAccumulator);
+        setSzp53FlagsPreserveCarry(updatedAccumulator);
         return 18;
     }
 
-    private void setRrdRldFlags(int accumulator) {
-        int flags = accumulator & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
-        if (accumulator == 0) {
-            flags |= Z80Registers.FLAG_Z;
-        }
-        if (parityEven(accumulator)) {
-            flags |= Z80Registers.FLAG_PV;
-        }
-        flags |= registers.f() & Z80Registers.FLAG_C;
-        registers.setF(flags);
-    }
-
-    private void setInFlags(int value) {
+    private void setSzp53FlagsPreserveCarry(int value) {
         int flags = value & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
         if (value == 0) {
             flags |= Z80Registers.FLAG_Z;
