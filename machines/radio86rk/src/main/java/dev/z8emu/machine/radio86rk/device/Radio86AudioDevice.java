@@ -2,9 +2,10 @@ package dev.z8emu.machine.radio86rk.device;
 
 import dev.z8emu.platform.audio.ClockedPcmMonoSource;
 import dev.z8emu.platform.audio.DcBlocker;
+import dev.z8emu.platform.audio.PcmMonoSource;
 
 public final class Radio86AudioDevice extends ClockedPcmMonoSource {
-    public static final int SAMPLE_RATE = 44_100;
+    public static final int SAMPLE_RATE = PcmMonoSource.DEFAULT_SAMPLE_RATE;
 
     private static final boolean MONITOR_TAPE_OUTPUT = Boolean.getBoolean("z8emu.radioTapeMonitorAudio");
     private static final int SPEAKER_LEVEL_HIGH = 9_000;
@@ -31,7 +32,7 @@ public final class Radio86AudioDevice extends ClockedPcmMonoSource {
     public synchronized void reset() {
         speakerHigh = false;
         tapeOutputHigh = false;
-        resetPcmAudio();
+        super.reset();
         dcBlocker.reset(0);
     }
 

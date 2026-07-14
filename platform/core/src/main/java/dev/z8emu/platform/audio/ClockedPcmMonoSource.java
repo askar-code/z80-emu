@@ -52,9 +52,14 @@ public abstract class ClockedPcmMonoSource implements TimedDevice, PcmMonoSource
 
         int requestedBytes = length & ~(BYTES_PER_SAMPLE - 1);
         int copied = Math.min(requestedBytes, bufferedBytes);
-        for (int i = 0; i < copied; i++) {
-            target[offset + i] = audioBuffer[readIndex];
-            readIndex = (readIndex + 1) % audioBuffer.length;
+        int firstSegment = Math.min(copied, audioBuffer.length - readIndex);
+        System.arraycopy(audioBuffer, readIndex, target, offset, firstSegment);
+        if (copied > firstSegment) {
+            System.arraycopy(audioBuffer, 0, target, offset + firstSegment, copied - firstSegment);
+        }
+        readIndex += copied;
+        if (readIndex >= audioBuffer.length) {
+            readIndex -= audioBuffer.length;
         }
         bufferedBytes -= copied;
         return copied;
@@ -73,6 +78,11 @@ public abstract class ClockedPcmMonoSource implements TimedDevice, PcmMonoSource
     }
 
     protected abstract short nextPcmSample();
+
+    @Override
+    public synchronized void reset() {
+        resetPcmAudio();
+    }
 
     protected final synchronized void resetPcmAudio() {
         sampleRemainder = 0;
@@ -100,14 +110,20 @@ public abstract class ClockedPcmMonoSource implements TimedDevice, PcmMonoSource
 
     private void ensureCapacityForSample() {
         while (bufferedBytes > audioBuffer.length - BYTES_PER_SAMPLE) {
-            readIndex = (readIndex + 1) % audioBuffer.length;
+            readIndex++;
+            if (readIndex == audioBuffer.length) {
+                readIndex = 0;
+            }
             bufferedBytes--;
         }
     }
 
     private void writeByteUnchecked(byte value) {
         audioBuffer[writeIndex] = value;
-        writeIndex = (writeIndex + 1) % audioBuffer.length;
+        writeIndex++;
+        if (writeIndex == audioBuffer.length) {
+            writeIndex = 0;
+        }
         bufferedBytes++;
     }
 

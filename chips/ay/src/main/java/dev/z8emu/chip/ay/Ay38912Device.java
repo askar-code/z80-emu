@@ -2,13 +2,13 @@ package dev.z8emu.chip.ay;
 
 import dev.z8emu.platform.audio.ClockedPcmMonoSource;
 import dev.z8emu.platform.audio.DcBlocker;
+import dev.z8emu.platform.audio.PcmMonoSource;
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
 public final class Ay38912Device extends ClockedPcmMonoSource {
-    public static final int SAMPLE_RATE = 44_100;
+    public static final int SAMPLE_RATE = PcmMonoSource.DEFAULT_SAMPLE_RATE;
 
     private static final int REGISTER_COUNT = 16;
     private static final int CHANNEL_COUNT = 3;
@@ -28,10 +28,6 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
 
     private IntSupplier portAReadProvider;
     private IntSupplier portBReadProvider;
-    private IntConsumer portAWriteListener = ignored -> {
-    };
-    private IntConsumer portBWriteListener = ignored -> {
-    };
     private int selectedRegister;
     private double noisePhase;
     private int noiseShiftRegister;
@@ -61,18 +57,6 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
         portAReadProvider = Objects.requireNonNull(provider, "provider");
     }
 
-    public synchronized void setPortBReadProvider(IntSupplier provider) {
-        portBReadProvider = Objects.requireNonNull(provider, "provider");
-    }
-
-    public synchronized void setPortAWriteListener(IntConsumer listener) {
-        portAWriteListener = Objects.requireNonNull(listener, "listener");
-    }
-
-    public synchronized void setPortBWriteListener(IntConsumer listener) {
-        portBWriteListener = Objects.requireNonNull(listener, "listener");
-    }
-
     public synchronized void selectRegister(int registerIndex) {
         selectedRegister = registerIndex & 0x0F;
     }
@@ -94,10 +78,6 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
         registers[selectedRegister] = (byte) normalized;
         if (selectedRegister == 13) {
             restartEnvelope(normalized);
-        } else if (selectedRegister == PORT_A_REGISTER) {
-            portAWriteListener.accept(normalized);
-        } else if (selectedRegister == PORT_B_REGISTER) {
-            portBWriteListener.accept(normalized);
         }
     }
 
@@ -111,7 +91,7 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
         Arrays.fill(registers, (byte) 0x00);
         Arrays.fill(tonePhases, 0.0d);
         selectedRegister = 0;
-        resetPcmAudio();
+        super.reset();
         noisePhase = 0.0d;
         noiseShiftRegister = 0x1FFFF;
         noiseOutputHigh = true;
@@ -132,7 +112,8 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
 
         // The AY outputs positive amplitudes that are typically AC-coupled later
         // in the analogue path, so we approximate that here with a simple high-pass.
-        int inputLevel = channelSample(0) + channelSample(1) + channelSample(2);
+        int mixer = reg(7);
+        int inputLevel = channelSample(0, mixer) + channelSample(1, mixer) + channelSample(2, mixer);
         return dcBlocker.nextSample(inputLevel);
     }
 
@@ -146,7 +127,7 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
     }
 
     private void advanceNoise() {
-        int period = Math.max(1, registerValue(6) & 0x1F);
+        int period = Math.max(1, reg(6) & 0x1F);
         double frequency = (double) psgClockHz / (16.0d * period);
         noisePhase += frequency / SAMPLE_RATE;
         int steps = (int) noisePhase;
@@ -194,8 +175,8 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
         envelopeLevelCounter &= 0x0F;
     }
 
-    private int channelSample(int channel) {
-        int amplitudeRegister = registerValue(8 + channel);
+    private int channelSample(int channel, int mixer) {
+        int amplitudeRegister = reg(8 + channel);
         int level = (amplitudeRegister & 0x10) != 0
                 ? VOLUME_LEVELS[currentEnvelopeLevel()]
                 : VOLUME_LEVELS[amplitudeRegister & 0x0F];
@@ -203,7 +184,6 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
             return 0;
         }
 
-        int mixer = registerValue(7);
         boolean toneEnabled = (mixer & (1 << channel)) == 0;
         boolean noiseEnabled = (mixer & (1 << (channel + 3))) == 0;
         boolean toneHigh = !toneEnabled || tonePhases[channel] < 0.5d;
@@ -216,13 +196,17 @@ public final class Ay38912Device extends ClockedPcmMonoSource {
     }
 
     private int tonePeriod(int channel) {
-        int fine = registerValue(channel * 2);
-        int coarse = registerValue((channel * 2) + 1) & 0x0F;
+        int fine = reg(channel * 2);
+        int coarse = reg((channel * 2) + 1) & 0x0F;
         return (coarse << 8) | fine;
     }
 
     private int envelopePeriod() {
-        return (registerValue(12) << 8) | registerValue(11);
+        return (reg(12) << 8) | reg(11);
+    }
+
+    private int reg(int registerIndex) {
+        return registers[registerIndex] & 0xFF;
     }
 
     private void restartEnvelope(int shape) {

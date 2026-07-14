@@ -2,9 +2,10 @@ package dev.z8emu.machine.spectrum48k.device;
 
 import dev.z8emu.platform.audio.ClockedPcmMonoSource;
 import dev.z8emu.platform.audio.DcBlocker;
+import dev.z8emu.platform.audio.PcmMonoSource;
 
 public final class BeeperDevice extends ClockedPcmMonoSource {
-    public static final int SAMPLE_RATE = 44_100;
+    public static final int SAMPLE_RATE = PcmMonoSource.DEFAULT_SAMPLE_RATE;
 
     private static final short LEVEL_EAR_1_MIC_1 = 12_000;
     private static final short LEVEL_EAR_1_MIC_0 = 11_000;
@@ -46,7 +47,7 @@ public final class BeeperDevice extends ClockedPcmMonoSource {
         earHigh = false;
         tapeInputHigh = false;
         lastPortFeValue = 0x00;
-        resetPcmAudio();
+        super.reset();
         dcBlocker.reset(mixedOutputLevel());
     }
 

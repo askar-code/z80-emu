@@ -2,7 +2,7 @@ package dev.z8emu.platform.bus.io;
 
 import java.util.Objects;
 
-public final class IoHandler {
+final class IoHandler {
     private final IoReadHandler readHandler;
     private final IoWriteHandler writeHandler;
 

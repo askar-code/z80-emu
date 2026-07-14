@@ -2,9 +2,10 @@ package dev.z8emu.machine.apple2.device;
 
 import dev.z8emu.platform.audio.ClockedPcmMonoSource;
 import dev.z8emu.platform.audio.DcBlocker;
+import dev.z8emu.platform.audio.PcmMonoSource;
 
 public final class Apple2SpeakerDevice extends ClockedPcmMonoSource {
-    public static final int SAMPLE_RATE = 44_100;
+    public static final int SAMPLE_RATE = PcmMonoSource.DEFAULT_SAMPLE_RATE;
 
     private static final int LEVEL_HIGH = 9_000;
     private static final int LEVEL_LOW = -9_000;
@@ -29,7 +30,7 @@ public final class Apple2SpeakerDevice extends ClockedPcmMonoSource {
     public synchronized void reset() {
         high = false;
         dcBlocker.reset(LEVEL_LOW);
-        resetPcmAudio();
+        super.reset();
     }
 
     @Override
