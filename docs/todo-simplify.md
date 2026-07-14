@@ -12,7 +12,7 @@ extra gate or land here as deferred items. After each tranche: full
 
 - [x] 1. `platform` — platform/core + chips/ay (~1.7k lines) — DONE 2026-07-14
 - [x] 2. `cpu-z80` — cpu/z80 (~3.8k lines) — DONE 2026-07-14
-- [ ] 3. `cpu-6502-i8080` — cpu/mos6502 + cpu/i8080 (~4.4k lines)
+- [x] 3. `cpu-6502-i8080` — cpu/mos6502 + cpu/i8080 (~4.4k lines) — DONE 2026-07-14
 - [ ] 4. `machine-spectrum` — machines/spectrum (~3.9k lines)
 - [ ] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines)
 - [ ] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines)
@@ -25,6 +25,28 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 3: `cpu-6502-i8080` (cpu/mos6502 + cpu/i8080) — 2026-07-14
+
+- Review: 22 confirmed / 0 rejected → 13 unique after dedup. Two finding
+  conflicts resolved in the spec: INC/DEC helpers written lambda-free
+  (the readModifyWrite variant would have contradicted the method-ref
+  allocation finding), and the IndexedAddress→int encoding ordered first
+  so handler routing was written against it.
+- Applied: 12 fully + F-13 partial (6/11 NMOS-illegal tests converted;
+  5 with distinct dummy-operand programs deliberately left). Net −239
+  lines. Merged as the tranche-3 merge commit.
+- Hot-path allocations removed: IndexedAddress record per abs,X/abs,Y/
+  (zp),Y access; IntUnaryOperator method refs in RMW dispatch;
+  DecimalResult per decimal ADC.
+- Review gates: exhaustive handler-by-handler diff review by a dedicated
+  agent (all 30 packed-address use sites, all cycle counts incl. fixed-7
+  RMW abs,X, all 22 65C02 gate literals, 20+ sampled test conversions —
+  zero discrepancies); flag-normalization invariants verified by hand in
+  both register files; decimalAdd carry-before-adjust preserved.
+- Verification: `./gradlew build` green in worktree and main;
+  apple2BasicSmoke + apple2SuperDrivePopSmoke (frame CRC) green on main.
+  @Test 77→77.
 
 ### Tranche 2: `cpu-z80` (cpu/z80) — 2026-07-14
 
