@@ -46,10 +46,10 @@ public final class Apple2RomProbeLauncher {
         byte[] image = Apple2RomImageLoader.load(config.machineKind(), imagePath);
         if (!isSupportedProbeImageSize(config.machineKind(), image.length)) {
             throw new IllegalArgumentException("Apple II image is not supported by %s: %s"
-                    .formatted(modelConfigFor(config.machineKind()).modelName(), imagePath));
+                    .formatted(Apple2RomImageLoader.modelConfigFor(config.machineKind()).modelName(), imagePath));
         }
 
-        Apple2Machine machine = Apple2Machine.fromLaunchImage(modelConfigFor(config.machineKind()), image);
+        Apple2Machine machine = Apple2Machine.fromLaunchImage(Apple2RomImageLoader.modelConfigFor(config.machineKind()), image);
         TraceCollector traceCollector = new TraceCollector(machine, config.traceOptions());
         Apple2SuperDriveController superDrive35Controller = null;
         SuperDrive35MediaLoad superDrive35MediaLoad = null;
@@ -446,17 +446,8 @@ public final class Apple2RomProbeLauncher {
         };
     }
 
-    private static Apple2ModelConfig modelConfigFor(DesktopMachineKind kind) {
-        return switch (kind) {
-            case APPLE2 -> Apple2ModelConfig.appleIIPlus();
-            case APPLE2E -> Apple2ModelConfig.appleIIe128K();
-            case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128 ->
-                    throw new IllegalArgumentException("Expected Apple II machine kind: " + kind);
-        };
-    }
-
     private static boolean isSupportedProbeImageSize(DesktopMachineKind kind, int length) {
-        return modelConfigFor(kind).supportsLaunchImageSize(length);
+        return Apple2RomImageLoader.modelConfigFor(kind).supportsLaunchImageSize(length);
     }
 
     private static byte[] readSuperDrive35ControllerRom(Path romPath) throws IOException {
@@ -501,11 +492,7 @@ public final class Apple2RomProbeLauncher {
             return null;
         }
         Apple2ProDosBlockImage image = Apple2ProDosBlockImage.fromProDosOrderedBytes(Files.readAllBytes(imagePath));
-        byte[] block0 = image.readBlock(0);
-        byte[] block1 = image.readBlock(1);
-        byte[] program = new byte[block0.length + block1.length];
-        System.arraycopy(block0, 0, program, 0, block0.length);
-        System.arraycopy(block1, 0, program, block0.length, block1.length);
+        byte[] program = image.readBootProgram();
         return new ProDosBootLoad(
                 imagePath,
                 image,
@@ -758,7 +745,7 @@ public final class Apple2RomProbeLauncher {
         System.out.println("speaker=" + (machine.board().speaker().high() ? 1 : 0));
         printSuperDrive35State(machine, dumpSuperDriveWindows);
         System.out.println("visibleChars=" + countVisibleCharacters(visibleLines));
-        System.out.println("visibleCrc32=0x" + crc32Hex(visibleText.getBytes(StandardCharsets.US_ASCII)));
+        System.out.println("visibleCrc32=0x" + ProbeOutput.crc32Hex(visibleText.getBytes(StandardCharsets.US_ASCII)));
         System.out.println("screen:");
         for (int row = 0; row < visibleLines.length; row++) {
             System.out.println("%02d|%s".formatted(row, visibleLines[row]));
@@ -989,10 +976,6 @@ public final class Apple2RomProbeLauncher {
             return (char) normalized;
         }
         return '.';
-    }
-
-    private static String crc32Hex(byte[] data) {
-        return "%08X".formatted(crc32(data));
     }
 
     private static long crc32(byte[] data) {

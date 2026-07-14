@@ -5,7 +5,12 @@ import dev.z8emu.machine.spectrum.SpectrumMachine;
 import static dev.z8emu.app.desktop.ProbeOutput.hex16;
 
 final class SpectrumTapeAutostartSupport {
-    private static final int[] LOADER_PLAYBACK_PCS = {0x0556, 0x05E3, 0x05E7, 0x05ED};
+    static final int LD_BYTES = 0x0556;
+    static final int LD_EDGE_2 = 0x05E3;
+    static final int LD_EDGE_1 = 0x05E7;
+    static final int LD_SAMPLE = 0x05ED;
+
+    private static final int[] LOADER_PLAYBACK_PCS = {LD_BYTES, LD_EDGE_2, LD_EDGE_1, LD_SAMPLE};
 
     private SpectrumTapeAutostartSupport() {
     }

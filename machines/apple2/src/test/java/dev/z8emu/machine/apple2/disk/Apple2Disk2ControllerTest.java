@@ -113,7 +113,7 @@ class Apple2Disk2ControllerTest {
     void readsWozTrackStreamThroughDisk2Latch() {
         TStateCounter clock = new TStateCounter();
         Apple2Disk2Controller controller = new Apple2Disk2Controller(clock);
-        controller.insertDisk(Apple2WozDiskImage.fromWoz1Bytes(Apple2WozDiskImageTest.wozImage(
+        controller.insertDisk(Apple2WozDiskImage.fromWoz1Bytes(Apple2WozTestImages.wozImage(
                 1,
                 true,
                 "Synthetic WOZ",

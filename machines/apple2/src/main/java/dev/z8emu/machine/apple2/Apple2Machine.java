@@ -109,11 +109,7 @@ public final class Apple2Machine implements BoardBackedMachine<Apple2Board> {
 
     public void bootProDosBlockShimFromSlot6(Apple2BlockDevice blockDevice) {
         installProDosBlockShim(blockDevice);
-        byte[] block0 = blockDevice.readBlock(0);
-        byte[] block1 = blockDevice.readBlock(1);
-        byte[] bootProgram = new byte[block0.length + block1.length];
-        System.arraycopy(block0, 0, bootProgram, 0, block0.length);
-        System.arraycopy(block1, 0, bootProgram, block0.length, block1.length);
+        byte[] bootProgram = blockDevice.readBootProgram();
         loadProgram(bootProgram, 0x0800);
         cpu.registers().setPc(0x0801);
         cpu.registers().setX(Apple2ProDosBlockShimController.SLOT_INDEX);

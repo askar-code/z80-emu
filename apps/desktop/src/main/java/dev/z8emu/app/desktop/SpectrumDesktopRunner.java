@@ -20,7 +20,7 @@ final class SpectrumDesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session extends AbstractFrameDesktopSession<FrameDisplayPanel> {
+    private static final class Session extends AbstractFrameDesktopSession {
         private final SpectrumMachine machine;
         private final DesktopLaunchConfig config;
         private final HostKeyTyper hostKeyTyper;
@@ -82,6 +82,7 @@ final class SpectrumDesktopRunner {
                         }
                     }
             );
+            bindKeyboardController(keyboardController);
             startupTapeAutoplay.armIfNeeded();
         }
 
@@ -127,25 +128,6 @@ final class SpectrumDesktopRunner {
         @Override
         protected dev.z8emu.platform.video.FrameBuffer renderVideoFrame() {
             return machine.board().renderVideoFrame();
-        }
-
-        @Override
-        protected void presentFrameBuffer(FrameDisplayPanel component, dev.z8emu.platform.video.FrameBuffer frame) {
-            component.present(frame);
-        }
-
-        @Override
-        protected void releaseInputOnFocusLost() {
-            if (keyboardController != null) {
-                keyboardController.releaseAllKeys();
-            }
-        }
-
-        @Override
-        protected void closeMachineResources() {
-            if (keyboardController != null) {
-                keyboardController.close();
-            }
         }
 
         @Override
@@ -196,10 +178,10 @@ final class SpectrumDesktopRunner {
     private static String loaderStatus(SpectrumMachine machine) {
         int pc = machine.cpu().registers().pc();
         String loader = switch (pc) {
-            case 0x0556 -> "LD_BYTES";
-            case 0x05E3 -> "LD_EDGE_2";
-            case 0x05E7 -> "LD_EDGE_1";
-            case 0x05ED -> "LD_SAMPLE";
+            case SpectrumTapeAutostartSupport.LD_BYTES -> "LD_BYTES";
+            case SpectrumTapeAutostartSupport.LD_EDGE_2 -> "LD_EDGE_2";
+            case SpectrumTapeAutostartSupport.LD_EDGE_1 -> "LD_EDGE_1";
+            case SpectrumTapeAutostartSupport.LD_SAMPLE -> "LD_SAMPLE";
             case 0x15E6 -> "WAIT_KEY2";
             case 0x15DE -> "WAIT_KEY1";
             default -> "";

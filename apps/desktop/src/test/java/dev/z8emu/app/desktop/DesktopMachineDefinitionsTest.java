@@ -3,6 +3,7 @@ package dev.z8emu.app.desktop;
 import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
+import dev.z8emu.machine.apple2.disk.Apple2WozTestImages;
 import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.machine.spectrum128k.Spectrum128Machine;
@@ -143,7 +144,13 @@ class DesktopMachineDefinitionsTest {
     @Test
     void loadsApple2WozDiskMediaByHeader(@TempDir Path tempDir) throws Exception {
         Path diskPath = tempDir.resolve("prince-side-a.woz");
-        Files.write(diskPath, wozImage());
+        Files.write(diskPath, Apple2WozTestImages.wozImage(
+                1,
+                true,
+                "Synthetic WOZ",
+                new byte[]{(byte) 0xD5, (byte) 0xAA, (byte) 0x96},
+                ""
+        ));
         DesktopMachineDefinition apple2 = DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2E);
 
         DesktopLaunchConfig.LoadedMedia media = apple2.loadMedia(diskPath.toString(), DesktopLaunchOptions.empty());
@@ -227,47 +234,4 @@ class DesktopMachineDefinitionsTest {
         return bytes;
     }
 
-    private static byte[] wozImage() {
-        java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-        output.writeBytes(new byte[]{'W', 'O', 'Z', '1', (byte) 0xFF, 0x0A, 0x0D, 0x0A, 0, 0, 0, 0});
-
-        byte[] info = new byte[60];
-        info[0] = 1;
-        info[1] = 1;
-        info[2] = 1;
-        byte[] creator = "Synthetic WOZ".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
-        System.arraycopy(creator, 0, info, 5, creator.length);
-        writeChunk(output, "INFO", info);
-
-        byte[] tmap = new byte[160];
-        java.util.Arrays.fill(tmap, (byte) 0xFF);
-        tmap[0] = 0;
-        writeChunk(output, "TMAP", tmap);
-
-        byte[] trks = new byte[6656];
-        byte[] trackBits = new byte[]{(byte) 0xD5, (byte) 0xAA, (byte) 0x96};
-        System.arraycopy(trackBits, 0, trks, 0, trackBits.length);
-        putWord(trks, 6646, trackBits.length);
-        putWord(trks, 6648, trackBits.length * 8);
-        writeChunk(output, "TRKS", trks);
-        return output.toByteArray();
-    }
-
-    private static void writeChunk(java.io.ByteArrayOutputStream output, String id, byte[] data) {
-        output.writeBytes(id.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-        putInt(output, data.length);
-        output.writeBytes(data);
-    }
-
-    private static void putWord(byte[] target, int offset, int value) {
-        target[offset] = (byte) (value & 0xFF);
-        target[offset + 1] = (byte) ((value >>> 8) & 0xFF);
-    }
-
-    private static void putInt(java.io.ByteArrayOutputStream output, int value) {
-        output.write(value & 0xFF);
-        output.write((value >>> 8) & 0xFF);
-        output.write((value >>> 16) & 0xFF);
-        output.write((value >>> 24) & 0xFF);
-    }
 }

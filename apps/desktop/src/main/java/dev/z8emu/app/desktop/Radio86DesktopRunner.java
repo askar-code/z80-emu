@@ -18,7 +18,7 @@ final class Radio86DesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session extends AbstractFrameDesktopSession<FrameDisplayPanel> {
+    private static final class Session extends AbstractFrameDesktopSession {
         private final Radio86Machine machine;
         private final DesktopLaunchConfig config;
 
@@ -68,6 +68,7 @@ final class Radio86DesktopRunner {
                         }
                     }
             );
+            bindKeyboardController(keyboardController);
         }
 
         @Override
@@ -106,25 +107,6 @@ final class Radio86DesktopRunner {
         @Override
         protected FrameBuffer renderVideoFrame() {
             return machine.board().renderVideoFrame();
-        }
-
-        @Override
-        protected void presentFrameBuffer(FrameDisplayPanel component, FrameBuffer frame) {
-            component.present(frame);
-        }
-
-        @Override
-        protected void releaseInputOnFocusLost() {
-            if (keyboardController != null) {
-                keyboardController.releaseAllKeys();
-            }
-        }
-
-        @Override
-        protected void closeMachineResources() {
-            if (keyboardController != null) {
-                keyboardController.close();
-            }
         }
 
         @Override

@@ -134,11 +134,7 @@ public final class Apple2ProDosCatalogLauncher {
     }
 
     private static void scanBootBlocks(Apple2ProDosBlockImage image, Config config) {
-        byte[] block0 = image.readBlock(0);
-        byte[] block1 = image.readBlock(1);
-        byte[] data = new byte[block0.length + block1.length];
-        System.arraycopy(block0, 0, data, 0, block0.length);
-        System.arraycopy(block1, 0, data, block0.length, block1.length);
+        byte[] data = image.readBootProgram();
         System.out.println("bootScan=blocks0-1");
         System.out.println("bootScanBytes=" + data.length);
         System.out.println("bootScanCrc32=0x" + crc32Hex(data));

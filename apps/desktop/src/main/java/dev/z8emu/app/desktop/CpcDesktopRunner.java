@@ -12,7 +12,7 @@ final class CpcDesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session extends AbstractFrameDesktopSession<FrameDisplayPanel> {
+    private static final class Session extends AbstractFrameDesktopSession {
         private final CpcMachine machine;
         private final DesktopLaunchConfig config;
         private CpcKeyboardController keyboardController;
@@ -32,6 +32,7 @@ final class CpcDesktopRunner {
         @Override
         protected void attachMachine(JFrame frame) {
             keyboardController = CpcKeyboardController.bind(frame, displayComponent(), machine.board().keyboard());
+            bindKeyboardController(keyboardController);
         }
 
         @Override
@@ -52,25 +53,6 @@ final class CpcDesktopRunner {
         @Override
         protected FrameBuffer renderVideoFrame() {
             return machine.board().renderVideoFrame();
-        }
-
-        @Override
-        protected void presentFrameBuffer(FrameDisplayPanel component, FrameBuffer frame) {
-            component.present(frame);
-        }
-
-        @Override
-        protected void releaseInputOnFocusLost() {
-            if (keyboardController != null) {
-                keyboardController.releaseAllKeys();
-            }
-        }
-
-        @Override
-        protected void closeMachineResources() {
-            if (keyboardController != null) {
-                keyboardController.close();
-            }
         }
 
         @Override

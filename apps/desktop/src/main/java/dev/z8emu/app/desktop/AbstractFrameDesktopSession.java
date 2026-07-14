@@ -7,15 +7,16 @@ import javax.sound.sampled.LineUnavailableException;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 
-abstract class AbstractFrameDesktopSession<P extends JComponent> implements DesktopMachineSession {
-    private final P component;
+abstract class AbstractFrameDesktopSession implements DesktopMachineSession {
+    private final FrameDisplayPanel component;
     private final PcmMonoSource audioSource;
     private final String audioThreadName;
     private final long frameDurationNanos;
     private PcmMonoAudioEngine audioEngine;
+    private AbstractHostKeyboardController keyboardController;
 
     protected AbstractFrameDesktopSession(
-            P component,
+            FrameDisplayPanel component,
             PcmMonoSource audioSource,
             String audioThreadName,
             long cpuClockHz,
@@ -64,7 +65,7 @@ abstract class AbstractFrameDesktopSession<P extends JComponent> implements Desk
 
     @Override
     public final void presentFrame() {
-        presentFrameBuffer(component, renderVideoFrame());
+        component.present(renderVideoFrame());
     }
 
     @Override
@@ -90,24 +91,32 @@ abstract class AbstractFrameDesktopSession<P extends JComponent> implements Desk
         failure.printStackTrace(System.err);
     }
 
-    protected final P displayComponent() {
+    protected final FrameDisplayPanel displayComponent() {
         return component;
+    }
+
+    protected final void bindKeyboardController(AbstractHostKeyboardController controller) {
+        this.keyboardController = controller;
     }
 
     protected void attachMachine(JFrame frame) {
     }
 
     protected void releaseInputOnFocusLost() {
+        if (keyboardController != null) {
+            keyboardController.releaseAllKeys();
+        }
     }
 
     protected void closeMachineResources() {
+        if (keyboardController != null) {
+            keyboardController.close();
+        }
     }
 
     protected abstract String statusTitle();
 
     protected abstract FrameBuffer renderVideoFrame();
-
-    protected abstract void presentFrameBuffer(P component, FrameBuffer frame);
 
     protected final void runUntilTState(Machine machine, long targetTState) {
         while (machine.currentTState() < targetTState) {

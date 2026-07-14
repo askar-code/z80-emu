@@ -17,7 +17,7 @@ final class Apple2DesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session extends AbstractFrameDesktopSession<FrameDisplayPanel> {
+    private static final class Session extends AbstractFrameDesktopSession {
         private final Apple2Machine machine;
         private final DesktopLaunchConfig config;
         private Apple2KeyboardController keyboardController;
@@ -42,6 +42,7 @@ final class Apple2DesktopRunner {
                     machine.board().keyboard(),
                     machine.board().gamePort()
             );
+            bindKeyboardController(keyboardController);
         }
 
         @Override
@@ -67,25 +68,6 @@ final class Apple2DesktopRunner {
         @Override
         protected FrameBuffer renderVideoFrame() {
             return machine.board().renderVideoFrame();
-        }
-
-        @Override
-        protected void presentFrameBuffer(FrameDisplayPanel component, FrameBuffer frame) {
-            component.present(frame);
-        }
-
-        @Override
-        protected void releaseInputOnFocusLost() {
-            if (keyboardController != null) {
-                keyboardController.releaseAllKeys();
-            }
-        }
-
-        @Override
-        protected void closeMachineResources() {
-            if (keyboardController != null) {
-                keyboardController.close();
-            }
         }
 
         @Override

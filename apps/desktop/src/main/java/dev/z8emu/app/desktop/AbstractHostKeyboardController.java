@@ -59,6 +59,8 @@ abstract class AbstractHostKeyboardController implements KeyEventDispatcher, Aut
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this);
     }
 
+    abstract void releaseAllKeys();
+
     protected boolean handleMetaKey(KeyEvent event) {
         return false;
     }

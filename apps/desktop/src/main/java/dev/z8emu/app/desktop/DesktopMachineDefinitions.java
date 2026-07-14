@@ -36,11 +36,11 @@ final class DesktopMachineDefinitions {
     private static final DesktopMachineDefinition CPC6128 = new CpcDefinition();
     private static final DesktopMachineDefinition APPLE2 = new Apple2Definition(
             DesktopMachineKind.APPLE2,
-            Apple2ModelConfig.appleIIPlus()
+            Apple2RomImageLoader.modelConfigFor(DesktopMachineKind.APPLE2)
     );
     private static final DesktopMachineDefinition APPLE2E = new Apple2Definition(
             DesktopMachineKind.APPLE2E,
-            Apple2ModelConfig.appleIIe128K()
+            Apple2RomImageLoader.modelConfigFor(DesktopMachineKind.APPLE2E)
     );
 
     private static final List<DesktopMachineDefinition> DEFINITIONS = List.of(
