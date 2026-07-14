@@ -1213,7 +1213,6 @@ class Z80CpuTest {
         private final List<Integer> readMemoryWaitPhases = new ArrayList<>();
         private final List<Integer> writeMemoryWaitPhases = new ArrayList<>();
         private final List<Integer> readPortWaitPhases = new ArrayList<>();
-        private final List<Integer> writePortWaitPhases = new ArrayList<>();
         private int fetchOpcodeWaitStates;
         private int readMemoryWaitStates;
         private int writeMemoryWaitStates;
@@ -1319,7 +1318,6 @@ class Z80CpuTest {
 
         @Override
         public int writePortWaitStates(int port, int value, int phaseTStates) {
-            writePortWaitPhases.add(phaseTStates);
             return writePortWaitStates;
         }
 

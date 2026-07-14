@@ -272,11 +272,6 @@ public final class Z80Registers {
         return (f() & flagMask) != 0;
     }
 
-    public void setFlag(int flagMask, boolean enabled) {
-        int updated = enabled ? (f() | flagMask) : (f() & ~flagMask);
-        setF(updated);
-    }
-
     public void swapAfWithAlternate() {
         int current = af;
         af = afAlt;
