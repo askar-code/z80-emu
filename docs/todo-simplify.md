@@ -14,7 +14,7 @@ extra gate or land here as deferred items. After each tranche: full
 - [x] 2. `cpu-z80` — cpu/z80 (~3.8k lines) — DONE 2026-07-14
 - [x] 3. `cpu-6502-i8080` — cpu/mos6502 + cpu/i8080 (~4.4k lines) — DONE 2026-07-14
 - [x] 4. `machine-spectrum` — machines/spectrum (~3.9k lines) — DONE 2026-07-14
-- [ ] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines)
+- [x] 5. `machine-rk` + `machine-cpc` — two areas in one run (~4.6k lines) — DONE 2026-07-14
 - [ ] 6. `apple2-core` — machines/apple2 minus disk/ (~3k lines)
 - [ ] 7. `apple2-disk` — machines/apple2 disk subsystem (~4k lines)
 - [ ] 8. `app-desktop` — apps/desktop (~5.9k lines)
@@ -25,6 +25,37 @@ extra gate or land here as deferred items. After each tranche: full
 (none yet)
 
 ## Tranche log
+
+### Tranche 5: `machine-rk` + `machine-cpc` — 2026-07-14
+
+- Review: 38 confirmed / 0 rejected → 23 unique (RK 11, CPC 12). Split as an
+  A/B experiment: RK applied BY HAND in the main checkout, CPC delegated to
+  Codex in a worktree — same findings pipeline, different apply route.
+- RK (hand, 11/11, commit 4590e2b): allocation-free video decode path,
+  writeCommand switch, single attribute row, IoTraceSink-based bus tracing,
+  shared Radio86RomLocator + Radio86MonitorConsole (deleted duplicates in
+  test driver and desktop probe launcher), DMA-derived screen scrape
+  (readVideoByte deleted), JDK readAllBytes, BooleanSupplier, batched test
+  predicate polling. Gate: deterministic fixed-instruction frame-CRC
+  differential vs HEAD (three checkpoints, bit-identical; the one observed
+  diff traced to the sanctioned batched-polling stop-point shift).
+- CPC (Codex, 12/12, merge f34ed4c): FDC int ring buffers (unwrap-on-grow
+  proven order-preserving), dataLength()/single data() fetch,
+  queueSectorResult, resumable eventIndexAt, border strip painting with run
+  fills, per-frame CRTC parameter cache (proven a pure snapshot — renderFrame
+  has no interleaved register writes), dead surface removals, floorMod
+  collapse (proven for negative t-states), HUD test helper. Gate: dedicated
+  adversarial diff-review agent, 6/6 categories CLEAN; @Test 23→23.
+- Token economics (Claude-side, estimates): hand route ≈ 35–40k context
+  tokens for 11 fixes with no separate review agent (differential gate
+  instead); Codex route ≈ 10k context + 89k review-agent tokens for 12
+  fixes (plus external OpenAI compute). On a small well-specified module the
+  hand route is ~2x cheaper in Claude tokens; Codex's fixed overhead
+  (spec + adversarial review) pays off on bigger/gnarlier batches (e.g.
+  tranche 3's 450-line 6502 diff) and runs fully parallel to other work.
+- Process note: hit the known merge-inside-worktree no-op pitfall; re-merged
+  from the main checkout.
+- Verification: `./gradlew build` green on main after both halves.
 
 ### Tranche 4: `machine-spectrum` (machines/spectrum) — 2026-07-14
 
