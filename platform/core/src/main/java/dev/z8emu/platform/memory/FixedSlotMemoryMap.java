@@ -8,6 +8,10 @@ public final class FixedSlotMemoryMap implements AddressSpace {
     private final int slotSize;
     private final int slotCount;
     private final int addressSpaceSize;
+    private final boolean pow2;
+    private final int addressMask;
+    private final int offsetMask;
+    private final int slotShift;
     private final MemoryBank[] slots;
 
     public FixedSlotMemoryMap(int slotSize, int slotCount) {
@@ -21,19 +25,12 @@ public final class FixedSlotMemoryMap implements AddressSpace {
         this.slotSize = slotSize;
         this.slotCount = slotCount;
         this.addressSpaceSize = slotSize * slotCount;
+        this.pow2 = Integer.bitCount(slotSize) == 1 && Integer.bitCount(addressSpaceSize) == 1;
+        // For power-of-two sizes, masking is equivalent to floorMod for every int input.
+        this.addressMask = pow2 ? addressSpaceSize - 1 : 0;
+        this.offsetMask = pow2 ? slotSize - 1 : 0;
+        this.slotShift = pow2 ? Integer.numberOfTrailingZeros(slotSize) : 0;
         this.slots = new MemoryBank[slotCount];
-    }
-
-    public int slotSize() {
-        return slotSize;
-    }
-
-    public int slotCount() {
-        return slotCount;
-    }
-
-    public int addressSpaceSize() {
-        return addressSpaceSize;
     }
 
     public void mapSlot(int slotIndex, MemoryBank bank) {
@@ -52,24 +49,44 @@ public final class FixedSlotMemoryMap implements AddressSpace {
 
     @Override
     public int read(int address) {
-        int normalized = normalizeAddress(address);
-        int slotIndex = normalized / slotSize;
+        int normalized;
+        int slotIndex;
+        int offset;
+        if (pow2) {
+            normalized = address & addressMask;
+            slotIndex = normalized >>> slotShift;
+            offset = normalized & offsetMask;
+        } else {
+            normalized = normalizeAddress(address);
+            slotIndex = normalized / slotSize;
+            offset = normalized % slotSize;
+        }
         MemoryBank bank = slots[slotIndex];
         if (bank == null) {
             throw new IllegalStateException("Slot %d is not mapped".formatted(slotIndex));
         }
-        return bank.read(normalized % slotSize);
+        return bank.read(offset);
     }
 
     @Override
     public void write(int address, int value) {
-        int normalized = normalizeAddress(address);
-        int slotIndex = normalized / slotSize;
+        int normalized;
+        int slotIndex;
+        int offset;
+        if (pow2) {
+            normalized = address & addressMask;
+            slotIndex = normalized >>> slotShift;
+            offset = normalized & offsetMask;
+        } else {
+            normalized = normalizeAddress(address);
+            slotIndex = normalized / slotSize;
+            offset = normalized % slotSize;
+        }
         MemoryBank bank = slots[slotIndex];
         if (bank == null) {
             throw new IllegalStateException("Slot %d is not mapped".formatted(slotIndex));
         }
-        bank.write(normalized % slotSize, value);
+        bank.write(offset, value);
     }
 
     @Override

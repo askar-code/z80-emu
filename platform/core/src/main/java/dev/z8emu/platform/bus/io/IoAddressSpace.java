@@ -5,23 +5,14 @@ import java.util.List;
 import java.util.Objects;
 
 public final class IoAddressSpace {
-    private static final int DEFAULT_ADDRESS_MASK = 0xFFFF;
+    private static final int ADDRESS_MASK = 0xFFFF;
     private static final String UNMAPPED = "unmapped";
 
-    private final int addressMask;
     private final IoReadHandler unmappedReadHandler;
     private final List<Entry> entries = new ArrayList<>();
     private IoTraceSink traceSink = IoTraceSink.NONE;
 
     public IoAddressSpace(IoReadHandler unmappedReadHandler) {
-        this(DEFAULT_ADDRESS_MASK, unmappedReadHandler);
-    }
-
-    public IoAddressSpace(int addressMask, IoReadHandler unmappedReadHandler) {
-        if (addressMask <= 0) {
-            throw new IllegalArgumentException("addressMask must be positive");
-        }
-        this.addressMask = addressMask;
         this.unmappedReadHandler = Objects.requireNonNull(unmappedReadHandler, "unmappedReadHandler");
     }
 
@@ -32,10 +23,6 @@ public final class IoAddressSpace {
 
     public void setTraceSink(IoTraceSink traceSink) {
         this.traceSink = traceSink == null ? IoTraceSink.NONE : traceSink;
-    }
-
-    public void map(String name, IoSelector selector, IoHandler handler) {
-        map(name, selector, handler, 0);
     }
 
     public void mapRead(String name, IoSelector selector, IoReadHandler readHandler) {
@@ -73,7 +60,7 @@ public final class IoAddressSpace {
         map(name, selector, IoHandler.readWrite(readHandler, writeHandler), priority);
     }
 
-    public void map(String name, IoSelector selector, IoHandler handler, int priority) {
+    private void map(String name, IoSelector selector, IoHandler handler, int priority) {
         Entry entry = new Entry(
                 Objects.requireNonNull(name, "name"),
                 Objects.requireNonNull(selector, "selector"),
@@ -114,8 +101,8 @@ public final class IoAddressSpace {
             IoAccess access = access(entry, normalized, tState, phaseTStates);
             entry.handler().write(access, normalizedValue);
             trace(entry, false, access, normalizedValue);
-        } else {
-            trace(null, false, new IoAccess(normalized, normalized, tState, phaseTStates), normalizedValue);
+        } else if (traceSink != IoTraceSink.NONE) {
+            trace(null, false, access(null, normalized, tState, phaseTStates), normalizedValue);
         }
     }
 
@@ -144,7 +131,7 @@ public final class IoAddressSpace {
     }
 
     private int normalize(int address) {
-        return address & addressMask;
+        return address & ADDRESS_MASK;
     }
 
     private void ensureNoAmbiguousOverlap(Entry candidate) {
@@ -152,7 +139,7 @@ public final class IoAddressSpace {
             if (!samePriorityOverlapNeedsCheck(existing, candidate)) {
                 continue;
             }
-            for (int address = 0; address <= addressMask; address++) {
+            for (int address = 0; address <= ADDRESS_MASK; address++) {
                 if (existing.selector().matches(address) && candidate.selector().matches(address)) {
                     throw new IllegalArgumentException(
                             "I/O mapping '%s' overlaps '%s' at 0x%04X with the same priority"
