@@ -3,7 +3,6 @@ package dev.z8emu.cpu.mos6502;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.cpu.Cpu;
 import java.util.Objects;
-import java.util.function.IntUnaryOperator;
 
 public final class Mos6502Cpu implements Cpu {
     private static final int RESET_VECTOR = 0xFFFC;
@@ -58,11 +57,11 @@ public final class Mos6502Cpu implements Cpu {
     public int runInstruction() {
         if (nmiPending) {
             nmiPending = false;
-            return serviceInterrupt(NMI_VECTOR, false);
+            return serviceInterrupt(NMI_VECTOR);
         }
         if (irqPending && !registers.flagSet(Mos6502Registers.FLAG_I)) {
             irqPending = false;
-            return serviceInterrupt(IRQ_VECTOR, false);
+            return serviceInterrupt(IRQ_VECTOR);
         }
 
         int opcodeAddress = registers.pc();
@@ -265,16 +264,12 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int branchAlways65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x80, opcodeAddress);
-        }
+        require65C02(0x80, opcodeAddress);
         return branchIf(true);
     }
 
     private int nopImmediate65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x02, opcodeAddress);
-        }
+        require65C02(0x02, opcodeAddress);
         registers.incrementPc(1);
         return 2;
     }
@@ -288,10 +283,8 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int modifyMemoryBitZeroPage65C02(int opcodeAddress, int bit, boolean set) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            int opcode = (set ? 0x87 : 0x07) + (bit << 4);
-            return illegalOpcode(opcode, opcodeAddress);
-        }
+        int opcode = (set ? 0x87 : 0x07) + (bit << 4);
+        require65C02(opcode, opcodeAddress);
         int address = fetchImmediate8();
         int mask = 1 << bit;
         int value = bus.readMemory(address);
@@ -301,33 +294,25 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int testAndSetBitsZeroPage65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x04, opcodeAddress);
-        }
+        require65C02(0x04, opcodeAddress);
         testAndModifyBits(fetchImmediate8(), true);
         return 5;
     }
 
     private int testAndSetBitsAbsolute65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x0C, opcodeAddress);
-        }
+        require65C02(0x0C, opcodeAddress);
         testAndModifyBits(fetchImmediate16(), true);
         return 6;
     }
 
     private int testAndResetBitsZeroPage65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x14, opcodeAddress);
-        }
+        require65C02(0x14, opcodeAddress);
         testAndModifyBits(fetchImmediate8(), false);
         return 5;
     }
 
     private int testAndResetBitsAbsolute65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x1C, opcodeAddress);
-        }
+        require65C02(0x1C, opcodeAddress);
         testAndModifyBits(fetchImmediate16(), false);
         return 6;
     }
@@ -346,6 +331,12 @@ public final class Mos6502Cpu implements Cpu {
         );
     }
 
+    private void require65C02(int opcode, int opcodeAddress) {
+        if (variant != Mos6502Variant.CMOS_65C02) {
+            illegalOpcode(opcode, opcodeAddress);
+        }
+    }
+
     private int brk() {
         registers.incrementPc(1);
         pushWord(registers.pc());
@@ -355,9 +346,9 @@ public final class Mos6502Cpu implements Cpu {
         return 7;
     }
 
-    private int serviceInterrupt(int vectorAddress, boolean breakFlag) {
+    private int serviceInterrupt(int vectorAddress) {
         pushWord(registers.pc());
-        pushStatus(breakFlag);
+        pushStatus(false);
         registers.setFlag(Mos6502Registers.FLAG_I, true);
         registers.setPc(readVector(vectorAddress));
         return 7;
@@ -378,9 +369,7 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int jumpAbsoluteIndexedIndirect65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x7C, opcodeAddress);
-        }
+        require65C02(0x7C, opcodeAddress);
         int pointer = (fetchImmediate16() + registers.x()) & 0xFFFF;
         registers.setPc(readVector(pointer));
         return 6;
@@ -405,21 +394,15 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int loadAccumulatorImmediate() {
-        registers.setA(fetchImmediate8());
-        registers.updateZeroAndNegative(registers.a());
-        return 2;
+        return loadAccumulator(fetchImmediate8(), 2);
     }
 
     private int loadAccumulatorZeroPage() {
-        registers.setA(readZeroPageOperand());
-        registers.updateZeroAndNegative(registers.a());
-        return 3;
+        return loadAccumulator(readZeroPageOperand(), 3);
     }
 
     private int loadAccumulatorZeroPageX() {
-        registers.setA(bus.readMemory(fetchZeroPageXAddress()));
-        registers.updateZeroAndNegative(registers.a());
-        return 4;
+        return loadAccumulator(bus.readMemory(fetchZeroPageXAddress()), 4);
     }
 
     private int loadAccumulatorIndirectX() {
@@ -427,30 +410,31 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int loadAccumulatorIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        registers.setA(bus.readMemory(address.value()));
-        registers.updateZeroAndNegative(registers.a());
-        return 5 + (address.crossedPage() ? 1 : 0);
+        int address = fetchIndirectYAddress();
+        return loadAccumulator(
+                bus.readMemory(indexedValue(address)),
+                5 + (crossedPage(address) ? 1 : 0)
+        );
     }
 
     private int loadAccumulatorAbsolute() {
-        registers.setA(bus.readMemory(fetchImmediate16()));
-        registers.updateZeroAndNegative(registers.a());
-        return 4;
+        return loadAccumulator(bus.readMemory(fetchImmediate16()), 4);
     }
 
     private int loadAccumulatorAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        registers.setA(bus.readMemory(address.value()));
-        registers.updateZeroAndNegative(registers.a());
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteYAddress();
+        return loadAccumulator(
+                bus.readMemory(indexedValue(address)),
+                4 + (crossedPage(address) ? 1 : 0)
+        );
     }
 
     private int loadAccumulatorAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        registers.setA(bus.readMemory(address.value()));
-        registers.updateZeroAndNegative(registers.a());
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteXAddress();
+        return loadAccumulator(
+                bus.readMemory(indexedValue(address)),
+                4 + (crossedPage(address) ? 1 : 0)
+        );
     }
 
     private int loadAccumulator(int value, int cycles) {
@@ -460,15 +444,11 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int loadXImmediate() {
-        registers.setX(fetchImmediate8());
-        registers.updateZeroAndNegative(registers.x());
-        return 2;
+        return loadX(fetchImmediate8(), 2);
     }
 
     private int loadXZeroPage() {
-        registers.setX(readZeroPageOperand());
-        registers.updateZeroAndNegative(registers.x());
-        return 3;
+        return loadX(readZeroPageOperand(), 3);
     }
 
     private int loadXZeroPageY() {
@@ -480,10 +460,8 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int loadXAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        registers.setX(bus.readMemory(address.value()));
-        registers.updateZeroAndNegative(registers.x());
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteYAddress();
+        return loadX(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int loadX(int value, int cycles) {
@@ -493,34 +471,30 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int loadYImmediate() {
-        registers.setY(fetchImmediate8());
-        registers.updateZeroAndNegative(registers.y());
-        return 2;
+        return loadY(fetchImmediate8(), 2);
     }
 
     private int loadYZeroPage() {
-        registers.setY(readZeroPageOperand());
-        registers.updateZeroAndNegative(registers.y());
-        return 3;
+        return loadY(readZeroPageOperand(), 3);
     }
 
     private int loadYZeroPageX() {
-        registers.setY(bus.readMemory(fetchZeroPageXAddress()));
-        registers.updateZeroAndNegative(registers.y());
-        return 4;
+        return loadY(bus.readMemory(fetchZeroPageXAddress()), 4);
     }
 
     private int loadYAbsolute() {
-        registers.setY(bus.readMemory(fetchImmediate16()));
-        registers.updateZeroAndNegative(registers.y());
-        return 4;
+        return loadY(bus.readMemory(fetchImmediate16()), 4);
     }
 
     private int loadYAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        registers.setY(bus.readMemory(address.value()));
+        int address = fetchAbsoluteXAddress();
+        return loadY(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
+    }
+
+    private int loadY(int value, int cycles) {
+        registers.setY(value);
         registers.updateZeroAndNegative(registers.y());
-        return 4 + (address.crossedPage() ? 1 : 0);
+        return cycles;
     }
 
     private int storeYZeroPage() {
@@ -559,14 +533,12 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int storeAccumulatorIndirectY() {
-        bus.writeMemory(fetchIndirectYAddress().value(), registers.a());
+        bus.writeMemory(indexedValue(fetchIndirectYAddress()), registers.a());
         return 6;
     }
 
     private int storeAccumulatorZeroPageIndirect65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x92, opcodeAddress);
-        }
+        require65C02(0x92, opcodeAddress);
         bus.writeMemory(fetchZeroPageIndirectAddress(), registers.a());
         return 5;
     }
@@ -587,44 +559,36 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int storeAccumulatorAbsoluteX() {
-        bus.writeMemory(fetchAbsoluteXAddress().value(), registers.a());
+        bus.writeMemory(indexedValue(fetchAbsoluteXAddress()), registers.a());
         return 5;
     }
 
     private int storeAccumulatorAbsoluteY() {
-        bus.writeMemory(fetchAbsoluteYAddress().value(), registers.a());
+        bus.writeMemory(indexedValue(fetchAbsoluteYAddress()), registers.a());
         return 5;
     }
 
     private int storeZeroZeroPage65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x64, opcodeAddress);
-        }
+        require65C02(0x64, opcodeAddress);
         bus.writeMemory(fetchImmediate8(), 0x00);
         return 3;
     }
 
     private int storeZeroZeroPageX65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x74, opcodeAddress);
-        }
+        require65C02(0x74, opcodeAddress);
         bus.writeMemory(fetchZeroPageXAddress(), 0x00);
         return 4;
     }
 
     private int storeZeroAbsolute65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x9C, opcodeAddress);
-        }
+        require65C02(0x9C, opcodeAddress);
         bus.writeMemory(fetchImmediate16(), 0x00);
         return 4;
     }
 
     private int storeZeroAbsoluteX65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x9E, opcodeAddress);
-        }
-        bus.writeMemory(fetchAbsoluteXAddress().value(), 0x00);
+        require65C02(0x9E, opcodeAddress);
+        bus.writeMemory(indexedValue(fetchAbsoluteXAddress()), 0x00);
         return 5;
     }
 
@@ -698,17 +662,13 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int pushX65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0xDA, opcodeAddress);
-        }
+        require65C02(0xDA, opcodeAddress);
         push8(registers.x());
         return 3;
     }
 
     private int pushY65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x5A, opcodeAddress);
-        }
+        require65C02(0x5A, opcodeAddress);
         push8(registers.y());
         return 3;
     }
@@ -720,18 +680,14 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int pullX65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0xFA, opcodeAddress);
-        }
+        require65C02(0xFA, opcodeAddress);
         registers.setX(pop8());
         registers.updateZeroAndNegative(registers.x());
         return 4;
     }
 
     private int pullY65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x7A, opcodeAddress);
-        }
+        require65C02(0x7A, opcodeAddress);
         registers.setY(pop8());
         registers.updateZeroAndNegative(registers.y());
         return 4;
@@ -752,30 +708,26 @@ public final class Mos6502Cpu implements Cpu {
 
     private int shiftRightZeroPage() {
         int address = fetchImmediate8();
-        int value = bus.readMemory(address);
-        int result = (value >>> 1) & 0xFF;
-        registers.setFlag(Mos6502Registers.FLAG_C, (value & 0x01) != 0);
-        bus.writeMemory(address, result);
-        registers.updateZeroAndNegative(result);
+        bus.writeMemory(address, shiftRight(bus.readMemory(address)));
         return 5;
     }
 
     private int shiftRightZeroPageX() {
         int address = fetchZeroPageXAddress();
-        int value = bus.readMemory(address);
-        int result = (value >>> 1) & 0xFF;
-        registers.setFlag(Mos6502Registers.FLAG_C, (value & 0x01) != 0);
-        bus.writeMemory(address, result);
-        registers.updateZeroAndNegative(result);
+        bus.writeMemory(address, shiftRight(bus.readMemory(address)));
         return 6;
     }
 
     private int shiftRightAbsolute() {
-        return readModifyWrite(fetchImmediate16(), this::shiftRight, 6);
+        int address = fetchImmediate16();
+        bus.writeMemory(address, shiftRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 6;
     }
 
     private int shiftRightAbsoluteX() {
-        return readModifyWrite(fetchAbsoluteXAddress().value(), this::shiftRight, 7);
+        int address = indexedValue(fetchAbsoluteXAddress());
+        bus.writeMemory(address, shiftRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 7;
     }
 
     private int shiftLeftAccumulator() {
@@ -801,11 +753,15 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int shiftLeftAbsolute() {
-        return readModifyWrite(fetchImmediate16(), this::shiftLeft, 6);
+        int address = fetchImmediate16();
+        bus.writeMemory(address, shiftLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 6;
     }
 
     private int shiftLeftAbsoluteX() {
-        return readModifyWrite(fetchAbsoluteXAddress().value(), this::shiftLeft, 7);
+        int address = indexedValue(fetchAbsoluteXAddress());
+        bus.writeMemory(address, shiftLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 7;
     }
 
     private int rotateLeftAccumulator() {
@@ -828,11 +784,15 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int rotateLeftAbsolute() {
-        return readModifyWrite(fetchImmediate16(), this::rotateLeft, 6);
+        int address = fetchImmediate16();
+        bus.writeMemory(address, rotateLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 6;
     }
 
     private int rotateLeftAbsoluteX() {
-        return readModifyWrite(fetchAbsoluteXAddress().value(), this::rotateLeft, 7);
+        int address = indexedValue(fetchAbsoluteXAddress());
+        bus.writeMemory(address, rotateLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 7;
     }
 
     private int rotateRightAccumulator() {
@@ -855,11 +815,15 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int rotateRightAbsolute() {
-        return readModifyWrite(fetchImmediate16(), this::rotateRight, 6);
+        int address = fetchImmediate16();
+        bus.writeMemory(address, rotateRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 6;
     }
 
     private int rotateRightAbsoluteX() {
-        return readModifyWrite(fetchAbsoluteXAddress().value(), this::rotateRight, 7);
+        int address = indexedValue(fetchAbsoluteXAddress());
+        bus.writeMemory(address, rotateRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        return 7;
     }
 
     private int shiftRight(int value) {
@@ -892,104 +856,72 @@ public final class Mos6502Cpu implements Cpu {
         return result;
     }
 
-    private int readModifyWrite(int address, IntUnaryOperator operation, int cycles) {
-        int result = operation.applyAsInt(bus.readMemory(address) & 0xFF) & 0xFF;
-        bus.writeMemory(address, result);
-        return cycles;
-    }
-
     private int decrementZeroPage() {
-        int address = fetchImmediate8();
-        int value = (bus.readMemory(address) - 1) & 0xFF;
-        bus.writeMemory(address, value);
-        registers.updateZeroAndNegative(value);
-        return 5;
+        return decrementMemory(fetchImmediate8(), 5);
     }
 
     private int decrementZeroPageX() {
-        int address = fetchZeroPageXAddress();
-        int value = (bus.readMemory(address) - 1) & 0xFF;
-        bus.writeMemory(address, value);
-        registers.updateZeroAndNegative(value);
-        return 6;
+        return decrementMemory(fetchZeroPageXAddress(), 6);
     }
 
     private int decrementAbsolute() {
-        int address = fetchImmediate16();
-        int value = (bus.readMemory(address) - 1) & 0xFF;
-        bus.writeMemory(address, value);
-        registers.updateZeroAndNegative(value);
-        return 6;
+        return decrementMemory(fetchImmediate16(), 6);
     }
 
     private int decrementAbsoluteX() {
-        int address = fetchAbsoluteXAddress().value();
+        return decrementMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int decrementMemory(int address, int cycles) {
         int value = (bus.readMemory(address) - 1) & 0xFF;
         bus.writeMemory(address, value);
         registers.updateZeroAndNegative(value);
-        return 7;
+        return cycles;
     }
 
     private int decrementAccumulator65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x3A, opcodeAddress);
-        }
+        require65C02(0x3A, opcodeAddress);
         registers.setA((registers.a() - 1) & 0xFF);
         registers.updateZeroAndNegative(registers.a());
         return 2;
     }
 
     private int incrementZeroPage() {
-        int address = fetchImmediate8();
-        int value = (bus.readMemory(address) + 1) & 0xFF;
-        bus.writeMemory(address, value);
-        registers.updateZeroAndNegative(value);
-        return 5;
+        return incrementMemory(fetchImmediate8(), 5);
     }
 
     private int incrementZeroPageX() {
-        int address = fetchZeroPageXAddress();
-        int value = (bus.readMemory(address) + 1) & 0xFF;
-        bus.writeMemory(address, value);
-        registers.updateZeroAndNegative(value);
-        return 6;
+        return incrementMemory(fetchZeroPageXAddress(), 6);
     }
 
     private int incrementAbsolute() {
-        int address = fetchImmediate16();
-        int value = (bus.readMemory(address) + 1) & 0xFF;
-        bus.writeMemory(address, value);
-        registers.updateZeroAndNegative(value);
-        return 6;
+        return incrementMemory(fetchImmediate16(), 6);
     }
 
     private int incrementAbsoluteX() {
-        int address = fetchAbsoluteXAddress().value();
+        return incrementMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int incrementMemory(int address, int cycles) {
         int value = (bus.readMemory(address) + 1) & 0xFF;
         bus.writeMemory(address, value);
         registers.updateZeroAndNegative(value);
-        return 7;
+        return cycles;
     }
 
     private int incrementAccumulator65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x1A, opcodeAddress);
-        }
+        require65C02(0x1A, opcodeAddress);
         registers.setA((registers.a() + 1) & 0xFF);
         registers.updateZeroAndNegative(registers.a());
         return 2;
     }
 
     private int andAccumulatorImmediate() {
-        registers.setA(registers.a() & fetchImmediate8());
-        registers.updateZeroAndNegative(registers.a());
-        return 2;
+        return andAccumulator(fetchImmediate8(), 2);
     }
 
     private int andAccumulatorZeroPage() {
-        registers.setA(registers.a() & readZeroPageOperand());
-        registers.updateZeroAndNegative(registers.a());
-        return 3;
+        return andAccumulator(readZeroPageOperand(), 3);
     }
 
     private int andAccumulatorZeroPageX() {
@@ -1001,13 +933,13 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int andAccumulatorAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        return andAccumulator(bus.readMemory(address.value()), 4 + (address.crossedPage() ? 1 : 0));
+        int address = fetchAbsoluteXAddress();
+        return andAccumulator(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int andAccumulatorAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        return andAccumulator(bus.readMemory(address.value()), 4 + (address.crossedPage() ? 1 : 0));
+        int address = fetchAbsoluteYAddress();
+        return andAccumulator(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int andAccumulatorIndirectX() {
@@ -1015,8 +947,8 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int andAccumulatorIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        return andAccumulator(bus.readMemory(address.value()), 5 + (address.crossedPage() ? 1 : 0));
+        int address = fetchIndirectYAddress();
+        return andAccumulator(bus.readMemory(indexedValue(address)), 5 + (crossedPage(address) ? 1 : 0));
     }
 
     private int andAccumulator(int value, int cycles) {
@@ -1026,15 +958,11 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int orAccumulatorImmediate() {
-        registers.setA(registers.a() | fetchImmediate8());
-        registers.updateZeroAndNegative(registers.a());
-        return 2;
+        return orAccumulator(fetchImmediate8(), 2);
     }
 
     private int orAccumulatorZeroPage() {
-        registers.setA(registers.a() | readZeroPageOperand());
-        registers.updateZeroAndNegative(registers.a());
-        return 3;
+        return orAccumulator(readZeroPageOperand(), 3);
     }
 
     private int orAccumulatorZeroPageX() {
@@ -1046,13 +974,13 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int orAccumulatorAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        return orAccumulator(bus.readMemory(address.value()), 4 + (address.crossedPage() ? 1 : 0));
+        int address = fetchAbsoluteXAddress();
+        return orAccumulator(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int orAccumulatorAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        return orAccumulator(bus.readMemory(address.value()), 4 + (address.crossedPage() ? 1 : 0));
+        int address = fetchAbsoluteYAddress();
+        return orAccumulator(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int orAccumulatorIndirectX() {
@@ -1060,8 +988,8 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int orAccumulatorIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        return orAccumulator(bus.readMemory(address.value()), 5 + (address.crossedPage() ? 1 : 0));
+        int address = fetchIndirectYAddress();
+        return orAccumulator(bus.readMemory(indexedValue(address)), 5 + (crossedPage(address) ? 1 : 0));
     }
 
     private int orAccumulator(int value, int cycles) {
@@ -1071,15 +999,11 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int exclusiveOrImmediate() {
-        registers.setA(registers.a() ^ fetchImmediate8());
-        registers.updateZeroAndNegative(registers.a());
-        return 2;
+        return exclusiveOr(fetchImmediate8(), 2);
     }
 
     private int exclusiveOrZeroPage() {
-        registers.setA(registers.a() ^ readZeroPageOperand());
-        registers.updateZeroAndNegative(registers.a());
-        return 3;
+        return exclusiveOr(readZeroPageOperand(), 3);
     }
 
     private int exclusiveOrZeroPageX() {
@@ -1091,13 +1015,13 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int exclusiveOrAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        return exclusiveOr(bus.readMemory(address.value()), 4 + (address.crossedPage() ? 1 : 0));
+        int address = fetchAbsoluteXAddress();
+        return exclusiveOr(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int exclusiveOrAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        return exclusiveOr(bus.readMemory(address.value()), 4 + (address.crossedPage() ? 1 : 0));
+        int address = fetchAbsoluteYAddress();
+        return exclusiveOr(bus.readMemory(indexedValue(address)), 4 + (crossedPage(address) ? 1 : 0));
     }
 
     private int exclusiveOrIndirectX() {
@@ -1105,8 +1029,8 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int exclusiveOrIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        return exclusiveOr(bus.readMemory(address.value()), 5 + (address.crossedPage() ? 1 : 0));
+        int address = fetchIndirectYAddress();
+        return exclusiveOr(bus.readMemory(indexedValue(address)), 5 + (crossedPage(address) ? 1 : 0));
     }
 
     private int exclusiveOr(int value, int cycles) {
@@ -1141,21 +1065,21 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int adcAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        addWithCarry(bus.readMemory(address.value()));
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteXAddress();
+        addWithCarry(bus.readMemory(indexedValue(address)));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int adcAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        addWithCarry(bus.readMemory(address.value()));
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteYAddress();
+        addWithCarry(bus.readMemory(indexedValue(address)));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int adcIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        addWithCarry(bus.readMemory(address.value()));
-        return 5 + (address.crossedPage() ? 1 : 0);
+        int address = fetchIndirectYAddress();
+        addWithCarry(bus.readMemory(indexedValue(address)));
+        return 5 + (crossedPage(address) ? 1 : 0);
     }
 
     private int sbcIndirectX() {
@@ -1184,21 +1108,21 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int sbcAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        subtractWithCarry(bus.readMemory(address.value()));
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteXAddress();
+        subtractWithCarry(bus.readMemory(indexedValue(address)));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int sbcAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        subtractWithCarry(bus.readMemory(address.value()));
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteYAddress();
+        subtractWithCarry(bus.readMemory(indexedValue(address)));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int sbcIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        subtractWithCarry(bus.readMemory(address.value()));
-        return 5 + (address.crossedPage() ? 1 : 0);
+        int address = fetchIndirectYAddress();
+        subtractWithCarry(bus.readMemory(indexedValue(address)));
+        return 5 + (crossedPage(address) ? 1 : 0);
     }
 
     private int compareAccumulatorZeroPage() {
@@ -1247,15 +1171,15 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int compareAccumulatorAbsoluteX() {
-        IndexedAddress address = fetchAbsoluteXAddress();
-        compare(registers.a(), bus.readMemory(address.value()));
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteXAddress();
+        compare(registers.a(), bus.readMemory(indexedValue(address)));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int compareAccumulatorAbsoluteY() {
-        IndexedAddress address = fetchAbsoluteYAddress();
-        compare(registers.a(), bus.readMemory(address.value()));
-        return 4 + (address.crossedPage() ? 1 : 0);
+        int address = fetchAbsoluteYAddress();
+        compare(registers.a(), bus.readMemory(indexedValue(address)));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int compareAccumulatorIndirectX() {
@@ -1264,9 +1188,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int compareAccumulatorIndirectY() {
-        IndexedAddress address = fetchIndirectYAddress();
-        compare(registers.a(), bus.readMemory(address.value()));
-        return 5 + (address.crossedPage() ? 1 : 0);
+        int address = fetchIndirectYAddress();
+        compare(registers.a(), bus.readMemory(indexedValue(address)));
+        return 5 + (crossedPage(address) ? 1 : 0);
     }
 
     private int compareAccumulatorImmediate() {
@@ -1286,26 +1210,20 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int bitImmediate65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x89, opcodeAddress);
-        }
+        require65C02(0x89, opcodeAddress);
         registers.setFlag(Mos6502Registers.FLAG_Z, (registers.a() & fetchImmediate8()) == 0);
         return 2;
     }
 
     private int bitZeroPageX65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x34, opcodeAddress);
-        }
+        require65C02(0x34, opcodeAddress);
         bit(bus.readMemory(fetchZeroPageXAddress()) & 0xFF);
         return 4;
     }
 
     private int bitAbsoluteX65C02(int opcodeAddress) {
-        if (variant != Mos6502Variant.CMOS_65C02) {
-            return illegalOpcode(0x3C, opcodeAddress);
-        }
-        bit(bus.readMemory(fetchAbsoluteXAddress().value()) & 0xFF);
+        require65C02(0x3C, opcodeAddress);
+        bit(bus.readMemory(indexedValue(fetchAbsoluteXAddress())) & 0xFF);
         return 4;
     }
 
@@ -1350,27 +1268,35 @@ public final class Mos6502Cpu implements Cpu {
         return readZeroPageWord((fetchImmediate8() + registers.x()) & 0xFF);
     }
 
-    private IndexedAddress fetchIndirectYAddress() {
+    private int fetchIndirectYAddress() {
         int zeroPageAddress = fetchImmediate8();
         int base = readZeroPageWord(zeroPageAddress);
         int value = (base + registers.y()) & 0xFFFF;
-        return new IndexedAddress(value, ((base ^ value) & 0xFF00) != 0);
+        return value | (((base ^ value) & 0xFF00) != 0 ? 0x10000 : 0);
     }
 
     private int fetchZeroPageIndirectAddress() {
         return readZeroPageWord(fetchImmediate8());
     }
 
-    private IndexedAddress fetchAbsoluteYAddress() {
+    private int fetchAbsoluteYAddress() {
         int base = fetchImmediate16();
         int value = (base + registers.y()) & 0xFFFF;
-        return new IndexedAddress(value, ((base ^ value) & 0xFF00) != 0);
+        return value | (((base ^ value) & 0xFF00) != 0 ? 0x10000 : 0);
     }
 
-    private IndexedAddress fetchAbsoluteXAddress() {
+    private int fetchAbsoluteXAddress() {
         int base = fetchImmediate16();
         int value = (base + registers.x()) & 0xFFFF;
-        return new IndexedAddress(value, ((base ^ value) & 0xFF00) != 0);
+        return value | (((base ^ value) & 0xFF00) != 0 ? 0x10000 : 0);
+    }
+
+    private static int indexedValue(int encoded) {
+        return encoded & 0xFFFF;
+    }
+
+    private static boolean crossedPage(int encoded) {
+        return (encoded & 0x10000) != 0;
     }
 
     private int readZeroPageWord(int zeroPageAddress) {
@@ -1388,9 +1314,10 @@ public final class Mos6502Cpu implements Cpu {
 
         registers.setFlag(Mos6502Registers.FLAG_V, ((accumulator ^ result8) & (value8 ^ result8) & 0x80) != 0);
         if (registers.flagSet(Mos6502Registers.FLAG_D)) {
-            DecimalResult decimalResult = decimalAdd(accumulator, value8, carryIn);
-            registers.setFlag(Mos6502Registers.FLAG_C, decimalResult.carry());
-            result8 = decimalResult.value();
+            int packed = decimalAdd(accumulator, value8, carryIn);
+            boolean carry = (packed & 0x100) != 0;
+            registers.setFlag(Mos6502Registers.FLAG_C, carry);
+            result8 = packed & 0xFF;
         } else {
             registers.setFlag(Mos6502Registers.FLAG_C, result > 0xFF);
         }
@@ -1414,7 +1341,7 @@ public final class Mos6502Cpu implements Cpu {
         registers.updateZeroAndNegative(result8);
     }
 
-    private static DecimalResult decimalAdd(int accumulator, int value, int carryIn) {
+    private static int decimalAdd(int accumulator, int value, int carryIn) {
         int low = (accumulator & 0x0F) + (value & 0x0F) + carryIn;
         int high = (accumulator >>> 4) + (value >>> 4);
         if (low > 9) {
@@ -1425,7 +1352,8 @@ public final class Mos6502Cpu implements Cpu {
         if (high > 9) {
             high += 6;
         }
-        return new DecimalResult(((high << 4) | (low & 0x0F)) & 0xFF, carry);
+        int result = ((high << 4) | (low & 0x0F)) & 0xFF;
+        return result | (carry ? 0x100 : 0);
     }
 
     private static int decimalSubtract(int accumulator, int value, int borrow) {
@@ -1439,12 +1367,6 @@ public final class Mos6502Cpu implements Cpu {
             high -= 6;
         }
         return ((high << 4) | (low & 0x0F)) & 0xFF;
-    }
-
-    private record IndexedAddress(int value, boolean crossedPage) {
-    }
-
-    private record DecimalResult(int value, boolean carry) {
     }
 
     private int clearFlag(int flagMask) {

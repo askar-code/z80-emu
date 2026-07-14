@@ -44,9 +44,7 @@ class Mos6502CpuTest {
     @Test
     void loadTransferAndIncrementUpdateZeroAndNegativeFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0x00, 0xAA, 0xE8, 0xA2, 0x80, 0xCA, 0xA0, 0x00, 0xA0, 0x81, 0x98, 0xA9, 0x40, 0xA8);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x00, 0xAA, 0xE8, 0xA2, 0x80, 0xCA, 0xA0, 0x00, 0xA0, 0x81, 0x98, 0xA9, 0x40, 0xA8);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(0x00, cpu.registers().a());
@@ -92,9 +90,7 @@ class Mos6502CpuTest {
     @Test
     void storesAccumulatorThroughZeroPageAndAbsoluteAddressing() {
         TestBus bus = new TestBus();
-        bus.load(0x0800, 0xA9, 0x42, 0x85, 0x10, 0x8D, 0x00, 0x04);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA9, 0x42, 0x85, 0x10, 0x8D, 0x00, 0x04);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(3, cpu.runInstruction());
@@ -111,9 +107,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0011, 0x12);
         bus.writeMemory(0x00FF, 0x78);
         bus.writeMemory(0x0000, 0x56);
-        bus.load(0x0800, 0xA9, 0x5A, 0x92, 0x10, 0xA9, 0xC3, 0x92, 0xFF);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x0800, 0xA9, 0x5A, 0x92, 0x10, 0xA9, 0xC3, 0x92, 0xFF);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(5, cpu.runInstruction());
@@ -127,9 +121,7 @@ class Mos6502CpuTest {
     @Test
     void storesYThroughZeroPageAddressing() {
         TestBus bus = new TestBus();
-        bus.load(0x0800, 0xA0, 0x7E, 0x84, 0x20);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA0, 0x7E, 0x84, 0x20);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(3, cpu.runInstruction());
@@ -142,9 +134,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x80);
         bus.writeMemory(0x0041, 0x7F);
-        bus.load(0x0800, 0xA5, 0x40, 0xA6, 0x41);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA5, 0x40, 0xA6, 0x41);
 
         assertEquals(3, cpu.runInstruction());
 
@@ -160,9 +150,7 @@ class Mos6502CpuTest {
     @Test
     void indexedZeroPageAddressingWrapsForLoadAndStores() {
         TestBus bus = new TestBus();
-        bus.load(0x0800, 0xA2, 0x02, 0xA0, 0x77, 0x94, 0xFF, 0xA9, 0x88, 0x95, 0xFE, 0xB5, 0xFF, 0xB4, 0xFF);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA2, 0x02, 0xA0, 0x77, 0x94, 0xFF, 0xA9, 0x88, 0x95, 0xFE, 0xB5, 0xFF, 0xB4, 0xFF);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -185,9 +173,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0020, 0x00);
         bus.writeMemory(0x0021, 0x40);
-        bus.load(0x0800, 0xA0, 0x05, 0xA9, 0x66, 0x91, 0x20, 0xA9, 0x00, 0xB1, 0x20, 0xD1, 0x20);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA0, 0x05, 0xA9, 0x66, 0x91, 0x20, 0xA9, 0x00, 0xB1, 0x20, 0xD1, 0x20);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -209,9 +195,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0024, 0x00);
         bus.writeMemory(0x0025, 0x40);
         bus.writeMemory(0x4000, 0x33);
-        bus.load(0x0800, 0xA2, 0x04, 0xA1, 0x20, 0x69, 0x01, 0x81, 0x20, 0xC1, 0x20);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA2, 0x04, 0xA1, 0x20, 0x69, 0x01, 0x81, 0x20, 0xC1, 0x20);
 
         cpu.runInstruction();
 
@@ -235,9 +219,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0020, 0xFF);
         bus.writeMemory(0x0021, 0x40);
         bus.writeMemory(0x4100, 0x66);
-        bus.load(0x0800, 0xA0, 0x01, 0xA9, 0x66, 0xB1, 0x20, 0xD1, 0x20);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA0, 0x01, 0xA9, 0x66, 0xB1, 0x20, 0xD1, 0x20);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -254,9 +236,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0030, 0xFF);
         bus.writeMemory(0x0031, 0x40);
         bus.writeMemory(0x4100, 0xFF);
-        bus.load(0x2000, 0xA0, 0x01, 0xA9, 0x00, 0x51, 0x30, 0xA2, 0x01, 0xDD, 0xFF, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA0, 0x01, 0xA9, 0x00, 0x51, 0x30, 0xA2, 0x01, 0xDD, 0xFF, 0x40);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -275,9 +255,7 @@ class Mos6502CpuTest {
     void absoluteYAddressingAddsIndexForLoadAndStore() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4005, 0x77);
-        bus.load(0x0800, 0xA0, 0x05, 0xB9, 0x00, 0x40, 0x99, 0x00, 0x41);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA0, 0x05, 0xB9, 0x00, 0x40, 0x99, 0x00, 0x41);
 
         cpu.runInstruction();
         assertEquals(4, cpu.runInstruction());
@@ -291,9 +269,7 @@ class Mos6502CpuTest {
     void absoluteXAddressingAddsIndexForLoadAndStore() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4005, 0x77);
-        bus.load(0x0800, 0xA2, 0x05, 0xBD, 0x00, 0x40, 0x9D, 0x00, 0x41);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA2, 0x05, 0xBD, 0x00, 0x40, 0x9D, 0x00, 0x41);
 
         cpu.runInstruction();
         assertEquals(4, cpu.runInstruction());
@@ -307,9 +283,7 @@ class Mos6502CpuTest {
     void absoluteYLoadAddsCycleOnPageCross() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4100, 0x44);
-        bus.load(0x0800, 0xA0, 0x01, 0xB9, 0xFF, 0x40, 0xBE, 0xFF, 0x40);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA0, 0x01, 0xB9, 0xFF, 0x40, 0xBE, 0xFF, 0x40);
 
         cpu.runInstruction();
         assertEquals(5, cpu.runInstruction());
@@ -324,9 +298,7 @@ class Mos6502CpuTest {
     void absoluteXLoadAddsCycleOnPageCross() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4100, 0x44);
-        bus.load(0x0800, 0xA2, 0x01, 0xBD, 0xFF, 0x40);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA2, 0x01, 0xBD, 0xFF, 0x40);
 
         cpu.runInstruction();
         assertEquals(5, cpu.runInstruction());
@@ -337,9 +309,7 @@ class Mos6502CpuTest {
     @Test
     void storesXZeroPageAndYAbsolute() {
         TestBus bus = new TestBus();
-        bus.load(0x0800, 0xA2, 0x12, 0x86, 0x44, 0xA0, 0x34, 0x8C, 0x00, 0x40, 0x8E, 0x01, 0x40);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA2, 0x12, 0x86, 0x44, 0xA0, 0x34, 0x8C, 0x00, 0x40, 0x8E, 0x01, 0x40);
 
         cpu.runInstruction();
         assertEquals(3, cpu.runInstruction());
@@ -356,9 +326,7 @@ class Mos6502CpuTest {
     @Test
     void transferXToStackPointerDoesNotUpdateFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x0800, 0xA2, 0x80, 0x18, 0x9A, 0x8A, 0xA2, 0x00, 0xBA);
-        bus.writeVector(0xFFFC, 0x0800);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x0800, 0xA2, 0x80, 0x18, 0x9A, 0x8A, 0xA2, 0x00, 0xBA);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -381,9 +349,7 @@ class Mos6502CpuTest {
     @Test
     void branchNotEqualUsesRelativeOffsetWhenZeroFlagIsClear() {
         TestBus bus = new TestBus();
-        bus.load(0x20F0, 0xD0, 0x02, 0xA9, 0x11, 0xA9, 0x22);
-        bus.writeVector(0xFFFC, 0x20F0);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x20F0, 0xD0, 0x02, 0xA9, 0x11, 0xA9, 0x22);
 
         cpu.registers().setFlag(Mos6502Registers.FLAG_Z, false);
         assertEquals(3, cpu.runInstruction());
@@ -396,9 +362,7 @@ class Mos6502CpuTest {
     @Test
     void branchNotEqualFallsThroughWhenZeroFlagIsSet() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xD0, 0x02, 0xA9, 0x11);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xD0, 0x02, 0xA9, 0x11);
 
         cpu.registers().setFlag(Mos6502Registers.FLAG_Z, true);
         assertEquals(2, cpu.runInstruction());
@@ -411,9 +375,7 @@ class Mos6502CpuTest {
     @Test
     void branchEqualUsesRelativeOffsetWhenZeroFlagIsSet() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xF0, 0x02, 0xA9, 0x11, 0xA9, 0x33);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xF0, 0x02, 0xA9, 0x11, 0xA9, 0x33);
 
         cpu.registers().setFlag(Mos6502Registers.FLAG_Z, true);
         assertEquals(3, cpu.runInstruction());
@@ -426,9 +388,7 @@ class Mos6502CpuTest {
     @Test
     void branchOnCarryAndSignFlagsUseRelativeOffsets() {
         TestBus bus = new TestBus();
-        bus.load(0x3000, 0x90, 0x02, 0xA9, 0x11, 0xB0, 0x02, 0xA9, 0x22, 0x10, 0x02, 0xA9, 0x33);
-        bus.writeVector(0xFFFC, 0x3000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x3000, 0x90, 0x02, 0xA9, 0x11, 0xB0, 0x02, 0xA9, 0x22, 0x10, 0x02, 0xA9, 0x33);
 
         cpu.registers().setFlag(Mos6502Registers.FLAG_C, false);
         assertEquals(3, cpu.runInstruction());
@@ -446,9 +406,7 @@ class Mos6502CpuTest {
     @Test
     void nmos6502TreatsBraAsIllegalOpcode() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x80, 0x02);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x80, 0x02);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
 
@@ -459,9 +417,7 @@ class Mos6502CpuTest {
     @Test
     void cmos65c02BraAlwaysBranchesUsingRelativeOffset() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x80, 0x02, 0xA9, 0x11, 0xA9, 0x33);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000, 0x80, 0x02, 0xA9, 0x11, 0xA9, 0x33);
 
         assertEquals(3, cpu.runInstruction());
         assertEquals(0x2004, cpu.registers().pc());
@@ -473,9 +429,7 @@ class Mos6502CpuTest {
     @Test
     void cmos65c02NopImmediateConsumesOperandByte() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x02, 0xC0, 0xA9, 0x44);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000, 0x02, 0xC0, 0xA9, 0x44);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(0x2002, cpu.registers().pc());
@@ -487,9 +441,7 @@ class Mos6502CpuTest {
     @Test
     void nmos6502TreatsSmbAsIllegalOpcode() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x87, 0x44);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x87, 0x44);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
 
@@ -504,9 +456,7 @@ class Mos6502CpuTest {
         for (int bit = 0; bit < 8; bit++) {
             TestBus bus = new TestBus();
             bus.writeMemory(0x0044, 0x00);
-            bus.load(0x2000, setOpcodes[bit], 0x44, resetOpcodes[bit], 0x44);
-            bus.writeVector(0xFFFC, 0x2000);
-            Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+            Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000, setOpcodes[bit], 0x44, resetOpcodes[bit], 0x44);
             cpu.registers().setFlag(Mos6502Registers.FLAG_Z, true);
             cpu.registers().setFlag(Mos6502Registers.FLAG_C, true);
 
@@ -529,15 +479,13 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0012, 0x66);
         bus.writeMemory(0x4010, 0x77);
         bus.writeMemory(0x4012, 0x88);
-        bus.load(0x2000,
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000,
                 0xA2, 0x02,
                 0x64, 0x10,
                 0x74, 0x10,
                 0x9C, 0x10, 0x40,
                 0x9E, 0x10, 0x40
         );
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
 
         assertEquals(2, cpu.runInstruction());
         cpu.registers().setFlag(Mos6502Registers.FLAG_N, true);
@@ -558,9 +506,7 @@ class Mos6502CpuTest {
     @Test
     void nmos6502TreatsStzAsIllegalOpcode() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x64, 0x10);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x64, 0x10);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
 
@@ -571,9 +517,7 @@ class Mos6502CpuTest {
     @Test
     void nmos6502TreatsZeroPageIndirectStaAsIllegalOpcode() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x92, 0x10);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x92, 0x10);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
 
@@ -584,9 +528,7 @@ class Mos6502CpuTest {
     @Test
     void cmos65c02IncAndDecAccumulatorUpdateZeroAndNegativeFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0xFF, 0x1A, 0x3A);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000, 0xA9, 0xFF, 0x1A, 0x3A);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(2, cpu.runInstruction());
@@ -603,7 +545,7 @@ class Mos6502CpuTest {
     @Test
     void cmos65c02PushesAndPullsIndexRegistersThroughStack() {
         TestBus bus = new TestBus();
-        bus.load(0x2000,
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000,
                 0xA2, 0x81,
                 0xA0, 0x00,
                 0xDA,
@@ -613,8 +555,6 @@ class Mos6502CpuTest {
                 0x7A,
                 0xFA
         );
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(2, cpu.runInstruction());
@@ -642,18 +582,7 @@ class Mos6502CpuTest {
 
     @Test
     void nmos6502TreatsIndexStackOpcodesAsIllegal() {
-        int[] opcodes = {0x5A, 0x7A, 0xDA, 0xFA};
-        for (int opcode : opcodes) {
-            TestBus bus = new TestBus();
-            bus.load(0x2000, opcode);
-            bus.writeVector(0xFFFC, 0x2000);
-            Mos6502Cpu cpu = new Mos6502Cpu(bus);
-
-            IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-            assertEquals("Illegal MOS 6502 opcode 0x%02X at 0x2000".formatted(opcode), failure.getMessage());
-            assertEquals(0x2000, cpu.registers().pc());
-        }
+        assertIllegalOnNmos(0x5A, 0x7A, 0xDA, 0xFA);
     }
 
     @Test
@@ -663,7 +592,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0011, 0xFF);
         bus.writeMemory(0x4000, 0x0F);
         bus.writeMemory(0x4001, 0x3F);
-        bus.load(0x2000,
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000,
                 0xA9, 0x0F,
                 0x04, 0x10,
                 0xA9, 0x33,
@@ -673,8 +602,6 @@ class Mos6502CpuTest {
                 0xA9, 0xC0,
                 0x1C, 0x01, 0x40
         );
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(5, cpu.runInstruction());
@@ -701,68 +628,28 @@ class Mos6502CpuTest {
 
     @Test
     void nmos6502TreatsTsbAndTrbOpcodesAsIllegal() {
-        int[] opcodes = {0x04, 0x0C, 0x14, 0x1C};
-        for (int opcode : opcodes) {
-            TestBus bus = new TestBus();
-            bus.load(0x2000, opcode);
-            bus.writeVector(0xFFFC, 0x2000);
-            Mos6502Cpu cpu = new Mos6502Cpu(bus);
-
-            IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-            assertEquals("Illegal MOS 6502 opcode 0x%02X at 0x2000".formatted(opcode), failure.getMessage());
-            assertEquals(0x2000, cpu.registers().pc());
-        }
+        assertIllegalOnNmos(0x04, 0x0C, 0x14, 0x1C);
     }
 
     @Test
     void nmos6502TreatsBitImmediateAsIllegal() {
-        TestBus bus = new TestBus();
-        bus.load(0x2000, 0x89);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
-
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-        assertEquals("Illegal MOS 6502 opcode 0x89 at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+        assertIllegalOnNmos(0x89);
     }
 
     @Test
     void nmos6502TreatsBitIndexedOpcodesAsIllegal() {
-        int[] opcodes = {0x34, 0x3C};
-        for (int opcode : opcodes) {
-            TestBus bus = new TestBus();
-            bus.load(0x2000, opcode);
-            bus.writeVector(0xFFFC, 0x2000);
-            Mos6502Cpu cpu = new Mos6502Cpu(bus);
-
-            IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-            assertEquals("Illegal MOS 6502 opcode 0x%02X at 0x2000".formatted(opcode), failure.getMessage());
-            assertEquals(0x2000, cpu.registers().pc());
-        }
+        assertIllegalOnNmos(0x34, 0x3C);
     }
 
     @Test
     void nmos6502TreatsIncAccumulatorAsIllegalOpcode() {
-        TestBus bus = new TestBus();
-        bus.load(0x2000, 0x1A);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
-
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-        assertEquals("Illegal MOS 6502 opcode 0x1A at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+        assertIllegalOnNmos(0x1A);
     }
 
     @Test
     void branchTakenAcrossPageBoundaryAddsACycle() {
         TestBus bus = new TestBus();
-        bus.load(0x20FD, 0xD0, 0x01);
-        bus.writeVector(0xFFFC, 0x20FD);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x20FD, 0xD0, 0x01);
 
         cpu.registers().setFlag(Mos6502Registers.FLAG_Z, false);
 
@@ -828,9 +715,7 @@ class Mos6502CpuTest {
     @Test
     void nmos6502TreatsJumpAbsoluteIndexedIndirectAsIllegalOpcode() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x7C, 0x00, 0x30);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x7C, 0x00, 0x30);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
 
@@ -841,9 +726,7 @@ class Mos6502CpuTest {
     @Test
     void adcImmediateUpdatesCarryOverflowAndSignFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0x50, 0x18, 0x69, 0x50, 0x38, 0x69, 0x70);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x50, 0x18, 0x69, 0x50, 0x38, 0x69, 0x70);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -866,9 +749,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0044, 0x50);
         bus.writeMemory(0x4100, 0x01);
-        bus.load(0x2000, 0xA9, 0x50, 0x65, 0x44, 0xA0, 0x01, 0x79, 0xFF, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x50, 0x65, 0x44, 0xA0, 0x01, 0x79, 0xFF, 0x40);
 
         cpu.runInstruction();
         assertEquals(3, cpu.runInstruction());
@@ -888,9 +769,7 @@ class Mos6502CpuTest {
     void sbcImmediateUpdatesCarryOverflowAndSignFlags() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x01);
-        bus.load(0x2000, 0xA9, 0x40, 0x38, 0xE9, 0x10, 0xE9, 0x50, 0x38, 0xE5, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x40, 0x38, 0xE9, 0x10, 0xE9, 0x50, 0x38, 0xE5, 0x40);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -919,9 +798,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0020, 0xFF);
         bus.writeMemory(0x0021, 0x40);
         bus.writeMemory(0x4100, 0x10);
-        bus.load(0x2000, 0xA9, 0x40, 0xA0, 0x01, 0x38, 0xF1, 0x20);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x40, 0xA0, 0x01, 0x38, 0xF1, 0x20);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -938,9 +815,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0044, 0x20);
         bus.writeMemory(0x0045, 0x40);
-        bus.load(0x2000, 0xA9, 0x20, 0xC5, 0x44, 0xC5, 0x45);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x20, 0xC5, 0x44, 0xC5, 0x45);
 
         cpu.runInstruction();
         assertEquals(3, cpu.runInstruction());
@@ -959,9 +834,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0044, 0x20);
         bus.writeMemory(0x0045, 0x40);
-        bus.load(0x2000, 0xA0, 0x20, 0xC0, 0x20, 0xC4, 0x44, 0xC4, 0x45);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA0, 0x20, 0xC0, 0x20, 0xC4, 0x44, 0xC4, 0x45);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -984,9 +857,7 @@ class Mos6502CpuTest {
     void compareXImmediateUpdatesCarryZeroAndNegativeFlags() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0044, 0x20);
-        bus.load(0x2000, 0xA2, 0x20, 0xE0, 0x20, 0xE4, 0x44, 0xE0, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA2, 0x20, 0xE0, 0x20, 0xE4, 0x44, 0xE0, 0x40);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1008,9 +879,7 @@ class Mos6502CpuTest {
     @Test
     void compareAccumulatorImmediateUpdatesCarryZeroAndNegativeFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0x20, 0xC9, 0x20, 0xC9, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x20, 0xC9, 0x20, 0xC9, 0x40);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1029,9 +898,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x3456, 0x20);
         bus.writeMemory(0x3457, 0x40);
-        bus.load(0x2000, 0xA9, 0x20, 0xCD, 0x56, 0x34, 0xCD, 0x57, 0x34);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x20, 0xCD, 0x56, 0x34, 0xCD, 0x57, 0x34);
 
         cpu.runInstruction();
         assertEquals(4, cpu.runInstruction());
@@ -1049,9 +916,7 @@ class Mos6502CpuTest {
     void compareAccumulatorAbsoluteYAddsIndexAndPageCrossCycle() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4100, 0x20);
-        bus.load(0x2000, 0xA9, 0x20, 0xA0, 0x01, 0xD9, 0xFF, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x20, 0xA0, 0x01, 0xD9, 0xFF, 0x40);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -1067,9 +932,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x3456, 0xC0);
         bus.writeMemory(0x0040, 0x41);
-        bus.load(0x2000, 0xA9, 0x3F, 0x2C, 0x56, 0x34, 0x24, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x3F, 0x2C, 0x56, 0x34, 0x24, 0x40);
 
         cpu.runInstruction();
         assertEquals(4, cpu.runInstruction());
@@ -1087,9 +950,7 @@ class Mos6502CpuTest {
     @Test
     void cmos65c02BitImmediateUpdatesOnlyZeroFlag() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0x0F, 0x89, 0xF0, 0xA9, 0x80, 0x89, 0x80);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000, 0xA9, 0x0F, 0x89, 0xF0, 0xA9, 0x80, 0x89, 0x80);
 
         assertEquals(2, cpu.runInstruction());
         cpu.registers().setFlag(Mos6502Registers.FLAG_N, true);
@@ -1114,7 +975,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0042, 0x80);
         bus.writeMemory(0x4100, 0x41);
-        bus.load(0x2000,
+        Mos6502Cpu cpu = boot(bus, Mos6502Variant.CMOS_65C02, 0x2000,
                 0xA9, 0x7F,
                 0xA2, 0x02,
                 0x34, 0x40,
@@ -1122,8 +983,6 @@ class Mos6502CpuTest {
                 0xA2, 0x01,
                 0x3C, 0xFF, 0x40
         );
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
 
         assertEquals(2, cpu.runInstruction());
         assertEquals(2, cpu.runInstruction());
@@ -1145,9 +1004,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0050, 0x01);
         bus.writeMemory(0x0051, 0x00);
-        bus.load(0x2000, 0xC6, 0x50, 0xC6, 0x51);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xC6, 0x50, 0xC6, 0x51);
 
         assertEquals(5, cpu.runInstruction());
         assertEquals(0x00, bus.readMemory(0x0050));
@@ -1166,9 +1023,7 @@ class Mos6502CpuTest {
         bus.writeMemory(0x0050, 0xFF);
         bus.writeMemory(0x0051, 0x7F);
         bus.writeMemory(0x0002, 0x01);
-        bus.load(0x2000, 0xE6, 0x50, 0xE6, 0x51, 0xA2, 0x03, 0xF6, 0xFF);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xE6, 0x50, 0xE6, 0x51, 0xA2, 0x03, 0xF6, 0xFF);
 
         assertEquals(5, cpu.runInstruction());
         assertEquals(0x00, bus.readMemory(0x0050));
@@ -1190,9 +1045,7 @@ class Mos6502CpuTest {
     @Test
     void incrementYWrapsAndUpdatesFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA0, 0xFF, 0xC8, 0xC8, 0x88, 0x88);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA0, 0xFF, 0xC8, 0xC8, 0x88, 0x88);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1216,9 +1069,7 @@ class Mos6502CpuTest {
     void exclusiveOrImmediateUpdatesAccumulatorAndFlags() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x80);
-        bus.load(0x2000, 0xA9, 0x55, 0x49, 0xFF, 0x49, 0xAA, 0x45, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x55, 0x49, 0xFF, 0x49, 0xAA, 0x45, 0x40);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1237,9 +1088,7 @@ class Mos6502CpuTest {
     @Test
     void andAndOrImmediateUpdateAccumulatorAndFlags() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0xF0, 0x29, 0x0F, 0x09, 0x80);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0xF0, 0x29, 0x0F, 0x09, 0x80);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1255,9 +1104,7 @@ class Mos6502CpuTest {
     void andZeroPageUpdatesAccumulatorAndFlags() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x0F);
-        bus.load(0x2000, 0xA9, 0xF0, 0x25, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0xF0, 0x25, 0x40);
 
         cpu.runInstruction();
         assertEquals(3, cpu.runInstruction());
@@ -1271,9 +1118,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x80);
         bus.writeMemory(0x4000, 0x7F);
-        bus.load(0x2000, 0xA4, 0x40, 0xAC, 0x00, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA4, 0x40, 0xAC, 0x00, 0x40);
 
         assertEquals(3, cpu.runInstruction());
 
@@ -1290,9 +1135,7 @@ class Mos6502CpuTest {
     void orZeroPageUpdatesAccumulatorAndFlags() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x80);
-        bus.load(0x2000, 0xA9, 0x01, 0x05, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x01, 0x05, 0x40);
 
         cpu.runInstruction();
         assertEquals(3, cpu.runInstruction());
@@ -1305,9 +1148,7 @@ class Mos6502CpuTest {
     @Test
     void accumulatorStackOperationsUse6502StackPage() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0x81, 0x48, 0xA9, 0x00, 0x68, 0x18, 0x08, 0x38, 0x28);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x81, 0x48, 0xA9, 0x00, 0x68, 0x18, 0x08, 0x38, 0x28);
 
         cpu.runInstruction();
         assertEquals(3, cpu.runInstruction());
@@ -1339,9 +1180,7 @@ class Mos6502CpuTest {
     @Test
     void shiftRightAccumulatorMovesBitZeroIntoCarry() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xA9, 0x03, 0x4A, 0x4A);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x03, 0x4A, 0x4A);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1360,9 +1199,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x03);
         bus.writeMemory(0x0001, 0x02);
-        bus.load(0x2000, 0x46, 0x40, 0x46, 0x40, 0xA2, 0x02, 0x56, 0xFF);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x46, 0x40, 0x46, 0x40, 0xA2, 0x02, 0x56, 0xFF);
 
         assertEquals(5, cpu.runInstruction());
         assertEquals(0x01, bus.readMemory(0x0040));
@@ -1386,9 +1223,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x80);
         bus.writeMemory(0x0002, 0x40);
-        bus.load(0x2000, 0xA9, 0x81, 0x0A, 0x0A, 0x06, 0x40, 0xA2, 0x03, 0x16, 0xFF);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x81, 0x0A, 0x0A, 0x06, 0x40, 0xA2, 0x03, 0x16, 0xFF);
 
         cpu.runInstruction();
         assertEquals(2, cpu.runInstruction());
@@ -1416,9 +1251,7 @@ class Mos6502CpuTest {
     void rotateLeftAccumulatorMovesCarryThroughBitZero() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x80);
-        bus.load(0x2000, 0xA9, 0x80, 0x38, 0x2A, 0x2A, 0x38, 0x26, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x80, 0x38, 0x2A, 0x2A, 0x38, 0x26, 0x40);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -1442,9 +1275,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x0040, 0x01);
         bus.writeMemory(0x0002, 0x01);
-        bus.load(0x2000, 0xA9, 0x01, 0x38, 0x6A, 0x18, 0x66, 0x40, 0x18, 0xA2, 0x03, 0x76, 0xFF);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA9, 0x01, 0x38, 0x6A, 0x18, 0x66, 0x40, 0x18, 0xA2, 0x03, 0x76, 0xFF);
 
         cpu.runInstruction();
         cpu.runInstruction();
@@ -1474,15 +1305,13 @@ class Mos6502CpuTest {
         bus.writeMemory(0x4001, 0x01);
         bus.writeMemory(0x4002, 0x80);
         bus.writeMemory(0x4003, 0x10);
-        bus.load(0x2000,
+        Mos6502Cpu cpu = boot(bus, 0x2000,
                 0x0E, 0x00, 0x40,
                 0x4E, 0x01, 0x40,
                 0x2E, 0x02, 0x40,
                 0x6E, 0x03, 0x40,
                 0xCE, 0x00, 0x40,
                 0xEE, 0x00, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
 
         assertEquals(6, cpu.runInstruction());
         assertEquals(0x80, bus.readMemory(0x4000));
@@ -1516,7 +1345,7 @@ class Mos6502CpuTest {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4102, 0x10);
         bus.writeMemory(0x0002, 0x02);
-        bus.load(0x2000,
+        Mos6502Cpu cpu = boot(bus, 0x2000,
                 0xA2, 0x02,
                 0x1E, 0x00, 0x41,
                 0x3E, 0x00, 0x41,
@@ -1525,8 +1354,6 @@ class Mos6502CpuTest {
                 0xDE, 0x00, 0x41,
                 0xFE, 0x00, 0x41,
                 0xD6, 0x00);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
 
         cpu.runInstruction();
 
@@ -1573,9 +1400,7 @@ class Mos6502CpuTest {
     @Test
     void rtiRestoresStatusAndProgramCounterFromStack() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0x40);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x40);
         cpu.registers().setSp(0xFA);
         bus.writeMemory(0x01FB, Mos6502Registers.FLAG_C);
         bus.writeMemory(0x01FC, 0x34);
@@ -1613,9 +1438,7 @@ class Mos6502CpuTest {
     @Test
     void decimalModeAdjustsAdcAndSbcResults() {
         TestBus bus = new TestBus();
-        bus.load(0x2000, 0xF8, 0xA9, 0x45, 0x69, 0x55, 0x38, 0xA9, 0x50, 0xE9, 0x01, 0xD8);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xF8, 0xA9, 0x45, 0x69, 0x55, 0x38, 0xA9, 0x50, 0xE9, 0x01, 0xD8);
 
         assertEquals(2, cpu.runInstruction());
         assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_D));
@@ -1650,15 +1473,36 @@ class Mos6502CpuTest {
 
     @Test
     void illegalOpcodeRestoresProgramCounterForDebugging() {
-        TestBus bus = new TestBus();
-        bus.load(0x2000, 0x02);
-        bus.writeVector(0xFFFC, 0x2000);
-        Mos6502Cpu cpu = new Mos6502Cpu(bus);
+        assertIllegalOnNmos(0x02);
+    }
 
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
+    private static void assertIllegalOnNmos(int... opcodes) {
+        for (int opcode : opcodes) {
+            TestBus bus = new TestBus();
+            Mos6502Cpu cpu = boot(bus, 0x2000, opcode);
 
-        assertEquals("Illegal MOS 6502 opcode 0x02 at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+            IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
+
+            assertEquals("Illegal MOS 6502 opcode 0x%02X at 0x2000".formatted(opcode), failure.getMessage());
+            assertEquals(0x2000, cpu.registers().pc());
+        }
+    }
+
+    private static Mos6502Cpu boot(TestBus bus, int start, int... program) {
+        bus.load(start, program);
+        bus.writeVector(0xFFFC, start);
+        return new Mos6502Cpu(bus);
+    }
+
+    private static Mos6502Cpu boot(
+            TestBus bus,
+            Mos6502Variant variant,
+            int start,
+            int... program
+    ) {
+        bus.load(start, program);
+        bus.writeVector(0xFFFC, start);
+        return new Mos6502Cpu(bus, variant);
     }
 
     private static TestBus singleInstructionBus(int opcode) {

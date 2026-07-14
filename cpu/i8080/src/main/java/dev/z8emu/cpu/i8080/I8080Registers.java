@@ -147,7 +147,8 @@ public final class I8080Registers {
     }
 
     public int f() {
-        return normalizeFlags(f);
+        // All flag write paths normalize before storing.
+        return f;
     }
 
     public void setF(int value) {
