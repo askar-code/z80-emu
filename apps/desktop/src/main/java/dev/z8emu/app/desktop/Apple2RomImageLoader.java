@@ -1,6 +1,7 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.apple2.Apple2Memory;
+import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +22,14 @@ final class Apple2RomImageLoader {
             }
         }
         return Files.readAllBytes(imagePath);
+    }
+
+    static byte[] loadDisk2SlotRom(Path romPath) throws IOException {
+        byte[] rom = Files.readAllBytes(romPath);
+        if (rom.length != Apple2Disk2Controller.SLOT_ROM_SIZE) {
+            throw new IllegalArgumentException("Disk II slot ROM must be exactly 256 bytes: " + romPath);
+        }
+        return rom;
     }
 
     private static byte[] tryLoadEnhancedIIeBundle(Path imagePath) throws IOException {

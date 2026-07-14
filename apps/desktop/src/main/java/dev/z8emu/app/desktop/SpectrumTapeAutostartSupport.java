@@ -2,6 +2,8 @@ package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.spectrum.SpectrumMachine;
 
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+
 final class SpectrumTapeAutostartSupport {
     private static final int[] LOADER_PLAYBACK_PCS = {0x0556, 0x05E3, 0x05E7, 0x05ED};
 
@@ -37,9 +39,5 @@ final class SpectrumTapeAutostartSupport {
                         + " rom=" + machine.board().machineState().selectedRomIndex()
                         + " t=" + machine.currentTState()
         );
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
     }
 }

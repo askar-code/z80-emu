@@ -6,6 +6,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+import static dev.z8emu.app.desktop.ProbeOutput.hex8;
+
 public final class RomProbeLauncher {
     private RomProbeLauncher() {
     }
@@ -57,13 +60,5 @@ public final class RomProbeLauncher {
         System.out.println("ix=0x" + hex16(machine.cpu().registers().ix()));
         System.out.println("iy=0x" + hex16(machine.cpu().registers().iy()));
         System.out.println("t=" + machine.currentTState());
-    }
-
-    private static String hex8(int value) {
-        return "%02X".formatted(value & 0xFF);
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
     }
 }

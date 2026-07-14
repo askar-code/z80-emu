@@ -8,7 +8,11 @@ interface DesktopMachineDefinition {
 
     void validateRom(byte[] romImage, Path romPath);
 
-    void validateArgumentCount(int positionalCount);
+    default void validateArgumentCount(int positionalCount) {
+        if (positionalCount > 2) {
+            throw new IllegalArgumentException("Usage: " + usage());
+        }
+    }
 
     default void validateLaunchOptions(DesktopLaunchOptions options, int positionalCount) {
         if (options.hasAny()) {

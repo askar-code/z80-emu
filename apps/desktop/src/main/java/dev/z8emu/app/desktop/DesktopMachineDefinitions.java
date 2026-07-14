@@ -3,7 +3,6 @@ package dev.z8emu.app.desktop;
 import dev.z8emu.machine.apple2.Apple2Machine;
 import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.apple2.Apple2ModelConfig;
-import dev.z8emu.machine.apple2.disk.Apple2Disk2Controller;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImageLoader;
 import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
@@ -143,13 +142,6 @@ final class DesktopMachineDefinitions {
         }
 
         @Override
-        public void validateArgumentCount(int positionalCount) {
-            if (positionalCount > 2) {
-                throw new IllegalArgumentException("Usage: " + usage());
-            }
-        }
-
-        @Override
         public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath) throws IOException {
             Path tapePath = Path.of(rawPath).toAbsolutePath().normalize();
             return new DesktopLaunchConfig.LoadedSpectrumTape(
@@ -224,13 +216,6 @@ final class DesktopMachineDefinitions {
         }
 
         @Override
-        public void validateArgumentCount(int positionalCount) {
-            if (positionalCount > 2) {
-                throw new IllegalArgumentException("Usage: " + usage());
-            }
-        }
-
-        @Override
         public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath) throws IOException {
             Path tapePath = Path.of(rawPath).toAbsolutePath().normalize();
             return new DesktopLaunchConfig.LoadedRadioTape(
@@ -261,13 +246,6 @@ final class DesktopMachineDefinitions {
         public void validateRom(byte[] romImage, Path romPath) {
             if (!CpcMachine.isSupportedCombinedRomSize(romImage.length)) {
                 throw new IllegalArgumentException("CPC 6128 ROM bundle must be exactly 16 KB, 32 KB, or 48 KB: " + romPath);
-            }
-        }
-
-        @Override
-        public void validateArgumentCount(int positionalCount) {
-            if (positionalCount > 2) {
-                throw new IllegalArgumentException("Usage: " + usage());
             }
         }
 
@@ -315,13 +293,6 @@ final class DesktopMachineDefinitions {
             if (!modelConfig.supportsLaunchImageSize(romImage.length)) {
                 throw new IllegalArgumentException("Apple II image size is not supported by %s: %s"
                         .formatted(modelConfig.modelName(), romPath));
-            }
-        }
-
-        @Override
-        public void validateArgumentCount(int positionalCount) {
-            if (positionalCount > 2) {
-                throw new IllegalArgumentException("Usage: " + usage());
             }
         }
 
@@ -403,11 +374,7 @@ final class DesktopMachineDefinitions {
 
         private static byte[] loadDisk2Rom(Path romPath) {
             try {
-                byte[] rom = Files.readAllBytes(romPath);
-                if (rom.length != Apple2Disk2Controller.SLOT_ROM_SIZE) {
-                    throw new IllegalArgumentException("Disk II slot ROM must be exactly 256 bytes: " + romPath);
-                }
-                return rom;
+                return Apple2RomImageLoader.loadDisk2SlotRom(romPath);
             } catch (IOException e) {
                 throw new IllegalArgumentException("Cannot read Disk II slot ROM: " + romPath, e);
             }

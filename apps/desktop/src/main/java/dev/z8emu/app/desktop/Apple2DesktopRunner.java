@@ -5,6 +5,8 @@ import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.platform.video.FrameBuffer;
 import javax.swing.JFrame;
 
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+
 final class Apple2DesktopRunner {
     private static final int NORMAL_FRAMES_PER_SLICE = 1;
 
@@ -43,7 +45,7 @@ final class Apple2DesktopRunner {
         }
 
         @Override
-        public String title(Throwable failure) {
+        protected String statusTitle() {
             String base = "z8-emu " + machine.board().modelName();
             String status = "source=" + config.sourceLabel()
                     + programStatus(config)
@@ -53,18 +55,7 @@ final class Apple2DesktopRunner {
                     + "  key=" + keyboardController.lastEvent()
                     + diskStatus()
                     + "  cpu=6502";
-
-            if (failure == null) {
-                return base + "  " + status;
-            }
-
-            String message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-            return base + "  " + status + "  stopped: " + message;
-        }
-
-        @Override
-        public boolean turboActive() {
-            return false;
+            return base + "  " + status;
         }
 
         @Override
@@ -105,10 +96,6 @@ final class Apple2DesktopRunner {
         private static FrameDisplayPanel createPanel(Apple2Machine machine) {
             FrameBuffer initialFrame = machine.board().renderVideoFrame();
             return new FrameDisplayPanel(initialFrame.width(), initialFrame.height(), 2);
-        }
-
-        private static String hex16(int value) {
-            return "%04X".formatted(value & 0xFFFF);
         }
 
         private static String programStatus(DesktopLaunchConfig config) {

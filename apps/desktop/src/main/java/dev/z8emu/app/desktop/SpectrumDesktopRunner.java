@@ -1,18 +1,17 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.spectrum.SpectrumMachine;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import javax.swing.JFrame;
 
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+import static dev.z8emu.app.desktop.ProbeOutput.hex8;
+
 final class SpectrumDesktopRunner {
     private static final int NORMAL_FRAMES_PER_SLICE = 1;
+    private static final int TAPE_FRAMES_PER_SLICE = Math.max(1, Integer.getInteger("z8emu.tapeTurboFrames", 1));
 
     private SpectrumDesktopRunner() {
     }
@@ -21,7 +20,7 @@ final class SpectrumDesktopRunner {
         DesktopWindowRunner.open(new Session(machine, config));
     }
 
-    private static final class Session extends AbstractFrameDesktopSession<SpectrumDisplayPanel> {
+    private static final class Session extends AbstractFrameDesktopSession<FrameDisplayPanel> {
         private final SpectrumMachine machine;
         private final DesktopLaunchConfig config;
         private final HostKeyTyper hostKeyTyper;
@@ -31,7 +30,7 @@ final class SpectrumDesktopRunner {
 
         private Session(SpectrumMachine machine, DesktopLaunchConfig config) {
             super(
-                    new SpectrumDisplayPanel(),
+                    new FrameDisplayPanel(SpectrumUlaDevice.FRAME_WIDTH, SpectrumUlaDevice.FRAME_HEIGHT, 2),
                     machine.board().audio(),
                     "spectrum-audio",
                     machine.board().modelConfig().cpuClockHz(),
@@ -39,7 +38,7 @@ final class SpectrumDesktopRunner {
             );
             this.machine = machine;
             this.config = config;
-            this.hostKeyTyper = HostKeyTyper.get(machine);
+            this.hostKeyTyper = new HostKeyTyper(machine);
             this.startupTapeAutoplay = new SpectrumStartupTapeAutoplay(machine, config, hostKeyTyper);
         }
 
@@ -54,7 +53,7 @@ final class SpectrumDesktopRunner {
                     new SpectrumKeyboardController.HostActions() {
                         @Override
                         public boolean typeHostCharacter(char character) {
-                            return queueHostCharacter(machine, character);
+                            return queueHostCharacter(hostKeyTyper, character);
                         }
 
                         @Override
@@ -87,7 +86,7 @@ final class SpectrumDesktopRunner {
         }
 
         @Override
-        public String title(Throwable failure) {
+        protected String statusTitle() {
             String base = "z8-emu " + machine.board().modelConfig().modelName();
             String status = "source=" + config.sourceLabel()
                     + "  pc=0x" + hex16(machine.cpu().registers().pc())
@@ -100,13 +99,7 @@ final class SpectrumDesktopRunner {
                     + "  " + loaderStatus(machine)
                     + "  key=" + keyboardController.lastEvent()
                     + "  host=[symbols direct, Cmd+P play/pause, Cmd+R rewind, Cmd+S stop]";
-
-            if (failure == null) {
-                return base + "  " + status;
-            }
-
-            String message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-            return base + "  " + status + "  stopped: " + message;
+            return base + "  " + status;
         }
 
         @Override
@@ -120,7 +113,7 @@ final class SpectrumDesktopRunner {
                 return;
             }
 
-            int framesPerSlice = machine.board().tape().isPlaying() ? tapeFramesPerSlice() : NORMAL_FRAMES_PER_SLICE;
+            int framesPerSlice = machine.board().tape().isPlaying() ? TAPE_FRAMES_PER_SLICE : NORMAL_FRAMES_PER_SLICE;
             for (int frameIndex = 0; frameIndex < framesPerSlice; frameIndex++) {
                 if (frameIndex > 0 && !machine.board().tape().isPlaying()) {
                     break;
@@ -137,7 +130,7 @@ final class SpectrumDesktopRunner {
         }
 
         @Override
-        protected void presentFrameBuffer(SpectrumDisplayPanel component, dev.z8emu.platform.video.FrameBuffer frame) {
+        protected void presentFrameBuffer(FrameDisplayPanel component, dev.z8emu.platform.video.FrameBuffer frame) {
             component.present(frame);
         }
 
@@ -157,63 +150,32 @@ final class SpectrumDesktopRunner {
 
         @Override
         public void handleFailure(Throwable failure) {
-            writeFailureReport(machine, config, keyboardController.lastEvent(), failure);
+            CrashReportWriter.write(
+                    config.sourceLabel(),
+                    machine.cpu().registers().pc(),
+                    body -> {
+                        body.append("sp=0x").append(hex16(machine.cpu().registers().sp())).append('\n');
+                        body.append("af=0x").append(hex16(machine.cpu().registers().af())).append('\n');
+                        body.append("bc=0x").append(hex16(machine.cpu().registers().bc())).append('\n');
+                        body.append("de=0x").append(hex16(machine.cpu().registers().de())).append('\n');
+                        body.append("hl=0x").append(hex16(machine.cpu().registers().hl())).append('\n');
+                        body.append("ix=0x").append(hex16(machine.cpu().registers().ix())).append('\n');
+                        body.append("iy=0x").append(hex16(machine.cpu().registers().iy())).append('\n');
+                        body.append("iff1=").append(machine.cpu().registers().iff1()).append('\n');
+                        body.append("iff2=").append(machine.cpu().registers().iff2()).append('\n');
+                        body.append("im=").append(machine.cpu().registers().interruptMode()).append('\n');
+                        body.append("t=").append(machine.currentTState()).append('\n');
+                        body.append("tape=").append(tapeStatus(machine, config)).append('\n');
+                    },
+                    keyboardController.lastEvent(),
+                    address -> machine.board().memory().read(address),
+                    failure
+            );
         }
 
         @Override
         public String threadName() {
             return "spectrum-video-runner";
-        }
-    }
-
-    private static void writeFailureReport(
-            SpectrumMachine machine,
-            DesktopLaunchConfig config,
-            String lastKeyEvent,
-            Throwable failure
-    ) {
-        try {
-            Path reportPath = Path.of("/tmp/z8-emu-last-crash.txt");
-            StringWriter stack = new StringWriter();
-            failure.printStackTrace(new PrintWriter(stack));
-
-            int pc = machine.cpu().registers().pc();
-            StringBuilder body = new StringBuilder();
-            body.append("source=").append(config.sourceLabel()).append('\n');
-            body.append("pc=0x").append(hex16(pc)).append('\n');
-            body.append("sp=0x").append(hex16(machine.cpu().registers().sp())).append('\n');
-            body.append("af=0x").append(hex16(machine.cpu().registers().af())).append('\n');
-            body.append("bc=0x").append(hex16(machine.cpu().registers().bc())).append('\n');
-            body.append("de=0x").append(hex16(machine.cpu().registers().de())).append('\n');
-            body.append("hl=0x").append(hex16(machine.cpu().registers().hl())).append('\n');
-            body.append("ix=0x").append(hex16(machine.cpu().registers().ix())).append('\n');
-            body.append("iy=0x").append(hex16(machine.cpu().registers().iy())).append('\n');
-            body.append("iff1=").append(machine.cpu().registers().iff1()).append('\n');
-            body.append("iff2=").append(machine.cpu().registers().iff2()).append('\n');
-            body.append("im=").append(machine.cpu().registers().interruptMode()).append('\n');
-            body.append("t=").append(machine.currentTState()).append('\n');
-            body.append("tape=").append(tapeStatus(machine, config)).append('\n');
-            body.append("lastKey=").append(lastKeyEvent).append('\n');
-            body.append("bytesAroundPc:\n");
-            for (int address = pc - 16; address <= pc + 16; address++) {
-                int normalized = address & 0xFFFF;
-                body.append(hex16(normalized))
-                        .append(": ")
-                        .append(hex8(machine.board().memory().read(normalized)))
-                        .append('\n');
-            }
-            body.append("failure=\n").append(stack);
-
-            Files.writeString(
-                    reportPath,
-                    body.toString(),
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE
-            );
-            System.err.println("Wrote crash report to " + reportPath);
-        } catch (IOException io) {
-            System.err.println("Failed to write crash report: " + io.getMessage());
         }
     }
 
@@ -255,125 +217,47 @@ final class SpectrumDesktopRunner {
                 + " lastk=0x" + hex8(lastKey);
     }
 
-    private static boolean queueHostCharacter(SpectrumMachine machine, char character) {
-        HostKeyTyper typer = HostKeyTyper.get(machine);
-        return switch (character) {
-            case '"' -> {
-                typer.queueChord(new int[][]{{7, 1}, {5, 0}});
-                yield true;
-            }
-            case ':' -> {
-                typer.queueChord(new int[][]{{7, 1}, {0, 1}});
-                yield true;
-            }
-            case ';' -> {
-                typer.queueChord(new int[][]{{7, 1}, {5, 1}});
-                yield true;
-            }
-            case ',' -> {
-                typer.queueChord(new int[][]{{7, 1}, {7, 3}});
-                yield true;
-            }
-            case '.' -> {
-                typer.queueChord(new int[][]{{7, 1}, {7, 2}});
-                yield true;
-            }
-            case '!' -> {
-                typer.queueChord(new int[][]{{7, 1}, {3, 0}});
-                yield true;
-            }
-            case '?' -> {
-                typer.queueChord(new int[][]{{7, 1}, {0, 3}});
-                yield true;
-            }
-            case '\'' -> {
-                typer.queueChord(new int[][]{{7, 1}, {4, 3}});
-                yield true;
-            }
-            case '#' -> {
-                typer.queueChord(new int[][]{{7, 1}, {3, 2}});
-                yield true;
-            }
-            case '$' -> {
-                typer.queueChord(new int[][]{{7, 1}, {3, 3}});
-                yield true;
-            }
-            case '%' -> {
-                typer.queueChord(new int[][]{{7, 1}, {3, 4}});
-                yield true;
-            }
-            case '&' -> {
-                typer.queueChord(new int[][]{{7, 1}, {4, 4}});
-                yield true;
-            }
-            case '@' -> {
-                typer.queueChord(new int[][]{{7, 1}, {3, 1}});
-                yield true;
-            }
-            case '+' -> {
-                typer.queueChord(new int[][]{{7, 1}, {6, 2}});
-                yield true;
-            }
-            case '-' -> {
-                typer.queueChord(new int[][]{{7, 1}, {6, 3}});
-                yield true;
-            }
-            case '*' -> {
-                typer.queueChord(new int[][]{{7, 1}, {7, 4}});
-                yield true;
-            }
-            case '/' -> {
-                typer.queueChord(new int[][]{{7, 1}, {0, 4}});
-                yield true;
-            }
-            case '(' -> {
-                typer.queueChord(new int[][]{{7, 1}, {4, 2}});
-                yield true;
-            }
-            case ')' -> {
-                typer.queueChord(new int[][]{{7, 1}, {4, 1}});
-                yield true;
-            }
-            case '=' -> {
-                typer.queueChord(new int[][]{{7, 1}, {6, 1}});
-                yield true;
-            }
-            case '<' -> {
-                typer.queueChord(new int[][]{{7, 1}, {2, 3}});
-                yield true;
-            }
-            case '>' -> {
-                typer.queueChord(new int[][]{{7, 1}, {2, 4}});
-                yield true;
-            }
-            case '_' -> {
-                typer.queueChord(new int[][]{{7, 1}, {4, 0}});
-                yield true;
-            }
-            default -> false;
+    private static boolean queueHostCharacter(HostKeyTyper typer, char character) {
+        int[] key = switch (character) {
+            case '"' -> new int[]{5, 0};
+            case ':' -> new int[]{0, 1};
+            case ';' -> new int[]{5, 1};
+            case ',' -> new int[]{7, 3};
+            case '.' -> new int[]{7, 2};
+            case '!' -> new int[]{3, 0};
+            case '?' -> new int[]{0, 3};
+            case '\'' -> new int[]{4, 3};
+            case '#' -> new int[]{3, 2};
+            case '$' -> new int[]{3, 3};
+            case '%' -> new int[]{3, 4};
+            case '&' -> new int[]{4, 4};
+            case '@' -> new int[]{3, 1};
+            case '+' -> new int[]{6, 2};
+            case '-' -> new int[]{6, 3};
+            case '*' -> new int[]{7, 4};
+            case '/' -> new int[]{0, 4};
+            case '(' -> new int[]{4, 2};
+            case ')' -> new int[]{4, 1};
+            case '=' -> new int[]{6, 1};
+            case '<' -> new int[]{2, 3};
+            case '>' -> new int[]{2, 4};
+            case '_' -> new int[]{4, 0};
+            default -> null;
         };
-    }
-
-    private static int tapeFramesPerSlice() {
-        return Math.max(1, Integer.getInteger("z8emu.tapeTurboFrames", 1));
+        if (key == null) {
+            return false;
+        }
+        typer.queueChord(new int[][]{{7, 1}, key});
+        return true;
     }
 
     private static boolean tapeTurboEnabled() {
-        return tapeFramesPerSlice() > 1;
-    }
-
-    private static String hex8(int value) {
-        return "%02X".formatted(value & 0xFF);
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
+        return TAPE_FRAMES_PER_SLICE > 1;
     }
 
     static final class HostKeyTyper {
         private static final int FRAMES_PER_PRESS = 3;
         private static final int FRAMES_PER_GAP = 2;
-        private static final java.util.Map<SpectrumMachine, HostKeyTyper> INSTANCES = new java.util.WeakHashMap<>();
 
         private final SpectrumMachine machine;
         private final Queue<QueuedChord> queue = new ArrayDeque<>();
@@ -383,10 +267,6 @@ final class SpectrumDesktopRunner {
 
         private HostKeyTyper(SpectrumMachine machine) {
             this.machine = machine;
-        }
-
-        static synchronized HostKeyTyper get(SpectrumMachine machine) {
-            return INSTANCES.computeIfAbsent(machine, HostKeyTyper::new);
         }
 
         synchronized void queueChord(int[][] keys) {

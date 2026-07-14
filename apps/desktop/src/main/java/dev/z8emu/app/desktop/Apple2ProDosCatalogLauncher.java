@@ -4,7 +4,10 @@ import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.zip.CRC32;
+
+import static dev.z8emu.app.desktop.ProbeOutput.crc32Hex;
+import static dev.z8emu.app.desktop.ProbeOutput.hex16;
+import static dev.z8emu.app.desktop.ProbeOutput.hex8;
 
 public final class Apple2ProDosCatalogLauncher {
     private Apple2ProDosCatalogLauncher() {
@@ -225,20 +228,6 @@ public final class Apple2ProDosCatalogLauncher {
 
     private static String escapeString(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static String crc32Hex(byte[] data) {
-        CRC32 crc32 = new CRC32();
-        crc32.update(data, 0, data.length);
-        return "%08X".formatted(crc32.getValue());
-    }
-
-    private static String hex8(int value) {
-        return "%02X".formatted(value & 0xFF);
-    }
-
-    private static String hex16(int value) {
-        return "%04X".formatted(value & 0xFFFF);
     }
 
     private record Config(
