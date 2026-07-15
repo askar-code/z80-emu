@@ -1,6 +1,7 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64VideoDevice;
 import dev.z8emu.platform.bus.ClockedCpuBus;
 import dev.z8emu.platform.bus.io.IoAddressSpace;
 import dev.z8emu.platform.bus.io.IoSelector;
@@ -11,6 +12,7 @@ import java.util.Objects;
 public final class C64Bus extends ClockedCpuBus {
     private final C64Memory memory;
     private final C64CpuPort cpuPort;
+    private final C64VideoDevice video;
     private final C64CiaDevice cia1;
     private final C64CiaDevice cia2;
     private final IoAddressSpace memoryMappedIo;
@@ -19,12 +21,14 @@ public final class C64Bus extends ClockedCpuBus {
             TStateCounter clock,
             C64Memory memory,
             C64CpuPort cpuPort,
+            C64VideoDevice video,
             C64CiaDevice cia1,
             C64CiaDevice cia2
     ) {
         super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
         this.cpuPort = Objects.requireNonNull(cpuPort, "cpuPort");
+        this.video = Objects.requireNonNull(video, "video");
         this.cia1 = Objects.requireNonNull(cia1, "cia1");
         this.cia2 = Objects.requireNonNull(cia2, "cia2");
         this.memoryMappedIo = buildMemoryMappedIo();
@@ -91,6 +95,12 @@ public final class C64Bus extends ClockedCpuBus {
 
     private IoAddressSpace buildMemoryMappedIo() {
         IoAddressSpace ioMap = IoAddressSpace.withUnmappedValue(0xFF);
+        ioMap.mapReadWrite(
+                "c64.vic",
+                IoSelector.mirroredRange(0xD000, 0xD03F, 0x03C0),
+                access -> video.readRegister(access.offset()),
+                (access, value) -> video.writeRegister(access.offset(), value)
+        );
         ioMap.mapReadWrite(
                 "c64.color-ram",
                 IoSelector.range(0xD800, 0xDBFF),

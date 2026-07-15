@@ -1,6 +1,7 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64VideoDevice;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.bus.io.IoTraceSink;
 import dev.z8emu.platform.machine.VideoMachineBoard;
@@ -14,8 +15,8 @@ public final class C64Board implements VideoMachineBoard {
     private final C64CpuPort cpuPort;
     private final C64CiaDevice cia1;
     private final C64CiaDevice cia2;
+    private final C64VideoDevice video;
     private final C64Bus bus;
-    private final FrameBuffer frame;
 
     public C64Board(C64ModelConfig modelConfig, C64Memory memory, TStateCounter clock) {
         this.modelConfig = Objects.requireNonNull(modelConfig, "modelConfig");
@@ -24,8 +25,8 @@ public final class C64Board implements VideoMachineBoard {
         this.cpuPort = new C64CpuPort();
         this.cia1 = new C64CiaDevice();
         this.cia2 = new C64CiaDevice();
-        this.bus = new C64Bus(requiredClock, memory, cpuPort, cia1, cia2);
-        this.frame = new FrameBuffer(modelConfig.frameWidth(), modelConfig.frameHeight());
+        this.video = new C64VideoDevice(memory);
+        this.bus = new C64Bus(requiredClock, memory, cpuPort, video, cia1, cia2);
     }
 
     @Override
@@ -39,17 +40,19 @@ public final class C64Board implements VideoMachineBoard {
         cpuPort.reset();
         cia1.reset();
         cia2.reset();
+        video.reset();
     }
 
     @Override
     public void onTStatesElapsed(int tStates, long currentTState) {
         cia1.onTStatesElapsed(tStates);
         cia2.onTStatesElapsed(tStates);
+        video.onTStatesElapsed(tStates);
     }
 
     @Override
     public boolean maskableInterruptLineActive(long currentTState) {
-        return cia1.interruptLineActive();
+        return cia1.interruptLineActive() || video.interruptLineActive();
     }
 
     @Override
@@ -59,8 +62,7 @@ public final class C64Board implements VideoMachineBoard {
 
     @Override
     public FrameBuffer renderVideoFrame() {
-        frame.clear(0xFF000000);
-        return frame;
+        return video.renderFrame(cia2.readRegister(0x00));
     }
 
     public C64Memory memory() {
@@ -77,6 +79,10 @@ public final class C64Board implements VideoMachineBoard {
 
     public C64CiaDevice cia2() {
         return cia2;
+    }
+
+    public C64VideoDevice video() {
+        return video;
     }
 
     public C64ModelConfig modelConfig() {
