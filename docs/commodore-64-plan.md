@@ -98,7 +98,7 @@ battle-tested by the Apple II machines.)
 - [x] 0. Module skeleton, memory + PLA + 6510 port, Klaus gate
 - [x] 1. CIA 6526 pair + NMI platform plumbing
 - [x] 2. VIC-II text mode + raster + boot to READY. (headless probe)
-- [ ] 3. Keyboard matrix + desktop runner + BASIC smoke
+- [x] 3. Keyboard matrix + desktop runner + BASIC smoke
 - [ ] 4. PRG loading (probe option + desktop media)
 - [ ] 5. SID minimal (3 voices, ADSR, no filter) through PCM
 - [ ] 6. Accuracy/games backlog (illegals, badlines, sprites, bitmap, tape/disk)
@@ -227,6 +227,20 @@ standard text, XSCROLL/YSCROLL inert, full-frame snapshot only.
   AbstractMappedHostKeyboardController<matrix-position>` host mapping.
 - Gate: `c64BasicSmoke` = boot → `--keys=PRINT<SP>2+2<CR>` →
   `--expect-screen= 4`; manual desktop launch (`--machine=c64 media`).
+
+Landed 2026-07-16 (Codex batch `codex/c64-p3-keyboard`, adversarial review
+1 minor note, fault-injection 6/6 killed). c64BasicSmoke types all 10
+characters through the matrix and the KERNAL scanner (keysTyped=10/10,
+` 4` on screen at step 837 000); Phase-2 READY CRC unchanged (0xC72BD0D1);
+desktop window verified live for 25 s without exceptions. Frozen Phase 3
+conventions: CIA ports use real pin semantics (driven = latch | ~ddr,
+read = driven & external — external lines can pull output bits low);
+matrix models direct switch conduction both directions, no ghosting;
+joystick overlays deferred (control port 2 on CIA1 PA0–PA4, port 1 on
+PB0–PB4); RESTORE is a level into the runtime's NMI edge detector;
+typing = 2 press + 2 gap frames. Known probe limitation: --stop-pc and
+the pc profile are not sampled inside the --keys typing phase
+(diagnostic-tooling gap, deliberate).
 
 ### Phase 4: PRG loading
 
