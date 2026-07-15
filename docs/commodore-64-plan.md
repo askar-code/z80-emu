@@ -88,14 +88,16 @@ battle-tested by the Apple II machines.)
   conventions.
 - Frame geometry: 384×272 visible PAL window (borders included), 320×200
   text window centered; exact numbers frozen in Phase 2 for CRC baselines.
-- PETSCII→ASCII screen scrape for `--expect-screen` uses screen-code
-  mapping (0x01–0x1A → A–Z, 0x30–0x39 digits, 0x20 space, rest '.').
+- PETSCII→ASCII screen scrape for `--expect-screen` (as landed in
+  Phase 2): strip bit 7 (reverse video), then 0x00 → '@', 0x01–0x1A →
+  A–Z, the whole 0x20–0x3F block passes through as ASCII (space, digits,
+  punctuation — the boot banner needs '*'), rest '.'.
 
 ## Phase queue
 
 - [x] 0. Module skeleton, memory + PLA + 6510 port, Klaus gate
 - [x] 1. CIA 6526 pair + NMI platform plumbing
-- [ ] 2. VIC-II text mode + raster + boot to READY. (headless probe)
+- [x] 2. VIC-II text mode + raster + boot to READY. (headless probe)
 - [ ] 3. Keyboard matrix + desktop runner + BASIC smoke
 - [ ] 4. PRG loading (probe option + desktop media)
 - [ ] 5. SID minimal (3 voices, ADSR, no filter) through PCM
@@ -197,6 +199,17 @@ can re-latch within the next instruction).
   timer A, screen-editor init; debug hangs with the pc-profile.
 - Gate: `c64ReadySmoke` green; frame PNG dumped, CRC recorded here as the
   Phase-2 baseline.
+
+Landed 2026-07-16 (Codex batch `codex/c64-p2-vic`, adversarial review 0
+findings, fault-injection 6/6 killed). The real KERNAL 901227-03 + BASIC
+901226-01 boot to READY. in 591 300 instructions on the first attempt —
+through RAMTAS, CINT's $FF5E `LDA $D012` PAL-detection poll (which also
+exercises the raster-compare IRST latch at line 311) and the CIA1 jiffy
+IRQ. **Phase-2 frame CRC baseline: 0xC72BD0D1** (`c64ReadySmoke` boot
+screen, 384×272, Pepto palette, border 14 / background 6). Frozen Phase 2
+simplifications: light pen reads 0, sprite/collision registers read 0
+(real chip read-clears), ECM/BMM/MCM stored but renderer is always
+standard text, XSCROLL/YSCROLL inert, full-frame snapshot only.
 
 ### Phase 3: keyboard + desktop runner
 
