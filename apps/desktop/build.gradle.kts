@@ -64,7 +64,7 @@ tasks.register<JavaExec>("apple2BasicSmoke") {
     classpath = sourceSets.main.get().runtimeClasspath
     workingDir = rootProject.projectDir
     args(
-        providers.gradleProperty("apple2.rom").orElse("apple2plus-12k.rom").get(),
+        providers.gradleProperty("apple2.rom").orElse("media/apple2plus-12k.rom").get(),
         "1500000",
         "--keys=PRINT<SP>2+2<CR>",
         "--expect-screen=4"
@@ -80,13 +80,13 @@ tasks.register<JavaExec>("apple2SuperDriveSystemSmoke") {
     mainClass.set("dev.z8emu.app.desktop.Apple2RomProbeLauncher")
     classpath = sourceSets.main.get().runtimeClasspath
     workingDir = rootProject.projectDir
-    val superDriveRom = providers.gradleProperty("apple2.superdrive35.rom").orElse("341-0438-A.bin").get()
+    val superDriveRom = providers.gradleProperty("apple2.superdrive35.rom").orElse("media/341-0438-A.bin").get()
     val systemDisk = providers.gradleProperty("apple2.superdrive35.systemDisk")
         .orElse("build/apple2-superdrive/apple2e-iic-iicplus-system-disk.po")
         .get()
     args(
         "--machine=apple2e",
-        ".",
+        "media",
         "12000000",
         "--superdrive35-rom=$superDriveRom",
         "--superdrive35-media=$systemDisk",
@@ -105,13 +105,13 @@ tasks.register<JavaExec>("apple2SuperDrivePopSmoke") {
     mainClass.set("dev.z8emu.app.desktop.Apple2RomProbeLauncher")
     classpath = sourceSets.main.get().runtimeClasspath
     workingDir = rootProject.projectDir
-    val superDriveRom = providers.gradleProperty("apple2.superdrive35.rom").orElse("341-0438-A.bin").get()
+    val superDriveRom = providers.gradleProperty("apple2.superdrive35.rom").orElse("media/341-0438-A.bin").get()
     val popDisk = providers.gradleProperty("apple2.superdrive35.popDisk")
-        .orElse("Prince of Persia (Cracked 3.5 floppy for IIc+).po")
+        .orElse("media/Prince of Persia (Cracked 3.5 floppy for IIc+).po")
         .get()
     args(
         "--machine=apple2e",
-        ".",
+        "media",
         "20000000",
         "--superdrive35-rom=$superDriveRom",
         "--superdrive35-media=$popDisk",

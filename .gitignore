@@ -4,6 +4,7 @@ build/
 out/
 *.class
 tmp/
+media/
 *.rom
 *.tap
 *.tzx

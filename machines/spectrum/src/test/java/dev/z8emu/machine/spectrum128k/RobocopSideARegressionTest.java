@@ -25,8 +25,8 @@ class RobocopSideARegressionTest {
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
     void choosingKeyboardControlsAfterRobocopSideALoadDoesNotDropToSystemMenu() throws Exception {
         Path projectRoot = findProjectRoot();
-        Spectrum128Machine machine = new Spectrum128Machine(Files.readAllBytes(projectRoot.resolve("128.rom")));
-        machine.board().tape().load(TapeLoaders.load(projectRoot.resolve("RobocopA.tzx")));
+        Spectrum128Machine machine = new Spectrum128Machine(Files.readAllBytes(projectRoot.resolve("media/128.rom")));
+        machine.board().tape().load(TapeLoaders.load(projectRoot.resolve("media/RobocopA.tzx")));
 
         waitForPc(machine, TAPE_LOADER_MENU_PC, MENU_TIMEOUT_TSTATES);
         pressKey(machine, ENTER_ROW, ENTER_COLUMN, 12);
@@ -58,13 +58,13 @@ class RobocopSideARegressionTest {
     private static Path findProjectRoot() throws IOException {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null) {
-            if (Files.isRegularFile(current.resolve("128.rom"))
-                    && Files.isRegularFile(current.resolve("RobocopA.tzx"))) {
+            if (Files.isRegularFile(current.resolve("media/128.rom"))
+                    && Files.isRegularFile(current.resolve("media/RobocopA.tzx"))) {
                 return current;
             }
             current = current.getParent();
         }
-        throw new IOException("Could not locate project root with 128.rom and RobocopA.tzx");
+        throw new IOException("Could not locate project root with media/128.rom and media/RobocopA.tzx");
     }
 
     private static void waitForPc(Spectrum128Machine machine, int targetPc, long maxTStates) {

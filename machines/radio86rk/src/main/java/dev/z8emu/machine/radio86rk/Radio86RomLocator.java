@@ -6,7 +6,8 @@ import java.nio.file.Path;
 /**
  * Shared discovery policy for local Radio-86RK ROM files: an explicit
  * system-property override wins, otherwise walk up from the working
- * directory looking for the default file name.
+ * directory looking for the default file name in the repo's media/
+ * directory (bare file names are still honored for ad-hoc layouts).
  */
 public final class Radio86RomLocator {
     private Radio86RomLocator() {
@@ -21,7 +22,11 @@ public final class Radio86RomLocator {
 
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null) {
-            Path candidate = current.resolve(defaultFileName);
+            Path candidate = current.resolve("media").resolve(defaultFileName);
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+            candidate = current.resolve(defaultFileName);
             if (Files.exists(candidate)) {
                 return candidate;
             }

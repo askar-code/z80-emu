@@ -79,11 +79,13 @@ battle-tested by the Apple II machines.)
   clock, so raster polling and raster IRQs work even though rendering is
   per-frame. Cycle-exact per-line rendering, badlines, and mid-frame
   register splits are OUT until a target program needs them.
-- **ROM files** (user-provided, repo root, gitignored, never committed):
-  `basic.901226-01.bin` (8K), `kernal.901227-03.bin` (8K),
-  `chargen.901225-01.bin` (4K). Loader accepts a directory argument plus
-  `-Dc64.basicRom= / -Dc64.kernalRom= / -Dc64.chargenRom=` overrides,
-  following `Apple2RomImageLoader` conventions.
+- **ROM files** (user-provided, in the gitignored `media/` directory,
+  never committed): `basic.901226-01.bin` (8K), `kernal.901227-03.bin` (8K),
+  `characters.901225-01.bin` (4K — actual local filename; the chip is often
+  distributed as `chargen.901225-01.bin`). Loader accepts a directory
+  argument (`media`) plus `-Dc64.basicRom= / -Dc64.kernalRom= /
+  -Dc64.chargenRom=` overrides, following `Apple2RomImageLoader`
+  conventions.
 - Frame geometry: 384×272 visible PAL window (borders included), 320×200
   text window centered; exact numbers frozen in Phase 2 for CRC baselines.
 - PETSCII→ASCII screen scrape for `--expect-screen` uses screen-code
@@ -122,7 +124,7 @@ New Gradle project `:machine-c64` (`machines/c64`), api :emu-platform +
   cpu/mos6502 tests (flat-64K bus, load binary at $0000, PC=$0400, loop
   until PC self-loop; success PC asserted, any other trap reports PC),
   tag-gated Gradle task `:cpu-mos6502:klausTest` (zexTest pattern), binary
-  gitignored in repo root. Contingency: if the decimal section fails on
+  gitignored in `media/`. Contingency: if the decimal section fails on
   textbook-BCD flags, fix `decimalAdd`/`decimalSubtract` NMOS flag
   semantics in the core (preferred) rather than assembling a
   decimal-disabled binary.
@@ -211,7 +213,7 @@ can re-latch within the next instruction).
   bindKeyboardController); `C64KeyboardController extends
   AbstractMappedHostKeyboardController<matrix-position>` host mapping.
 - Gate: `c64BasicSmoke` = boot → `--keys=PRINT<SP>2+2<CR>` →
-  `--expect-screen= 4`; manual desktop launch (`--machine=c64 .`).
+  `--expect-screen= 4`; manual desktop launch (`--machine=c64 media`).
 
 ### Phase 4: PRG loading
 

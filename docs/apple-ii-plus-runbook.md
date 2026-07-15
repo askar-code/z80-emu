@@ -11,7 +11,7 @@ launcher ids are `apple2`/`apple2plus` for II Plus and
 The canonical local ROM path is:
 
 ```bash
-apple2plus-12k.rom
+media/apple2plus-12k.rom
 ```
 
 The file is intentionally ignored by git through `*.rom`. It must stay outside
@@ -26,7 +26,7 @@ chips plus the shared F8 monitor ROM found under `~/Downloads/apple2` and
 Launch the Apple II Plus desktop shell from the repo root:
 
 ```bash
-./gradlew :app-desktop:run --args='--machine=apple2plus apple2plus-12k.rom'
+./gradlew :app-desktop:run --args='--machine=apple2plus media/apple2plus-12k.rom'
 ```
 
 Expected first screen:
@@ -78,7 +78,7 @@ expectScreenFound=true
 For custom probe runs, call `apple2RomProbe` directly:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 1500000 --keys=PRINT<SP>2+2<CR> --expect-screen=4'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 1500000 --keys=PRINT<SP>2+2<CR> --expect-screen=4'
 ```
 
 Arguments:
@@ -135,7 +135,7 @@ For debugger-style bring-up before Disk II, the desktop launcher accepts one
 optional raw Apple II binary after the ROM path:
 
 ```bash
-./gradlew :app-desktop:run --args='--machine=apple2plus --load-address=0800 --start-address=0800 apple2plus-12k.rom /path/to/program.bin'
+./gradlew :app-desktop:run --args='--machine=apple2plus --load-address=0800 --start-address=0800 media/apple2plus-12k.rom /path/to/program.bin'
 ```
 
 Options:
@@ -157,7 +157,7 @@ through the Disk II soft switches and read latch.
 Run a disk image in the desktop shell without a Disk II PROM:
 
 ```bash
-./gradlew :app-desktop:run --args='--machine=apple2plus apple2plus-12k.rom build/apple2-oregon-sit/oregon-trail-side-a.dsk'
+./gradlew :app-desktop:run --args='--machine=apple2plus media/apple2plus-12k.rom build/apple2-oregon-sit/oregon-trail-side-a.dsk'
 ```
 
 This inserts the disk and then lets the Apple II Plus ROM boot normally to the
@@ -169,7 +169,7 @@ auto-turbo path.
 Run a disk image through an externally supplied Disk II slot ROM:
 
 ```bash
-./gradlew :app-desktop:run --args='--machine=apple2plus --disk2-rom=/path/to/disk2.rom apple2plus-12k.rom build/apple2-oregon-sit/oregon-trail-side-a.dsk'
+./gradlew :app-desktop:run --args='--machine=apple2plus --disk2-rom=/path/to/disk2.rom media/apple2plus-12k.rom build/apple2-oregon-sit/oregon-trail-side-a.dsk'
 ```
 
 The Disk II ROM file must be exactly 256 bytes. When both `--disk2-rom` and a
@@ -202,20 +202,20 @@ side directly instead of loading P6 bytes.
 Headless external-PROM boot probe:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 200000000 --disk=build/apple2-oregon-sit/oregon-trail-side-a.dsk --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --dump-frame=build/apple2-oregon-disk2-prom.png --profile-pc-top=20'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 200000000 --disk=build/apple2-oregon-sit/oregon-trail-side-a.dsk --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --dump-frame=build/apple2-oregon-disk2-prom.png --profile-pc-top=20'
 ```
 
 Expected result: the run reaches the Oregon Trail menu and waits in its keyboard
 poll loop. To smoke the first menu choice:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 220000000 --disk=build/apple2-oregon-sit/oregon-trail-side-a.dsk --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --key-poll-pc=6205,6208 --keys=1<CR> --dump-frame=build/apple2-oregon-prom-choice1-cr.png --expect-frame-crc=E6A0C03F --profile-pc-top=20'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 220000000 --disk=build/apple2-oregon-sit/oregon-trail-side-a.dsk --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --key-poll-pc=6205,6208 --keys=1<CR> --dump-frame=build/apple2-oregon-prom-choice1-cr.png --expect-frame-crc=E6A0C03F --profile-pc-top=20'
 ```
 
 For a short Disk II routing trace, add:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 2000000 --disk=build/apple2-oregon-sit/oregon-trail-side-a.dsk --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --trace-io --trace-disk2 --trace-limit=80'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 2000000 --disk=build/apple2-oregon-sit/oregon-trail-side-a.dsk --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --trace-io --trace-disk2 --trace-limit=80'
 ```
 
 Disk II timing sanity check:
@@ -250,7 +250,7 @@ Current disk limits:
 Inspect a ProDOS `.po` image root catalog:
 
 ```bash
-./gradlew :app-desktop:apple2ProDosCatalog --args='"Prince of Persia (Cracked 3.5 floppy for IIc+).po"'
+./gradlew :app-desktop:apple2ProDosCatalog --args='"media/Prince of Persia (Cracked 3.5 floppy for IIc+).po"'
 ```
 
 For the local Prince of Persia image, expected output includes:
@@ -263,13 +263,13 @@ PRODOS type=0xFF key=8 blocks=9 eof=4096 storage=2 crc32=0xE5273478
 Extract the ProDOS loader file for disassembly or byte-level comparison:
 
 ```bash
-./gradlew :app-desktop:apple2ProDosCatalog --args='"Prince of Persia (Cracked 3.5 floppy for IIc+).po" --extract=PRODOS --output=build/apple2-pop/PRODOS.bin'
+./gradlew :app-desktop:apple2ProDosCatalog --args='"media/Prince of Persia (Cracked 3.5 floppy for IIc+).po" --extract=PRODOS --output=build/apple2-pop/PRODOS.bin'
 ```
 
 Scan the loader as linear 6502 code loaded at `$2000`:
 
 ```bash
-./gradlew :app-desktop:apple2ProDosCatalog --args='"Prince of Persia (Cracked 3.5 floppy for IIc+).po" --scan=PRODOS --load-address=2000 --scan-limit=24'
+./gradlew :app-desktop:apple2ProDosCatalog --args='"media/Prince of Persia (Cracked 3.5 floppy for IIc+).po" --scan=PRODOS --load-address=2000 --scan-limit=24'
 ```
 
 Useful current markers from the local image:
@@ -297,8 +297,8 @@ ioRefs:
 The Apple IIc Plus detour has been removed. The current PoP target is Apple IIe
 128K again, using the new low-level 5.25-inch WOZ images:
 
-- `Prince of Persia side A.woz`
-- `Prince of Persia side B.woz`
+- `media/Prince of Persia side A.woz`
+- `media/Prince of Persia side B.woz`
 
 Their WOZ metadata says:
 
@@ -321,7 +321,7 @@ media image in drive 1 and returns no data when software selects drive 2.
 Current side-A WOZ probe:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 100000000 --disk="Prince of Persia side A.woz" --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --stop-pc=0800,0801,0802,0803,0804 --profile-pc-top=16 --watch-addr=0800,0801,0802,0803,0804,0805,0806,0807,0808,0809'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 100000000 --disk="media/Prince of Persia side A.woz" --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --stop-pc=0800,0801,0802,0803,0804 --profile-pc-top=16 --watch-addr=0800,0801,0802,0803,0804,0805,0806,0807,0808,0809'
 ```
 
 Expected boot-sector stop:
@@ -340,7 +340,7 @@ A longer run now gets past the Disk II ROM, the custom track reader, and the
 title screen:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 800000000 --disk="Prince of Persia side A.woz" --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --keys=<SPACE> --key-poll-pc=0CC2 --profile-pc-top=16 --watch-addr=2F00,3000,4000,6000,7000,8000 --dump-frame=build/apple2-pop-woz-side-a-dhgr-space.png'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 800000000 --disk="media/Prince of Persia side A.woz" --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --keys=<SPACE> --key-poll-pc=0CC2 --profile-pc-top=16 --watch-addr=2F00,3000,4000,6000,7000,8000 --dump-frame=build/apple2-pop-woz-side-a-dhgr-space.png'
 ```
 
 Expected current keyboard-latch probe result:
@@ -384,7 +384,7 @@ Manual desktop controls for the current PoP path:
 Apple IIe 128K compatibility command for the older `.po` diagnostic image:
 
 ```bash
-./gradlew :app-desktop:run --args='--machine=apple2e apple2plus-12k.rom "Prince of Persia (Cracked 3.5 floppy for IIc+).po"'
+./gradlew :app-desktop:run --args='--machine=apple2e media/apple2plus-12k.rom "media/Prince of Persia (Cracked 3.5 floppy for IIc+).po"'
 ```
 
 Do not use `apple2plus-12k.rom` as an Apple IIe stand-in for PoP debugging.
@@ -400,7 +400,7 @@ Cx ROM, and `$C00A/$C00B` choose internal/external `$C300`.
 Real Apple IIe ROM reset-vector smoke:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 20 --stop-pc=FA62 --watch-addr=FFFC,FFFD,C100,C65C,C800,D000'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 20 --stop-pc=FA62 --watch-addr=FFFC,FFFD,C100,C65C,C800,D000'
 ```
 
 Expected markers:
@@ -417,7 +417,7 @@ FFFD: FA
 Current PoP block-shim probe:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 300000 --prodos-boot="Prince of Persia (Cracked 3.5 floppy for IIc+).po" --stop-pc=0000 --watch-addr=D000,D100,D800,E000,EE00,FFFC,FFFD,FFFE,FFFF --profile-pc-top=8'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 300000 --prodos-boot="media/Prince of Persia (Cracked 3.5 floppy for IIc+).po" --stop-pc=0000 --watch-addr=D000,D100,D800,E000,EE00,FFFC,FFFD,FFFE,FFFF --profile-pc-top=8'
 ```
 
 Current result: the boot path gets past the observed 65C02 opcodes (`BRA` at
@@ -461,7 +461,7 @@ intelligent SuperDrive card with a 32 KB controller ROM and shared RAM windows.
 Current SuperDrive controller-card probe:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 3000000 --host-warmup-instructions=200000 --superdrive35-rom=341-0438-a.bin --superdrive35-slot=5 --superdrive35-warmup-tstates=1000000 --prodos-boot-blocks="Prince of Persia (Cracked 3.5 floppy for IIc+).po" --prodos-boot-slot=5 --trace-superdrive --trace-limit=2600 --profile-pc-top=12 --watch-addr=03F0,03F1,C500,C55C,C800,C801,C802,C803,C804,C805,C806,C807,C808,C809,C80A,0048,0049,004A,004B,0C00,0C01,0C23,2000,2001,2002,2003'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 3000000 --host-warmup-instructions=200000 --superdrive35-rom=media/341-0438-a.bin --superdrive35-slot=5 --superdrive35-warmup-tstates=1000000 --prodos-boot-blocks="media/Prince of Persia (Cracked 3.5 floppy for IIc+).po" --prodos-boot-slot=5 --trace-superdrive --trace-limit=2600 --profile-pc-top=12 --watch-addr=03F0,03F1,C500,C55C,C800,C801,C802,C803,C804,C805,C806,C807,C808,C809,C80A,0048,0049,004A,004B,0C00,0C01,0C23,2000,2001,2002,2003'
 ```
 
 Prefer this form when checking the real host firmware path, because it attaches
@@ -469,7 +469,7 @@ the same media but does not inject PoP boot blocks or call the wrong `$Cx5C`
 entry:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 20000000 --superdrive35-rom=341-0438-A.bin --superdrive35-media="Prince of Persia (Cracked 3.5 floppy for IIc+).po" --superdrive35-slot=5 --superdrive35-warmup-tstates=2000000 --dump-frame=build/apple2-superdrive/pop-superdrive-20m.png --profile-pc-top=8'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 20000000 --superdrive35-rom=media/341-0438-A.bin --superdrive35-media="media/Prince of Persia (Cracked 3.5 floppy for IIc+).po" --superdrive35-slot=5 --superdrive35-warmup-tstates=2000000 --dump-frame=build/apple2-superdrive/pop-superdrive-20m.png --profile-pc-top=8'
 ```
 
 Current result with the enhanced Apple IIe ROM: the real slot-boot path boots
@@ -487,9 +487,9 @@ For regression checks, prefer the dedicated external-ROM/media smoke tasks:
 
 They default to local ignored files:
 
-- `341-0438-A.bin`
+- `media/341-0438-A.bin`
 - `build/apple2-superdrive/apple2e-iic-iicplus-system-disk.po`
-- `Prince of Persia (Cracked 3.5 floppy for IIc+).po`
+- `media/Prince of Persia (Cracked 3.5 floppy for IIc+).po`
 
 Override them when needed:
 
@@ -607,7 +607,7 @@ not add more `$Cx5C` shims to the SuperDrive card.
 Scan the ProDOS boot blocks 0-1:
 
 ```bash
-./gradlew :app-desktop:apple2ProDosCatalog --args='"Prince of Persia (Cracked 3.5 floppy for IIc+).po" --scan-boot --load-address=0800 --scan-limit=24'
+./gradlew :app-desktop:apple2ProDosCatalog --args='"media/Prince of Persia (Cracked 3.5 floppy for IIc+).po" --scan-boot --load-address=0800 --scan-limit=24'
 ```
 
 Useful current markers:
@@ -689,15 +689,15 @@ colors are still approximate.
 Headless PNG equivalents:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 600000 --keys=GR<CR> --dump-frame=build/apple2-graphics/gr.png'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 600000 --keys=GR<CR> --dump-frame=build/apple2-graphics/gr.png'
 ```
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 1600000 --keys=POKE<SP>-16304,0<CR>POKE<SP>-16298,0<CR>FOR<SP>I=0<SP>TO<SP>255:POKE<SP>1024+I,I:NEXT<CR> --dump-frame=build/apple2-graphics/lores-poke.png'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 1600000 --keys=POKE<SP>-16304,0<CR>POKE<SP>-16298,0<CR>FOR<SP>I=0<SP>TO<SP>255:POKE<SP>1024+I,I:NEXT<CR> --dump-frame=build/apple2-graphics/lores-poke.png'
 ```
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='apple2plus-12k.rom 1600000 --keys=HGR<CR>HCOLOR=3<CR>HPLOT<SP>0,0<SP>TO<SP>279,159<CR> --dump-frame=build/apple2-graphics/hires-hplot.png'
+./gradlew :app-desktop:apple2RomProbe --args='media/apple2plus-12k.rom 1600000 --keys=HGR<CR>HCOLOR=3<CR>HPLOT<SP>0,0<SP>TO<SP>279,159<CR> --dump-frame=build/apple2-graphics/hires-hplot.png'
 ```
 
 ## Current Limits

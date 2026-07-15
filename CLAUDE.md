@@ -16,26 +16,26 @@ z8-emu is a multi-machine 8-bit emulator platform in Java 21 (Gradle, JUnit 5). 
 ./gradlew :cpu-z80:test --tests "dev.z8emu.cpu.z80.Z80CpuTest.someMethod"     # one test method
 ```
 
-Run the desktop app (working dir is repo root, so local ROM/media files resolve as relative paths):
+Run the desktop app (working dir is repo root, so media files resolve as relative `media/...` paths):
 
 ```bash
 ./gradlew :app-desktop:run --args='--machine=48|128|radio86rk|cpc6128|apple2|apple2plus|apple2e [machine-options] <rom-or-memory-image> [media]'
 # examples
-./gradlew :app-desktop:run --args='--machine=apple2plus apple2plus-12k.rom'
-./gradlew :app-desktop:run --args='--machine=128 128.rom STRML128.TAP'
+./gradlew :app-desktop:run --args='--machine=apple2plus media/apple2plus-12k.rom'
+./gradlew :app-desktop:run --args='--machine=128 media/128.rom media/STRML128.TAP'
 ```
 
 Headless probes and smoke tasks (all in `:app-desktop`; options are `-Dz8emu.*` / `-Dapple2.*` system properties passed before `--args`):
 
 ```bash
-./gradlew :app-desktop:spectrumTapeProbe --args='128.rom STRML128.TAP /tmp/out'   # tape run + frame PNGs, see docs/headless-spectrum-probe.md
+./gradlew :app-desktop:spectrumTapeProbe --args='media/128.rom media/STRML128.TAP /tmp/out'   # tape run + frame PNGs, see docs/headless-spectrum-probe.md
 ./gradlew :app-desktop:apple2RomProbe               # Apple II ROM bring-up probe
 ./gradlew :app-desktop:apple2BasicSmoke             # boots Applesoft, types PRINT 2+2, expects 4
 ./gradlew :app-desktop:apple2SuperDriveSystemSmoke  # boots ProDOS system disk to banner
 ./gradlew :app-desktop:apple2SuperDrivePopSmoke     # boots Prince of Persia .po, checks frame CRC
 ```
 
-ROMs, tapes, and disk images (`*.rom`, `*.tap`, `*.tzx`, `*.dsk`, etc.) are gitignored but expected in the repo root; probes and smoke tasks reference them by relative path (overridable via `-P` properties like `-Papple2.rom=...`). Never commit them.
+ROMs, tapes, and disk images (`*.rom`, `*.tap`, `*.tzx`, `*.dsk`, etc.) are gitignored and live in the `media/` directory in the repo root; probes and smoke tasks reference them by relative path (overridable via `-P` properties like `-Papple2.rom=...`). Never commit them.
 
 Gradle daemon pitfall: a daemon started under the Claude Code Bash sandbox survives and poisons later builds in this checkout with `fileHashes.lock (Operation not permitted)`. Fix: `./gradlew --stop`, then rebuild without the sandbox.
 

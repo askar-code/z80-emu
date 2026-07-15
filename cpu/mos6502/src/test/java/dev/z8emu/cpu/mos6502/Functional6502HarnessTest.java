@@ -12,10 +12,10 @@ class Functional6502HarnessTest {
     @Test
     @Tag("klaus")
     void klausFunctionalTestPasses() {
-        Path imagePath = Path.of(System.getProperty("z8emu.klaus.image", "6502_functional_test.bin"));
+        Path imagePath = Path.of(System.getProperty("z8emu.klaus.image", "media/6502_functional_test.bin"));
         Assumptions.assumeTrue(
                 Files.exists(imagePath),
-                "6502_functional_test.bin not present — see docs/commodore-64-plan.md Phase 0"
+                "media/6502_functional_test.bin not present — see docs/commodore-64-plan.md Phase 0"
         );
         int successPc = Integer.decode(System.getProperty("z8emu.klaus.successPc", "0x3469"));
 

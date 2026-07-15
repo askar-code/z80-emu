@@ -11,7 +11,7 @@ Run from the repository root:
 
 ```bash
 ./gradlew :app-desktop:spectrumTapeProbe \
-  --args='128.rom STRML128.TAP /tmp/z8-emu-stormlord'
+  --args='media/128.rom media/STRML128.TAP /tmp/z8-emu-stormlord'
 ```
 
 Arguments:
@@ -21,7 +21,7 @@ Arguments:
 - `output-dir`: optional; defaults to `/tmp/z8-emu-spectrum-probe`.
 
 The Gradle task sets the working directory to the repository root, so local files
-such as `128.rom`, `STRML128.TAP`, and `RobocopA.tzx` can be passed as relative
+such as `media/128.rom`, `media/STRML128.TAP`, and `media/RobocopA.tzx` can be passed as relative
 paths.
 
 ## Useful Options
@@ -33,7 +33,7 @@ All probe options are Java system properties. Pass them before `--args`.
   -Dz8emu.probeMaxTStates=1800000000 \
   -Dz8emu.probePostEofTStates=200000000 \
   -Dz8emu.probeMilestones=200000000,400000000,800000000,1000000000 \
-  --args='128.rom STRML128.TAP /tmp/z8-emu-stormlord'
+  --args='media/128.rom media/STRML128.TAP /tmp/z8-emu-stormlord'
 ```
 
 - `z8emu.probeMaxTStates`: hard stop for the run. Default is `2000000000`.
@@ -67,7 +67,7 @@ Space again to start the game:
   -Dz8emu.probePostEofTStates=200000000 \
   -Dz8emu.probeMilestones=1000000000,1100000000 \
   -Dz8emu.probePostEofKeys='3:0:10,5:1:10,5:0:10,2:0:10,1:0:10,7:0:10,7:0:30' \
-  --args='128.rom STRML128.TAP /tmp/z8-emu-stormlord-hero'
+  --args='media/128.rom media/STRML128.TAP /tmp/z8-emu-stormlord-hero'
 ```
 
 The final gameplay PNG is typically named like:
@@ -110,7 +110,7 @@ PC/memory trace:
   -Dz8emu.probeMaxTStates=1400000000 \
   -Dz8emu.probePostEofTStates=200000000 \
   -Dz8emu.probePostEofKeys='3:0:12' \
-  --args='128.rom RobocopA.tzx /tmp/z8-emu-robocop'
+  --args='media/128.rom media/RobocopA.tzx /tmp/z8-emu-robocop'
 ```
 
 ## Reading Results

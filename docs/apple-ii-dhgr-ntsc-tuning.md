@@ -31,7 +31,7 @@ DHGR experiments below.
 Current deterministic long probe:
 
 ```bash
-./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e . 800000000 --disk="Prince of Persia side A.woz" --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --keys=<SPACE> --key-poll-pc=0CC2 --profile-pc-top=16 --watch-addr=2F00,3000,4000,6000,7000,8000 --dump-frame=build/apple2-pop-woz-side-a-dhgr-space.png'
+./gradlew :app-desktop:apple2RomProbe --args='--machine=apple2e media 800000000 --disk="media/Prince of Persia side A.woz" --disk2-rom=build/apple2-disk2-roms/341-0027-p5.bin --keys=<SPACE> --key-poll-pc=0CC2 --profile-pc-top=16 --watch-addr=2F00,3000,4000,6000,7000,8000 --dump-frame=build/apple2-pop-woz-side-a-dhgr-space.png'
 ```
 
 Expected current result:
@@ -528,7 +528,7 @@ mame apple2ee \
   -nvram_directory build/mame-pop/nvram \
   -sl4 "" \
   -gameio paddles \
-  -flop1 "Prince of Persia side A.woz" \
+  -flop1 "media/Prince of Persia side A.woz" \
   -skip_gameinfo \
   -nothrottle \
   -video none \
