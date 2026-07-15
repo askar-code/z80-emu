@@ -185,6 +185,31 @@ class C64CiaDeviceTest {
     }
 
     @Test
+    void externalInputCanPullAnOutputDrivenHighPinLowAndSurvivesReset() {
+        cia.setPortInputs(new C64CiaDevice.PortInputs() {
+            @Override
+            public int portA(int drivenPortA, int drivenPortB) {
+                return 0xDF;
+            }
+
+            @Override
+            public int portB(int drivenPortA, int drivenPortB) {
+                return 0xFF;
+            }
+        });
+        cia.writeRegister(0x00, 0xFF);
+        cia.writeRegister(0x02, 0xFF);
+
+        assertEquals(0xDF, cia.readRegister(0x00));
+
+        cia.reset();
+        cia.writeRegister(0x00, 0xFF);
+        cia.writeRegister(0x02, 0xFF);
+
+        assertEquals(0xDF, cia.readRegister(0x00));
+    }
+
+    @Test
     void todStartsHaltedAndAcceptsMultiCycleTickChunksAfterResume() {
         cia.onTStatesElapsed(TOD_TENTH_T_STATES);
         assertEquals(0, cia.readRegister(0x08));

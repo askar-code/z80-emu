@@ -19,7 +19,7 @@ final class Apple2RomImageLoader {
         return switch (kind) {
             case APPLE2 -> Apple2ModelConfig.appleIIPlus();
             case APPLE2E -> Apple2ModelConfig.appleIIe128K();
-            case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128 ->
+            case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128, C64 ->
                     throw new IllegalArgumentException("Expected Apple II machine kind: " + kind);
         };
     }

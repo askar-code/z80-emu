@@ -5,6 +5,7 @@ enum DesktopMachineKind {
     SPECTRUM128,
     RADIO86RK,
     CPC6128,
+    C64,
     APPLE2,
     APPLE2E;
 
