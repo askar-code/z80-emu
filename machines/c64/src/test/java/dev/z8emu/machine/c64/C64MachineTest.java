@@ -32,7 +32,7 @@ class C64MachineTest {
     }
 
     @Test
-    void placeholderVideoFrameIsReusableBlackPalFrame() {
+    void videoFrameIsReusableAndBorderOnlyWhileDisplayIsDisabled() {
         C64Machine machine = bootableMachine();
 
         FrameBuffer frame = machine.board().renderVideoFrame();
@@ -43,6 +43,25 @@ class C64MachineTest {
             assertEquals(0xFF000000, pixel);
         }
         assertSame(frame, machine.board().renderVideoFrame());
+    }
+
+    @Test
+    void vicRasterInterruptReachesTheCpuAndDropsAfterAcknowledgement() {
+        C64Machine machine = bootableMachine();
+        CpuBus bus = machine.board().cpuBus();
+        bus.writeMemory(0xD012, 0x05);
+        bus.writeMemory(0xD01A, 0x01);
+
+        assertTrue(runUntilProgramCounter(machine, 0xE800, 400));
+        assertNotEquals(0, bus.readMemory(0xD019) & 0x80);
+
+        bus.writeMemory(0xD019, 0x01);
+
+        assertEquals(0, bus.readMemory(0xD019) & 0x80);
+        for (int instruction = 0; instruction < 10; instruction++) {
+            machine.runInstruction();
+            assertNotEquals(0xE800, machine.cpu().registers().pc());
+        }
     }
 
     @Test
@@ -103,10 +122,14 @@ class C64MachineTest {
     private static byte[] bootableKernalRom() {
         byte[] kernalRom = new byte[C64Memory.KERNAL_ROM_SIZE];
         Arrays.fill(kernalRom, (byte) 0xEA);
+        kernalRom[0x0000] = 0x58;
+        kernalRom[0x0800] = 0x58;
         kernalRom[0x1FFA] = 0x00;
         kernalRom[0x1FFB] = (byte) 0xE1;
         kernalRom[0x1FFC] = 0x00;
         kernalRom[0x1FFD] = (byte) 0xE0;
+        kernalRom[0x1FFE] = 0x00;
+        kernalRom[0x1FFF] = (byte) 0xE8;
         return kernalRom;
     }
 

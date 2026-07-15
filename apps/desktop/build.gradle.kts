@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     implementation(project(":machine-apple2"))
+    implementation(project(":machine-c64"))
     implementation(project(":machine-cpc"))
     implementation(project(":machine-radio86rk"))
     implementation(project(":machine-spectrum"))
@@ -47,6 +48,34 @@ tasks.register<JavaExec>("apple2RomProbe") {
     systemProperties(System.getProperties().stringPropertyNames()
         .filter { it.startsWith("z8emu.") || it.startsWith("apple2.") }
         .associateWith { System.getProperty(it) })
+}
+
+tasks.register<JavaExec>("c64RomProbe") {
+    group = "application"
+    description = "Runs the headless Commodore 64 ROM bring-up probe."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+}
+
+tasks.register<JavaExec>("c64ReadySmoke") {
+    group = "verification"
+    description = "Boots the C64 KERNAL/BASIC ROMs to the READY. prompt."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+    args(
+        providers.gradleProperty("c64.roms").orElse("media").get(),
+        "10000000",
+        "--expect-screen=READY.",
+        "--dump-frame=build/c64/ready.png"
+    )
 }
 
 tasks.register<JavaExec>("apple2ProDosCatalog") {

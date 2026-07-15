@@ -1,6 +1,7 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64VideoDevice;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,11 +20,11 @@ class C64BusTest {
     private static final int COLOR_SENTINEL = 0x0D;
 
     private static final int[][] PLA_ROWS = {
-            {1, 1, 1, BASIC_SENTINEL, 0xFF, COLOR_SENTINEL, KERNAL_SENTINEL},
+            {1, 1, 1, BASIC_SENTINEL, 0xF0, COLOR_SENTINEL, KERNAL_SENTINEL},
             {1, 1, 0, BASIC_SENTINEL, CHAR_SENTINEL, CHAR_SENTINEL, KERNAL_SENTINEL},
-            {0, 1, 1, BASIC_RAM_SENTINEL, 0xFF, COLOR_SENTINEL, KERNAL_SENTINEL},
+            {0, 1, 1, BASIC_RAM_SENTINEL, 0xF0, COLOR_SENTINEL, KERNAL_SENTINEL},
             {0, 1, 0, BASIC_RAM_SENTINEL, CHAR_SENTINEL, CHAR_SENTINEL, KERNAL_SENTINEL},
-            {1, 0, 1, BASIC_RAM_SENTINEL, 0xFF, COLOR_SENTINEL, KERNAL_RAM_SENTINEL},
+            {1, 0, 1, BASIC_RAM_SENTINEL, 0xF0, COLOR_SENTINEL, KERNAL_RAM_SENTINEL},
             {1, 0, 0, BASIC_RAM_SENTINEL, CHAR_SENTINEL, CHAR_SENTINEL, KERNAL_RAM_SENTINEL},
             {0, 0, 1, BASIC_RAM_SENTINEL, IO_RAM_SENTINEL, COLOR_RAM_UNDERLAY_SENTINEL, KERNAL_RAM_SENTINEL},
             {0, 0, 0, BASIC_RAM_SENTINEL, IO_RAM_SENTINEL, COLOR_RAM_UNDERLAY_SENTINEL, KERNAL_RAM_SENTINEL}
@@ -31,6 +32,7 @@ class C64BusTest {
 
     private C64Memory memory;
     private C64Bus bus;
+    private C64VideoDevice video;
     private C64CiaDevice cia1;
     private C64CiaDevice cia2;
 
@@ -42,11 +44,12 @@ class C64BusTest {
         memory = new C64Memory(basicRom, kernalRom, chargenRom);
         C64CpuPort cpuPort = new C64CpuPort();
         cpuPort.reset();
+        video = new C64VideoDevice(memory);
         cia1 = new C64CiaDevice();
         cia2 = new C64CiaDevice();
         cia1.reset();
         cia2.reset();
-        bus = new C64Bus(new TStateCounter(), memory, cpuPort, cia1, cia2);
+        bus = new C64Bus(new TStateCounter(), memory, cpuPort, video, cia1, cia2);
 
         memory.writeRam(0xA123, BASIC_RAM_SENTINEL);
         memory.writeRam(0xD123, IO_RAM_SENTINEL);
@@ -104,6 +107,31 @@ class C64BusTest {
 
         assertEquals(0xFF, bus.readMemory(0xDE05));
         assertEquals(0x44, memory.readRam(0xDE05));
+    }
+
+    @Test
+    void vicRegistersMirrorAcrossTheD000Window() {
+        driveMode(1, 1, 1);
+
+        bus.writeMemory(0xD000, 0x42);
+
+        assertEquals(0x42, bus.readMemory(0xD000));
+        assertEquals(0x42, bus.readMemory(0xD040));
+        assertEquals(0x42, bus.readMemory(0xD3C0));
+        assertEquals(0xFF, bus.readMemory(0xD3FB));
+    }
+
+    @Test
+    void vicRasterInterruptCanBeAcknowledgedThroughTheBus() {
+        driveMode(1, 1, 1);
+        bus.writeMemory(0xD012, 0x01);
+        bus.writeMemory(0xD01A, 0x01);
+
+        video.onTStatesElapsed(C64VideoDevice.CYCLES_PER_LINE);
+
+        assertEquals(0xF1, bus.readMemory(0xD019));
+        bus.writeMemory(0xD019, 0x01);
+        assertEquals(0x70, bus.readMemory(0xD019));
     }
 
     @Test
