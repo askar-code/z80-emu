@@ -8,6 +8,7 @@ import dev.z8emu.machine.apple2.disk.Apple2DosDiskImageLoader;
 import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImageLoader;
+import dev.z8emu.machine.c64.C64Machine;
 import dev.z8emu.machine.cpc.CpcMachine;
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.cpc.disk.CpcDskLoader;
@@ -34,6 +35,7 @@ final class DesktopMachineDefinitions {
     private static final DesktopMachineDefinition SPECTRUM128 = new SpectrumDefinition(DesktopMachineKind.SPECTRUM128);
     private static final DesktopMachineDefinition RADIO86RK = new Radio86Definition();
     private static final DesktopMachineDefinition CPC6128 = new CpcDefinition();
+    private static final DesktopMachineDefinition C64 = new C64Definition();
     private static final DesktopMachineDefinition APPLE2 = new Apple2Definition(
             DesktopMachineKind.APPLE2,
             Apple2RomImageLoader.modelConfigFor(DesktopMachineKind.APPLE2)
@@ -48,6 +50,7 @@ final class DesktopMachineDefinitions {
             SPECTRUM128,
             RADIO86RK,
             CPC6128,
+            C64,
             APPLE2,
             APPLE2E
     );
@@ -63,6 +66,7 @@ final class DesktopMachineDefinitions {
         register(SPECTRUM128, "128", "128k", "spectrum128", "spectrum128k");
         register(RADIO86RK, "radio86", "radio86rk", "rk86", "86rk");
         register(CPC6128, "cpc", "cpc6128", "amstradcpc", "amstradcpc6128");
+        register(C64, "c64", "commodore64");
         register(APPLE2, "apple2", "appleii", "apple2plus", "appleiiplus");
         register(APPLE2E, "apple2e", "appleiie", "apple2e128", "apple2e-128k");
     }
@@ -87,7 +91,7 @@ final class DesktopMachineDefinitions {
     }
 
     static String usage() {
-        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|apple2|apple2plus|apple2e [machine-options] <rom-or-memory-image> [media]";
+        return "Usage: DesktopLauncher --machine=48|128|radio86rk|cpc6128|c64|apple2|apple2plus|apple2e [machine-options] <rom-or-memory-image> [media]";
     }
 
     static DesktopLaunchConfig demoConfig() {
@@ -104,6 +108,7 @@ final class DesktopMachineDefinitions {
     static byte[] loadRom(Path romPath, DesktopMachineDefinition definition) throws IOException {
         byte[] romImage = switch (definition.kind()) {
             case APPLE2, APPLE2E -> Apple2RomImageLoader.load(definition.kind(), romPath);
+            case C64 -> C64RomImageLoader.loadBundleImage(romPath);
             case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128 -> Files.readAllBytes(romPath);
         };
         definition.validateRom(romImage, romPath);
@@ -171,7 +176,7 @@ final class DesktopMachineDefinitions {
             return switch (kind) {
                 case SPECTRUM48 -> new Spectrum48kMachine(config.romImage());
                 case SPECTRUM128 -> new Spectrum128Machine(config.romImage());
-                case RADIO86RK, CPC6128, APPLE2, APPLE2E -> throw new IllegalArgumentException("Expected Spectrum launch config");
+                case RADIO86RK, CPC6128, C64, APPLE2, APPLE2E -> throw new IllegalArgumentException("Expected Spectrum launch config");
             };
         }
 
@@ -270,6 +275,34 @@ final class DesktopMachineDefinitions {
         @Override
         public String usage() {
             return "--machine=cpc6128 <rom-bundle> [disk.dsk]";
+        }
+    }
+
+    private static final class C64Definition implements DesktopMachineDefinition {
+        @Override
+        public DesktopMachineKind kind() {
+            return DesktopMachineKind.C64;
+        }
+
+        @Override
+        public void validateRom(byte[] romImage, Path romPath) {
+            if (romImage.length != C64RomImageLoader.BUNDLE_SIZE) {
+                throw new IllegalArgumentException(
+                        "C64 ROM bundle must be exactly 20480 bytes (BASIC+KERNAL+CHARGEN)"
+                );
+            }
+        }
+
+        @Override
+        public void open(DesktopLaunchConfig config) {
+            C64RomImageLoader.C64RomSet roms = C64RomImageLoader.splitBundleImage(config.romImage());
+            C64Machine machine = new C64Machine(roms.basic(), roms.kernal(), roms.chargen());
+            SwingUtilities.invokeLater(() -> C64DesktopRunner.open(machine, config));
+        }
+
+        @Override
+        public String usage() {
+            return "--machine=c64 <rom-directory-or-rom-file>";
         }
     }
 

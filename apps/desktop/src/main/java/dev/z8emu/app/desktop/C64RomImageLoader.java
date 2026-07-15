@@ -4,9 +4,14 @@ import dev.z8emu.machine.c64.C64Memory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.Objects;
 
 final class C64RomImageLoader {
+    static final int BUNDLE_SIZE = C64Memory.BASIC_ROM_SIZE
+            + C64Memory.KERNAL_ROM_SIZE
+            + C64Memory.CHAR_ROM_SIZE;
     static final String BASIC_ROM = "basic.901226-01.bin";
     static final String KERNAL_ROM = "kernal.901227-03.bin";
     static final String CHARGEN_ROM = "characters.901225-01.bin";
@@ -23,6 +28,37 @@ final class C64RomImageLoader {
                 readRom(basicPath, C64Memory.BASIC_ROM_SIZE),
                 readRom(kernalPath, C64Memory.KERNAL_ROM_SIZE),
                 readRom(chargenPath, C64Memory.CHAR_ROM_SIZE)
+        );
+    }
+
+    static byte[] loadBundleImage(Path romDirectoryOrFile) throws IOException {
+        C64RomSet roms = load(romDirectoryOrFile);
+        byte[] bundle = new byte[BUNDLE_SIZE];
+        System.arraycopy(roms.basic(), 0, bundle, 0, roms.basic().length);
+        System.arraycopy(roms.kernal(), 0, bundle, roms.basic().length, roms.kernal().length);
+        System.arraycopy(
+                roms.chargen(),
+                0,
+                bundle,
+                roms.basic().length + roms.kernal().length,
+                roms.chargen().length
+        );
+        return bundle;
+    }
+
+    static C64RomSet splitBundleImage(byte[] bundle) {
+        Objects.requireNonNull(bundle, "bundle");
+        if (bundle.length != BUNDLE_SIZE) {
+            throw new IllegalArgumentException(
+                    "C64 ROM bundle must be exactly 20480 bytes (BASIC+KERNAL+CHARGEN)"
+            );
+        }
+        int kernalStart = C64Memory.BASIC_ROM_SIZE;
+        int chargenStart = kernalStart + C64Memory.KERNAL_ROM_SIZE;
+        return new C64RomSet(
+                Arrays.copyOfRange(bundle, 0, kernalStart),
+                Arrays.copyOfRange(bundle, kernalStart, chargenStart),
+                Arrays.copyOfRange(bundle, chargenStart, bundle.length)
         );
     }
 

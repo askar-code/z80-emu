@@ -441,7 +441,7 @@ public final class Apple2RomProbeLauncher {
         DesktopMachineKind kind = DesktopMachineDefinitions.parse(value).kind();
         return switch (kind) {
             case APPLE2, APPLE2E -> kind;
-            case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128 ->
+            case SPECTRUM48, SPECTRUM128, RADIO86RK, CPC6128, C64 ->
                     throw new IllegalArgumentException("Apple II probe supports only apple2/apple2e machines: " + value);
         };
     }

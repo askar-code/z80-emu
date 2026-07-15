@@ -78,6 +78,25 @@ tasks.register<JavaExec>("c64ReadySmoke") {
     )
 }
 
+tasks.register<JavaExec>("c64BasicSmoke") {
+    group = "verification"
+    description = "Types a BASIC expression through the C64 keyboard matrix and checks the result."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+    args(
+        providers.gradleProperty("c64.roms").orElse("media").get(),
+        "10000000",
+        "--type-after-screen=READY.",
+        "--keys=PRINT<SP>2+2<CR>",
+        "--expect-screen=<SP>4",
+        "--dump-frame=build/c64/basic-2plus2.png"
+    )
+}
+
 tasks.register<JavaExec>("apple2ProDosCatalog") {
     group = "application"
     description = "Prints the root catalog of an Apple II ProDOS 800 KB .po image."

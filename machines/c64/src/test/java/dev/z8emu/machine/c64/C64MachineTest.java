@@ -93,6 +93,25 @@ class C64MachineTest {
     }
 
     @Test
+    void restoreKeyDeliversSingleNonMaskableInterrupt() {
+        C64Machine machine = bootableMachine();
+        machine.board().keyboard().setRestorePressed(true);
+
+        assertTrue(runUntilProgramCounter(machine, 0xE100, 10));
+
+        for (int instruction = 0; instruction < 10; instruction++) {
+            machine.runInstruction();
+            assertNotEquals(0xE100, machine.cpu().registers().pc());
+        }
+
+        machine.board().keyboard().setRestorePressed(false);
+        machine.runInstruction();
+        machine.board().keyboard().setRestorePressed(true);
+
+        assertTrue(runUntilProgramCounter(machine, 0xE100, 10));
+    }
+
+    @Test
     void romSizeValidationRejectsEveryIncorrectImageSize() {
         byte[] basicRom = new byte[C64Memory.BASIC_ROM_SIZE];
         byte[] kernalRom = bootableKernalRom();

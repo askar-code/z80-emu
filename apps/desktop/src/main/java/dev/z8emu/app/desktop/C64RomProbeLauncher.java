@@ -1,5 +1,6 @@
 package dev.z8emu.app.desktop;
 
+import dev.z8emu.machine.c64.C64KeyboardTyper;
 import dev.z8emu.machine.c64.C64Machine;
 import dev.z8emu.machine.c64.device.C64VideoDevice;
 import dev.z8emu.platform.bus.io.IoAccess;
@@ -27,7 +28,7 @@ public final class C64RomProbeLauncher {
     public static void main(String[] args) throws IOException {
         ProbeConfig config = parseArgs(args);
         if (config == null) {
-            System.err.println("Usage: C64RomProbeLauncher <rom-dir-or-rom-file> [max-instructions] [--expect-screen=<text>] [--dump-frame=<png>] [--expect-frame-crc=<crc32>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-limit=<count>] [--trace-tail]");
+            System.err.println("Usage: C64RomProbeLauncher <rom-dir-or-rom-file> [max-instructions] [--keys=<script>] [--type-after-screen=<text>] [--expect-screen=<text>] [--dump-frame=<png>] [--expect-frame-crc=<crc32>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-limit=<count>] [--trace-tail]");
             System.exit(2);
             return;
         }
@@ -36,7 +37,11 @@ public final class C64RomProbeLauncher {
         C64Machine machine = new C64Machine(roms.basic(), roms.kernal(), roms.chargen());
         TraceCollector traceCollector = new TraceCollector(machine, config.traceOptions());
         traceCollector.install();
+        String keyScript = config.keyScript() == null ? null : decodeScript(config.keyScript());
+        String typeAfterScreen = config.typeAfterScreen() == null ? null : decodeScript(config.typeAfterScreen());
         String expectedScreen = config.expectedScreen() == null ? null : decodeScript(config.expectedScreen());
+        int keysTyped = 0;
+        boolean typeAfterScreenFound = false;
         boolean expectationMet = false;
         int stopPc = -1;
         long[] pcHits = config.profilePcTop() > 0 ? new long[0x10000] : null;
@@ -45,7 +50,65 @@ public final class C64RomProbeLauncher {
         long steps = 0;
 
         try {
-            while (steps < config.maxInstructions()) {
+            if (keyScript != null && typeAfterScreen != null) {
+                while (steps < config.maxInstructions()) {
+                    int pc = machine.cpu().registers().pc();
+                    if (isPcMatch(pc, config.stopPcs())) {
+                        stopPc = pc;
+                        break;
+                    }
+                    if (pcHits != null) {
+                        pcHits[pc]++;
+                    }
+                    lastExecutedPc = pc;
+                    lastExecutedOpcode = machine.board().cpuBus().readMemory(pc);
+                    machine.runInstruction();
+                    steps++;
+
+                    if ((steps % 100) == 0 && screenContains(machine, typeAfterScreen)) {
+                        typeAfterScreenFound = true;
+                        break;
+                    }
+                }
+
+                if (!typeAfterScreenFound && steps >= config.maxInstructions()) {
+                    traceCollector.pause();
+                    FrameProbeResult frameResult = renderFrame(
+                            machine,
+                            config.dumpFramePath(),
+                            config.expectedFrameCrc32()
+                    );
+                    System.out.println("status=type-screen-not-found");
+                    printProbeReport(
+                            machine,
+                            config,
+                            roms,
+                            steps,
+                            keyScript,
+                            keysTyped,
+                            typeAfterScreen,
+                            typeAfterScreenFound,
+                            expectedScreen,
+                            lastExecutedPc,
+                            lastExecutedOpcode,
+                            stopPc,
+                            pcHits,
+                            traceCollector,
+                            frameResult
+                    );
+                    System.exit(1);
+                    return;
+                }
+            }
+
+            if (keyScript != null && (typeAfterScreen == null || typeAfterScreenFound) && stopPc < 0) {
+                for (int keyIndex = 0; keyIndex < keyScript.length(); keyIndex++) {
+                    steps += C64KeyboardTyper.typeCharacter(machine, keyScript.charAt(keyIndex));
+                    keysTyped++;
+                }
+            }
+
+            while (steps < config.maxInstructions() && stopPc < 0) {
                 int pc = machine.cpu().registers().pc();
                 if (isPcMatch(pc, config.stopPcs())) {
                     stopPc = pc;
@@ -86,6 +149,10 @@ public final class C64RomProbeLauncher {
                     config,
                     roms,
                     steps,
+                    keyScript,
+                    keysTyped,
+                    typeAfterScreen,
+                    typeAfterScreenFound,
                     expectedScreen,
                     lastExecutedPc,
                     lastExecutedOpcode,
@@ -106,6 +173,10 @@ public final class C64RomProbeLauncher {
                         config,
                         roms,
                         steps,
+                        keyScript,
+                        keysTyped,
+                        typeAfterScreen,
+                        typeAfterScreenFound,
                         expectedScreen,
                         lastExecutedPc,
                         lastExecutedOpcode,
@@ -128,6 +199,8 @@ public final class C64RomProbeLauncher {
         }
 
         List<String> positional = new ArrayList<>(2);
+        String keyScript = null;
+        String typeAfterScreen = null;
         String expectedScreen = null;
         Path dumpFramePath = null;
         Long expectedFrameCrc32 = null;
@@ -138,7 +211,11 @@ public final class C64RomProbeLauncher {
         int traceLimit = TraceOptions.DEFAULT_LIMIT;
         boolean traceTail = false;
         for (String arg : args) {
-            if (arg.startsWith("--expect-screen=")) {
+            if (arg.startsWith("--keys=")) {
+                keyScript = arg.substring("--keys=".length());
+            } else if (arg.startsWith("--type-after-screen=")) {
+                typeAfterScreen = arg.substring("--type-after-screen=".length());
+            } else if (arg.startsWith("--expect-screen=")) {
                 expectedScreen = arg.substring("--expect-screen=".length());
             } else if (arg.startsWith("--dump-frame=")) {
                 dumpFramePath = Path.of(arg.substring("--dump-frame=".length())).toAbsolutePath().normalize();
@@ -168,7 +245,7 @@ public final class C64RomProbeLauncher {
                 positional.add(arg);
             }
         }
-        if (positional.isEmpty() || positional.size() > 2) {
+        if (positional.isEmpty() || positional.size() > 2 || (typeAfterScreen != null && keyScript == null)) {
             return null;
         }
         long maxInstructions = positional.size() == 2
@@ -177,6 +254,8 @@ public final class C64RomProbeLauncher {
         return new ProbeConfig(
                 Path.of(positional.get(0)).toAbsolutePath().normalize(),
                 maxInstructions,
+                keyScript,
+                typeAfterScreen,
                 expectedScreen,
                 dumpFramePath,
                 expectedFrameCrc32,
@@ -342,6 +421,10 @@ public final class C64RomProbeLauncher {
             ProbeConfig config,
             C64RomImageLoader.C64RomSet roms,
             long steps,
+            String keyScript,
+            int keysTyped,
+            String typeAfterScreen,
+            boolean typeAfterScreenFound,
             String expectedScreen,
             int lastExecutedPc,
             int lastExecutedOpcode,
@@ -363,6 +446,11 @@ public final class C64RomProbeLauncher {
         System.out.println("kernalBytes=" + roms.kernal().length);
         System.out.println("chargenBytes=" + roms.chargen().length);
         System.out.println("steps=" + steps);
+        System.out.println("keysTyped=" + keysTyped + "/" + (keyScript == null ? 0 : keyScript.length()));
+        if (typeAfterScreen != null) {
+            System.out.println("typeAfterScreen=" + printable(typeAfterScreen));
+        }
+        System.out.println("typeAfterScreenFound=" + typeAfterScreenFound);
         System.out.println("pc=0x" + hex16(pc));
         System.out.println("opcode=0x" + hex8(opcode));
         if (lastExecutedPc >= 0) {
@@ -580,6 +668,8 @@ public final class C64RomProbeLauncher {
     private record ProbeConfig(
             Path romPath,
             long maxInstructions,
+            String keyScript,
+            String typeAfterScreen,
             String expectedScreen,
             Path dumpFramePath,
             Long expectedFrameCrc32,

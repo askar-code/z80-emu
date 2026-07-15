@@ -4,15 +4,18 @@ import dev.z8emu.machine.apple2.Apple2Memory;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozTestImages;
+import dev.z8emu.machine.c64.C64Memory;
 import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.machine.spectrum128k.Spectrum128Machine;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,6 +29,8 @@ class DesktopMachineDefinitionsTest {
         assertEquals(DesktopMachineKind.SPECTRUM128, DesktopMachineDefinitions.parse("spectrum128").kind());
         assertEquals(DesktopMachineKind.RADIO86RK, DesktopMachineDefinitions.parse("rk86").kind());
         assertEquals(DesktopMachineKind.CPC6128, DesktopMachineDefinitions.parse("amstradcpc6128").kind());
+        assertEquals(DesktopMachineKind.C64, DesktopMachineDefinitions.parse("c64").kind());
+        assertEquals(DesktopMachineKind.C64, DesktopMachineDefinitions.parse("commodore64").kind());
         assertEquals(DesktopMachineKind.APPLE2, DesktopMachineDefinitions.parse("appleii").kind());
         assertEquals(DesktopMachineKind.APPLE2, DesktopMachineDefinitions.parse("apple2plus").kind());
         assertEquals(DesktopMachineKind.APPLE2E, DesktopMachineDefinitions.parse("apple2e").kind());
@@ -66,6 +71,8 @@ class DesktopMachineDefinitionsTest {
                 .validateRom(new byte[Apple2Memory.SYSTEM_ROM_SIZE_16K], label));
         assertDoesNotThrow(() -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2E)
                 .validateRom(new byte[Apple2Memory.ADDRESS_SPACE_SIZE], label));
+        assertDoesNotThrow(() -> DesktopMachineDefinitions.forKind(DesktopMachineKind.C64)
+                .validateRom(new byte[C64RomImageLoader.BUNDLE_SIZE], label));
 
         assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.SPECTRUM48)
                 .validateRom(new byte[1], label));
@@ -79,6 +86,42 @@ class DesktopMachineDefinitionsTest {
                 .validateRom(new byte[32 * 1024], label));
         assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.APPLE2)
                 .validateRom(new byte[Apple2Memory.ADDRESS_SPACE_SIZE + 1], label));
+        assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.C64)
+                .validateRom(new byte[C64RomImageLoader.BUNDLE_SIZE - 1], label));
+        assertThrows(IllegalArgumentException.class, () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.C64)
+                .validateRom(new byte[C64RomImageLoader.BUNDLE_SIZE + 1], label));
+    }
+
+    @Test
+    void loadsAndSplitsC64RomBundleFromStandardLocalParts(@TempDir Path tempDir) throws Exception {
+        byte[] basic = filledBytes(C64Memory.BASIC_ROM_SIZE, 0xBA);
+        byte[] kernal = filledBytes(C64Memory.KERNAL_ROM_SIZE, 0xCE);
+        byte[] chargen = filledBytes(C64Memory.CHAR_ROM_SIZE, 0xC4);
+        Files.write(tempDir.resolve(C64RomImageLoader.BASIC_ROM), basic);
+        Files.write(tempDir.resolve(C64RomImageLoader.KERNAL_ROM), kernal);
+        Files.write(tempDir.resolve(C64RomImageLoader.CHARGEN_ROM), chargen);
+
+        byte[] bundle = DesktopMachineDefinitions.loadRom(
+                tempDir,
+                DesktopMachineDefinitions.forKind(DesktopMachineKind.C64)
+        );
+        C64RomImageLoader.C64RomSet split = C64RomImageLoader.splitBundleImage(bundle);
+
+        assertEquals(C64RomImageLoader.BUNDLE_SIZE, bundle.length);
+        assertArrayEquals(basic, Arrays.copyOfRange(bundle, 0, C64Memory.BASIC_ROM_SIZE));
+        assertArrayEquals(kernal, Arrays.copyOfRange(
+                bundle,
+                C64Memory.BASIC_ROM_SIZE,
+                C64Memory.BASIC_ROM_SIZE + C64Memory.KERNAL_ROM_SIZE
+        ));
+        assertArrayEquals(chargen, Arrays.copyOfRange(
+                bundle,
+                C64Memory.BASIC_ROM_SIZE + C64Memory.KERNAL_ROM_SIZE,
+                bundle.length
+        ));
+        assertArrayEquals(basic, split.basic());
+        assertArrayEquals(kernal, split.kernal());
+        assertArrayEquals(chargen, split.chargen());
     }
 
     @Test

@@ -3,6 +3,12 @@ package dev.z8emu.machine.c64.device;
 import dev.z8emu.platform.device.TimedDevice;
 
 public final class C64CiaDevice implements TimedDevice {
+    public interface PortInputs {
+        int portA(int drivenPortA, int drivenPortB);
+
+        int portB(int drivenPortA, int drivenPortB);
+    }
+
     private static final int TIMER_A_INTERRUPT = 0x01;
     private static final int TIMER_B_INTERRUPT = 0x02;
     private static final int START = 0x01;
@@ -35,11 +41,12 @@ public final class C64CiaDevice implements TimedDevice {
     private int todTickAccumulator;
     private boolean todHalted;
     private boolean todLatched;
+    private PortInputs portInputs;
 
     public int readRegister(int registerIndex) {
         return switch (registerIndex & 0x0F) {
-            case 0x00 -> readPort(portALatch, dataDirectionA);
-            case 0x01 -> readPort(portBLatch, dataDirectionB);
+            case 0x00 -> readPortA();
+            case 0x01 -> readPortB();
             case 0x02 -> dataDirectionA;
             case 0x03 -> dataDirectionB;
             case 0x04 -> timerACounter & 0xFF;
@@ -86,6 +93,10 @@ public final class C64CiaDevice implements TimedDevice {
         return interruptRaised;
     }
 
+    public void setPortInputs(PortInputs portInputs) {
+        this.portInputs = portInputs;
+    }
+
     @Override
     public void reset() {
         portALatch = 0;
@@ -124,9 +135,22 @@ public final class C64CiaDevice implements TimedDevice {
         }
     }
 
-    private int readPort(int latch, int dataDirection) {
-        // External inputs are pulled high until keyboard and pin wiring arrive.
-        return ((latch & dataDirection) | (0xFF & ~dataDirection)) & 0xFF;
+    private int readPortA() {
+        int drivenA = drivenPort(portALatch, dataDirectionA);
+        int drivenB = drivenPort(portBLatch, dataDirectionB);
+        int externalA = portInputs == null ? 0xFF : portInputs.portA(drivenA, drivenB);
+        return drivenA & externalA;
+    }
+
+    private int readPortB() {
+        int drivenA = drivenPort(portALatch, dataDirectionA);
+        int drivenB = drivenPort(portBLatch, dataDirectionB);
+        int externalB = portInputs == null ? 0xFF : portInputs.portB(drivenA, drivenB);
+        return drivenB & externalB;
+    }
+
+    private static int drivenPort(int latch, int dataDirection) {
+        return (latch | ~dataDirection) & 0xFF;
     }
 
     private void writeTimerAHigh(int value) {
