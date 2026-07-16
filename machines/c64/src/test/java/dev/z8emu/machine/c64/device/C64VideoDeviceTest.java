@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class C64VideoDeviceTest {
     private static final long MCM_OFF_REFERENCE_CRC = 0x4538AE0EL;
     private static final long LOCKED_COMPOSITE_SCENE_CRC = 0xFF91FF85L;
+    private static final long LOCKED_BITMAP_SCENE_CRC = 0x1F2B5F4DL;
+    private static final long LOCKED_SCROLL_BORDER_SCENE_CRC = 0x6E46B7FAL;
     private static final int VIC_BANK_BASE = 0xC000;
     private static final int MATRIX_ADDRESS = 0xC400;
     private static final int SPRITE_POINTER_ADDRESS = 0xC7F8;
@@ -92,7 +94,8 @@ class C64VideoDeviceTest {
             assertEquals(C64VideoDevice.paletteArgb(2), pixel);
         }
 
-        video.writeRegister(0x11, 0x10);
+        video.writeRegister(0x11, 0x1B);
+        video.writeRegister(0x16, 0x08);
         video.writeRegister(0x18, 0x10);
         video.writeRegister(0x21, 0x06);
         memory.writeRam(0xC400, 0x01);
@@ -118,7 +121,8 @@ class C64VideoDeviceTest {
         C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
         C64VideoDevice video = new C64VideoDevice(memory);
         video.writeRegister(0x20, 0x02);
-        video.writeRegister(0x11, 0x10);
+        video.writeRegister(0x11, 0x1B);
+        video.writeRegister(0x16, 0x08);
         video.writeRegister(0x18, 0x10);
         video.writeRegister(0x21, 0x06);
         memory.writeRam(0xC400, 0x01);
@@ -340,7 +344,7 @@ class C64VideoDeviceTest {
         video.renderFrame(0x00);
         assertEquals(0x01, video.readRegister(0x1F));
 
-        video.writeRegister(0x16, 0x10);
+        video.writeRegister(0x16, 0x18);
         memory.writeColorRam(0, 0x0B);
         memory.writeRam(VIC_BANK_BASE + 0x08, 0x40);
         video.renderFrame(0x00);
@@ -370,7 +374,7 @@ class C64VideoDeviceTest {
     void multicolorTextUsesPairColorsAndLeavesLowColorCellsInHires() {
         C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
         C64VideoDevice video = bankThreeVideo(memory);
-        video.writeRegister(0x16, 0x10);
+        video.writeRegister(0x16, 0x18);
         video.writeRegister(0x22, 0x02);
         video.writeRegister(0x23, 0x04);
         memory.writeRam(MATRIX_ADDRESS, 0x01);
@@ -395,6 +399,282 @@ class C64VideoDeviceTest {
     }
 
     @Test
+    void standardBitmapUsesMatrixNibblesAndHiresForegroundMask() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x3B);
+        video.writeRegister(0x18, 0x18);
+        memory.writeRam(MATRIX_ADDRESS, 0x35);
+        memory.writeRam(VIC_BANK_BASE + 0x2000, 0xF0);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        for (int x = 0; x < 4; x++) {
+            assertWindowPixel(frame, x, 0, 3);
+        }
+        for (int x = 4; x < 8; x++) {
+            assertWindowPixel(frame, x, 0, 5);
+        }
+
+        configureSprite(memory, video, 0, 24, 50, 0x20, 2);
+        writeSpriteByte(memory, 0x20, 0, 0x80);
+        video.writeRegister(0x15, 0x01);
+        video.renderFrame(0x00);
+        assertEquals(0x01, video.readRegister(0x1F));
+
+        configureSprite(memory, video, 0, 28, 50, 0x20, 2);
+        video.renderFrame(0x00);
+        assertEquals(0x00, video.readRegister(0x1F));
+    }
+
+    @Test
+    void multicolorBitmapUsesAllPairColorsAndOnlyHighPairsAreForeground() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x3B);
+        video.writeRegister(0x16, 0x18);
+        video.writeRegister(0x18, 0x18);
+        video.writeRegister(0x21, 0x06);
+        memory.writeRam(MATRIX_ADDRESS, 0x35);
+        memory.writeRam(VIC_BANK_BASE + 0x2000, 0x1B);
+        memory.writeColorRam(0, 0x04);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPair(frame, 0, 0, 6);
+        assertWindowPair(frame, 2, 0, 3);
+        assertWindowPair(frame, 4, 0, 5);
+        assertWindowPair(frame, 6, 0, 4);
+
+        configureSprite(memory, video, 0, 24, 50, 0x20, 2);
+        writeSpriteByte(memory, 0x20, 0, 0x80);
+        video.writeRegister(0x15, 0x01);
+        for (int pair = 0; pair < 4; pair++) {
+            configureSprite(memory, video, 0, 24 + pair * 2, 50, 0x20, 2);
+            video.renderFrame(0x00);
+            assertEquals(pair >= 2 ? 0x01 : 0x00, video.readRegister(0x1F));
+        }
+    }
+
+    @Test
+    void extendedColorTextMasksGlyphCodeAndSelectsPerCellBackground() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x5B);
+        video.writeRegister(0x22, 0x02);
+        video.writeRegister(0x24, 0x04);
+        memory.writeRam(MATRIX_ADDRESS, 0x41);
+        memory.writeRam(VIC_BANK_BASE + 0x08, 0x80);
+        memory.writeColorRam(0, 0x03);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPixel(frame, 0, 0, 3);
+        assertWindowPixel(frame, 1, 0, 2);
+
+        memory.writeRam(MATRIX_ADDRESS, 0xC1);
+        frame = video.renderFrame(0x00);
+        assertWindowPixel(frame, 0, 0, 3);
+        assertWindowPixel(frame, 1, 0, 4);
+    }
+
+    @Test
+    void invalidExtendedBitmapIsBlackButRetainsBitmapForegroundMask() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x7B);
+        video.writeRegister(0x16, 0x0B);
+        memory.writeRam(MATRIX_ADDRESS, 0x35);
+        memory.writeRam(VIC_BANK_BASE, 0x80);
+        configureSprite(memory, video, 0, 27, 50, 0x20, 2);
+        writeSpriteByte(memory, 0x20, 0, 0x80);
+        video.writeRegister(0x15, 0x01);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPixel(frame, 0, 0, 0);
+        assertWindowPixel(frame, 3, 0, 0);
+        assertWindowPixel(frame, 100, 100, 0);
+        assertEquals(0x01, video.readRegister(0x1F));
+    }
+
+    @Test
+    void invalidExtendedMulticolorTextMaskKeepsTheColorRamGate() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x5B);
+        video.writeRegister(0x16, 0x18);
+        memory.writeRam(MATRIX_ADDRESS, 0x01);
+        memory.writeColorRam(0, 0x0B);
+        configureSprite(memory, video, 0, 24, 50, 0x20, 2);
+        writeSpriteByte(memory, 0x20, 0, 0x80);
+        video.writeRegister(0x15, 0x01);
+
+        memory.writeRam(VIC_BANK_BASE + 0x08, 0x80);
+        FrameBuffer frame = video.renderFrame(0x00);
+        assertWindowPixel(frame, 0, 0, 0);
+        assertEquals(0x01, video.readRegister(0x1F));
+
+        memory.writeRam(VIC_BANK_BASE + 0x08, 0x40);
+        configureSprite(memory, video, 0, 25, 50, 0x20, 2);
+        video.renderFrame(0x00);
+        assertEquals(0x00, video.readRegister(0x1F));
+
+        memory.writeColorRam(0, 0x03);
+        frame = video.renderFrame(0x00);
+        assertWindowPixel(frame, 100, 100, 0);
+        assertEquals(0x01, video.readRegister(0x1F));
+    }
+
+    @Test
+    void xScrollMovesTextAndForegroundMaskRight() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x16, 0x0B);
+        memory.writeRam(MATRIX_ADDRESS, 0x01);
+        memory.writeRam(VIC_BANK_BASE + 0x08, 0x80);
+        memory.writeColorRam(0, 0x01);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPixel(frame, 0, 0, 6);
+        assertWindowPixel(frame, 2, 0, 6);
+        assertWindowPixel(frame, 3, 0, 1);
+        assertWindowPixel(frame, 4, 0, 6);
+    }
+
+    @Test
+    void yScrollSupportsPositiveAndNegativeSignedShifts() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x1D);
+        memory.writeRam(MATRIX_ADDRESS, 0x01);
+        memory.writeRam(VIC_BANK_BASE + 0x08, 0x80);
+        memory.writeColorRam(0, 0x01);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPixel(frame, 0, 0, 6);
+        assertWindowPixel(frame, 0, 1, 6);
+        assertWindowPixel(frame, 0, 2, 1);
+
+        video.writeRegister(0x11, 0x18);
+        memory.writeRam(MATRIX_ADDRESS + 24 * C64VideoDevice.TEXT_COLUMNS, 0x02);
+        memory.writeRam(VIC_BANK_BASE + 0x17, 0x80);
+        memory.writeColorRam(24 * C64VideoDevice.TEXT_COLUMNS, 0x01);
+        frame = video.renderFrame(0x00);
+        assertWindowPixel(frame, 0, 0, 6);
+        assertWindowPixel(frame, 0, 196, 1);
+        assertWindowPixel(frame, 0, 197, 6);
+        assertWindowPixel(frame, 0, 199, 6);
+    }
+
+    @Test
+    void cselOverlayCoversSideStripsAfterSpritesAndPreservesCollision() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x16, 0x00);
+        for (int y = 0; y < C64VideoDevice.CELL_SIZE; y++) {
+            memory.writeRam(VIC_BANK_BASE + 0x08 + y, 0xFF);
+        }
+        memory.writeRam(MATRIX_ADDRESS, 0x01);
+        memory.writeRam(MATRIX_ADDRESS + 38, 0x01);
+        memory.writeRam(MATRIX_ADDRESS + 39, 0x01);
+        memory.writeColorRam(0, 0x01);
+        memory.writeColorRam(38, 0x01);
+        memory.writeColorRam(39, 0x01);
+        configureSprite(memory, video, 0, 24, 50, 0x20, 5);
+        writeSpriteByte(memory, 0x20, 0, 0x80);
+        video.writeRegister(0x15, 0x01);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPixel(frame, 0, 0, 2);
+        assertWindowPixel(frame, 6, 0, 2);
+        assertWindowPixel(frame, 7, 0, 1);
+        assertWindowPixel(frame, 310, 0, 1);
+        assertWindowPixel(frame, 311, 0, 2);
+        assertWindowPixel(frame, 319, 0, 2);
+        assertEquals(0x01, video.readRegister(0x1F));
+    }
+
+    @Test
+    void rselOverlayCoversTopAndBottomFourWindowLines() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x13);
+        for (int y = 0; y < C64VideoDevice.CELL_SIZE; y++) {
+            memory.writeRam(VIC_BANK_BASE + 0x08 + y, 0x80);
+        }
+        memory.writeRam(MATRIX_ADDRESS, 0x01);
+        memory.writeRam(MATRIX_ADDRESS + 24 * C64VideoDevice.TEXT_COLUMNS, 0x01);
+        memory.writeColorRam(0, 0x01);
+        memory.writeColorRam(24 * C64VideoDevice.TEXT_COLUMNS, 0x01);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertWindowPixel(frame, 0, 0, 2);
+        assertWindowPixel(frame, 0, 3, 2);
+        assertWindowPixel(frame, 0, 4, 1);
+        assertWindowPixel(frame, 0, 195, 1);
+        assertWindowPixel(frame, 0, 196, 2);
+        assertWindowPixel(frame, 0, 199, 2);
+    }
+
+    @Test
+    void lockedBitmapCheckerboardAndSpriteScene() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x3B);
+        video.writeRegister(0x18, 0x18);
+        for (int cell = 0; cell < C64VideoDevice.TEXT_COLUMNS * C64VideoDevice.TEXT_ROWS; cell++) {
+            int highColor = cell % 15 + 1;
+            int lowColor = cell / C64VideoDevice.TEXT_COLUMNS % 15 + 1;
+            memory.writeRam(MATRIX_ADDRESS + cell, highColor << 4 | lowColor);
+            for (int y = 0; y < C64VideoDevice.CELL_SIZE; y++) {
+                int checker = ((cell + y) & 1) == 0 ? 0xAA : 0x55;
+                memory.writeRam(VIC_BANK_BASE + 0x2000 + cell * C64VideoDevice.CELL_SIZE + y,
+                        checker);
+            }
+        }
+        configureSprite(memory, video, 0, 104, 90, 0x20, 14);
+        writeSpriteByte(memory, 0x20, 0, 0x80);
+        writeSpriteByte(memory, 0x20, 1, 0x18);
+        writeSpriteByte(memory, 0x20, 3, 0x7E);
+        video.writeRegister(0x15, 0x01);
+
+        FrameBuffer frame = video.renderFrame(0x00);
+
+        assertEquals(LOCKED_BITMAP_SCENE_CRC, frameCrc32(frame));
+        assertEquals(0x01, video.readRegister(0x1F));
+    }
+
+    @Test
+    void lockedScrollBorderAndSpriteScene() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = bankThreeVideo(memory);
+        video.writeRegister(0x11, 0x15);
+        video.writeRegister(0x16, 0x03);
+        for (int glyph = 1; glyph <= 4; glyph++) {
+            for (int y = 0; y < C64VideoDevice.CELL_SIZE; y++) {
+                int bits = Integer.rotateRight(0x81 << (glyph - 1), y) & 0xFF;
+                memory.writeRam(VIC_BANK_BASE + glyph * C64VideoDevice.CELL_SIZE + y, bits);
+            }
+        }
+        for (int cell = 0; cell < C64VideoDevice.TEXT_COLUMNS * C64VideoDevice.TEXT_ROWS; cell++) {
+            memory.writeRam(MATRIX_ADDRESS + cell, cell % 4 + 1);
+            memory.writeColorRam(cell, cell / C64VideoDevice.TEXT_COLUMNS % 15 + 1);
+        }
+        configureSprite(memory, video, 0, 104, 90, 0x20, 14);
+        writeSpriteByte(memory, 0x20, 0, 0x81);
+        writeSpriteByte(memory, 0x20, 1, 0x42);
+        writeSpriteByte(memory, 0x20, 2, 0x24);
+        video.writeRegister(0x15, 0x01);
+
+        assertEquals(LOCKED_SCROLL_BORDER_SCENE_CRC, frameCrc32(video.renderFrame(0x00)));
+    }
+
+    @Test
     void spriteColorRegistersKeepTheirUnusedReadBits() {
         C64VideoDevice video = videoWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
         video.writeRegister(0x25, 0x01);
@@ -412,7 +692,7 @@ class C64VideoDeviceTest {
     void lockedCompositeSpriteAndMulticolorTextScene() {
         C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
         C64VideoDevice video = bankThreeVideo(memory);
-        video.writeRegister(0x16, 0x10);
+        video.writeRegister(0x16, 0x18);
         video.writeRegister(0x22, 0x05);
         video.writeRegister(0x23, 0x07);
         memory.writeRam(MATRIX_ADDRESS, 0x01);
@@ -448,7 +728,8 @@ class C64VideoDeviceTest {
         chargenRom[0x08] = (byte) 0x80;
         C64Memory memory = memoryWithChargen(chargenRom);
         C64VideoDevice video = new C64VideoDevice(memory);
-        video.writeRegister(0x11, 0x10);
+        video.writeRegister(0x11, 0x1B);
+        video.writeRegister(0x16, 0x08);
         video.writeRegister(0x18, 0x14);
         video.writeRegister(0x21, 0x06);
         memory.writeRam(0x0400, 0x01);
@@ -467,7 +748,8 @@ class C64VideoDeviceTest {
     void d018SelectsIndependentMatrixAndCharsetOffsets() {
         C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
         C64VideoDevice video = new C64VideoDevice(memory);
-        video.writeRegister(0x11, 0x10);
+        video.writeRegister(0x11, 0x1B);
+        video.writeRegister(0x16, 0x08);
         video.writeRegister(0x18, 0x16);
         video.writeRegister(0x21, 0x06);
         memory.writeRam(0xC400, 0x02);
@@ -516,7 +798,8 @@ class C64VideoDeviceTest {
 
     private static C64VideoDevice bankThreeVideo(C64Memory memory) {
         C64VideoDevice video = new C64VideoDevice(memory);
-        video.writeRegister(0x11, 0x10);
+        video.writeRegister(0x11, 0x1B);
+        video.writeRegister(0x16, 0x08);
         video.writeRegister(0x18, 0x10);
         video.writeRegister(0x20, 0x02);
         video.writeRegister(0x21, 0x06);
@@ -553,6 +836,11 @@ class C64VideoDeviceTest {
     private static void assertWindowPixel(FrameBuffer frame, int x, int y, int colorIndex) {
         assertPixel(frame, C64VideoDevice.BORDER_LEFT + x, C64VideoDevice.BORDER_TOP + y,
                 C64VideoDevice.paletteArgb(colorIndex));
+    }
+
+    private static void assertWindowPair(FrameBuffer frame, int x, int y, int colorIndex) {
+        assertWindowPixel(frame, x, y, colorIndex);
+        assertWindowPixel(frame, x + 1, y, colorIndex);
     }
 
     private static long frameCrc32(FrameBuffer frame) {
