@@ -100,7 +100,7 @@ battle-tested by the Apple II machines.)
 - [x] 2. VIC-II text mode + raster + boot to READY. (headless probe)
 - [x] 3. Keyboard matrix + desktop runner + BASIC smoke
 - [x] 4. PRG loading (probe option + desktop media)
-- [ ] 5. SID minimal (3 voices, ADSR, no filter) through PCM
+- [x] 5. SID minimal (3 voices, ADSR, no filter) through PCM
 - [ ] 6. Accuracy/games backlog (illegals, badlines, sprites, bitmap, tape/disk)
 
 ---
@@ -283,6 +283,18 @@ freeware game PRG remains a nice-to-have manual check for the user.
   volume $D418. **No filter in v1** (registers accepted, documented inert).
 - Gate: deterministic register-script → PCM CRC test (self-baseline), plus
   an audible desktop check.
+
+Landed 2026-07-16 (Codex batch `codex/c64-p5-sid`; fault-injection 7
+mutations — 3 initial survivors closed by review-added tests, all 7
+verified killed). PCM CRC baselines (voice 3, 100 000 ticks, first 4096
+bytes): SAW 0x052A2733, NOISE 0x5576D685, PULSE+decay 0x40AADD4C. Frozen
+conventions: reSID-semantics LFSR (feedback 22^17, bit-19 clock, TEST
+reset), OSC3 readback = waveform output >>> 4 (RNG idiom works),
+write-only registers read 0x00 (no decaying bus value), combined
+waveforms = AND approximation, SYNC/RING stored-inert, filter registers
+accepted-inert, mix scale (wave-0x800)*env*volume/(15*64) into a
+DcBlocker. Audible desktop check: orchestrator-verified live window +
+BASIC POKE tone.
 
 ### Phase 6: accuracy & games backlog (unordered, pull as needed)
 
