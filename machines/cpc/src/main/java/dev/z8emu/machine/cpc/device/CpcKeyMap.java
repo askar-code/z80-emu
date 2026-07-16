@@ -14,6 +14,25 @@ public final class CpcKeyMap {
         return chord;
     }
 
+    public static KeyChord forNameOrNull(String name) {
+        if (name == null) {
+            return null;
+        }
+        if ("UP".equalsIgnoreCase(name)) {
+            return chord(key(0, 0));
+        }
+        if ("RIGHT".equalsIgnoreCase(name)) {
+            return chord(key(0, 1));
+        }
+        if ("DOWN".equalsIgnoreCase(name)) {
+            return chord(key(0, 2));
+        }
+        if ("LEFT".equalsIgnoreCase(name)) {
+            return chord(key(1, 0));
+        }
+        return name.length() == 1 ? forCharacterOrNull(name.charAt(0)) : null;
+    }
+
     public static KeyChord forCharacterOrNull(char character) {
         return switch (Character.toUpperCase(character)) {
             case '\r', '\n' -> chord(key(2, 2));
