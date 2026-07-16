@@ -356,8 +356,11 @@ BASIC POKE tone.
   moves Rockford, locked frameCrc32=0xD3C962E1 (stable ×3; PRG path
   overridable via -Pc64.boulderdash, default media/boulderdash.prg —
   gitignored, user-supplied). Desktop play: F9 twice (port 1), arrows +
-  left Ctrl. Prince of Persia (EasyFlash .crt) stays the stretch target
-  behind 6e.
+  left Ctrl. Prince of Persia on C64 DROPPED as a target (user decision
+  2026-07-16: the 2011 EasyFlash port is not a native release; the
+  original runs on our Apple II, and the native 1990 CPC port lives in
+  the CPC campaign). Everything it needed — EasyFlash (6d) and per-line
+  rendering (6e) — landed anyway and serves native EF conversions.
 - [x] Per-line beam rendering (Phase 6e). Landed 2026-07-16
   (`codex/c64-p6e-perline`, spec critiqued twice — 24+9 findings incl.
   4 structural blockers pre-applied; review 4 accepted notes;
