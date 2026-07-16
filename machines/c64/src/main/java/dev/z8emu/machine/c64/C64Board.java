@@ -2,7 +2,9 @@ package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
 import dev.z8emu.machine.c64.device.C64KeyboardDevice;
+import dev.z8emu.machine.c64.device.C64SidDevice;
 import dev.z8emu.machine.c64.device.C64VideoDevice;
+import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.bus.CpuBus;
 import dev.z8emu.platform.bus.io.IoTraceSink;
 import dev.z8emu.platform.machine.VideoMachineBoard;
@@ -18,6 +20,7 @@ public final class C64Board implements VideoMachineBoard {
     private final C64CiaDevice cia1;
     private final C64CiaDevice cia2;
     private final C64VideoDevice video;
+    private final C64SidDevice sid;
     private final C64Bus bus;
 
     public C64Board(C64ModelConfig modelConfig, C64Memory memory, TStateCounter clock) {
@@ -30,7 +33,8 @@ public final class C64Board implements VideoMachineBoard {
         this.cia2 = new C64CiaDevice();
         this.cia1.setPortInputs(keyboard);
         this.video = new C64VideoDevice(memory);
-        this.bus = new C64Bus(requiredClock, memory, cpuPort, video, cia1, cia2);
+        this.sid = new C64SidDevice(modelConfig.cpuClockHz());
+        this.bus = new C64Bus(requiredClock, memory, cpuPort, video, sid, cia1, cia2);
     }
 
     @Override
@@ -46,6 +50,7 @@ public final class C64Board implements VideoMachineBoard {
         cia1.reset();
         cia2.reset();
         video.reset();
+        sid.reset();
     }
 
     @Override
@@ -53,6 +58,7 @@ public final class C64Board implements VideoMachineBoard {
         cia1.onTStatesElapsed(tStates);
         cia2.onTStatesElapsed(tStates);
         video.onTStatesElapsed(tStates);
+        sid.onTStatesElapsed(tStates);
     }
 
     @Override
@@ -92,6 +98,14 @@ public final class C64Board implements VideoMachineBoard {
 
     public C64VideoDevice video() {
         return video;
+    }
+
+    public C64SidDevice sid() {
+        return sid;
+    }
+
+    public PcmMonoSource audio() {
+        return sid;
     }
 
     public C64ModelConfig modelConfig() {

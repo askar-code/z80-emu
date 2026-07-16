@@ -21,7 +21,7 @@ final class C64DesktopRunner {
         private Session(C64Machine machine, DesktopLaunchConfig config) {
             super(
                     createPanel(machine),
-                    null,
+                    machine.board().audio(),
                     "c64-audio",
                     machine.cpuClockHz(),
                     machine.frameTStates()

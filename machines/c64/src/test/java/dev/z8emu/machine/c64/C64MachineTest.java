@@ -29,6 +29,8 @@ class C64MachineTest {
         assertEquals(2, machine.currentTState());
         assertEquals(985_248, machine.cpuClockHz());
         assertEquals(19_656, machine.frameTStates());
+        assertNotNull(machine.board().audio());
+        assertSame(machine.board().sid(), machine.board().audio());
     }
 
     @Test
