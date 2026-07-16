@@ -55,6 +55,9 @@ public final class CpcGateArrayDevice {
     private boolean interruptRequestActive;
     private long elapsedTStates;
     private boolean completedFrameStateAvailable;
+    private int displayPhaseAnchor = BORDER_TOP;
+    private int pendingAnchorCandidate = Integer.MIN_VALUE;
+    private int completedFrameDisplayPhaseAnchor = BORDER_TOP;
 
     public void reset() {
         Arrays.fill(hardwareInkByPen, DEFAULT_BLACK_HARDWARE_COLOR);
@@ -65,6 +68,9 @@ public final class CpcGateArrayDevice {
         interruptRequestActive = false;
         elapsedTStates = 0;
         completedFrameStateAvailable = false;
+        displayPhaseAnchor = BORDER_TOP;
+        pendingAnchorCandidate = Integer.MIN_VALUE;
+        completedFrameDisplayPhaseAnchor = BORDER_TOP;
         currentFrameEventCount = 0;
         completedFrameEventCount = 0;
         appendCurrentFrameEvent(0);
@@ -164,9 +170,8 @@ public final class CpcGateArrayDevice {
         int scanlinesPerChar = crtc.scanlinesPerCharacter();
         int horizChars = crtc.horizontalDisplayedChars();
         int startAddr = crtc.startAddress();
-        int displayEventTop = displayEventTop();
         for (int y = 0; y < visibleLines; y++) {
-            int frameLine = displayEventTop + y;
+            int frameLine = completedFrameDisplayPhaseAnchor + y;
             int eventIndex = eventIndexAt(
                     completedFrameEventTimes,
                     completedFrameEventCount,
@@ -285,6 +290,22 @@ public final class CpcGateArrayDevice {
     }
 
     private void completeCurrentRasterState() {
+        int candidate = Integer.MIN_VALUE;
+        for (int i = 0; i < currentFrameEventCount; i++) {
+            int line = currentFrameEventTimes[i] / T_STATES_PER_HSYNC;
+            if (line >= 200 && line < 280 && currentFrameEventModes[i] == 1) {
+                candidate = line - LOWER_RASTER_SPLIT_REFERENCE_DISPLAY_LINE;
+            }
+        }
+        if (candidate == Integer.MIN_VALUE) {
+            pendingAnchorCandidate = Integer.MIN_VALUE;
+        } else if (candidate == pendingAnchorCandidate) {
+            displayPhaseAnchor = candidate;
+        } else {
+            pendingAnchorCandidate = candidate;
+        }
+        completedFrameDisplayPhaseAnchor = displayPhaseAnchor;
+
         int[] times = completedFrameEventTimes;
         completedFrameEventTimes = currentFrameEventTimes;
         currentFrameEventTimes = times;
@@ -406,18 +427,6 @@ public final class CpcGateArrayDevice {
 
     private static int displayByteFrameOffset(int frameLine, int byteColumn) {
         return (frameLine * T_STATES_PER_HSYNC) + DISPLAY_START_TSTATES + (byteColumn * DISPLAY_BYTE_TSTATES);
-    }
-
-    private int displayEventTop() {
-        int eventTop = BORDER_TOP;
-        for (int i = 0; i < completedFrameEventCount; i++) {
-            int line = completedFrameEventTimes[i] / T_STATES_PER_HSYNC;
-            if (line >= 200 && line < 280 && completedFrameEventModes[i] == 1) {
-                // Approximation until CRTC display-enable timing is modeled.
-                eventTop = line - LOWER_RASTER_SPLIT_REFERENCE_DISPLAY_LINE;
-            }
-        }
-        return eventTop;
     }
 
     private static int eventIndexAt(int[] eventTimes, int eventCount, int fromIndex, int frameOffset) {

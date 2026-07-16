@@ -207,7 +207,7 @@ class CpcMachineTest {
         setPen(machine, 3, 27);
         setMode(machine, 0);
 
-        writeHudPaletteSequence(machine, hudFrameLine, 0);
+        writeHudPaletteSequence(machine, hudFrameLine, 0, 0);
 
         FrameBuffer frame = machine.board().renderVideoFrame();
 
@@ -218,7 +218,7 @@ class CpcMachineTest {
     }
 
     @Test
-    void gateArrayAlignsHudEventsWhenDisplayPhaseMovesDown() {
+    void gateArrayAdoptsShiftedHudPhaseAfterTwoFramesAndHoldsThroughTransients() {
         CpcMachine machine = CpcMachine.withBlankRom();
         int hudDisplayLine = 193;
         int shiftedHudFrameLine = CpcGateArrayDevice.BORDER_TOP + 8 + hudDisplayLine;
@@ -234,19 +234,101 @@ class CpcMachineTest {
         setPen(machine, 3, 27);
         setMode(machine, 0);
 
-        int staleTopTState = (shiftedHudFrameLine - 8) * 256;
-        machine.board().gateArray().onTStatesElapsed(staleTopTState, staleTopTState);
-        machine.board().gateArray().writeRegister(0x81, machine.board().memory(), staleTopTState);
-        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), staleTopTState + 190);
+        writeHudPaletteSequence(machine, shiftedHudFrameLine, 0, 0);
 
-        writeHudPaletteSequence(machine, shiftedHudFrameLine, staleTopTState);
+        FrameBuffer firstCandidateFrame = machine.board().renderVideoFrame();
+        assertEquals(
+                CpcGateArrayDevice.argbForHardwareColor(27),
+                displayPixel(firstCandidateFrame, hudByteColumn * 8, hudDisplayLine)
+        );
 
-        FrameBuffer frame = machine.board().renderVideoFrame();
+        long secondFrameBase = machine.frameTStates();
+        prepareHudFrame(machine, secondFrameBase);
+        writeHudPaletteSequence(machine, shiftedHudFrameLine, secondFrameBase, secondFrameBase);
 
+        FrameBuffer secondCandidateFrame = machine.board().renderVideoFrame();
         assertEquals(
                 CpcGateArrayDevice.argbForHardwareColor(11),
-                displayPixel(frame, hudByteColumn * 8, hudDisplayLine)
+                displayPixel(secondCandidateFrame, hudByteColumn * 8, hudDisplayLine)
         );
+
+        long transientFrameBase = secondFrameBase + machine.frameTStates();
+        prepareHudFrame(machine, transientFrameBase);
+        writeHudPaletteSequence(
+                machine,
+                shiftedHudFrameLine,
+                transientFrameBase,
+                transientFrameBase,
+                250
+        );
+
+        FrameBuffer transientFrame = machine.board().renderVideoFrame();
+        assertEquals(
+                CpcGateArrayDevice.argbForHardwareColor(11),
+                displayPixel(transientFrame, hudByteColumn * 8, hudDisplayLine)
+        );
+
+        long candidateFreeFrameBase = transientFrameBase + machine.frameTStates();
+        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), candidateFreeFrameBase);
+        long earlyInkTState = candidateFreeFrameBase + (190 * 256L) + 100;
+        advanceGateArray(machine, candidateFreeFrameBase, earlyInkTState);
+        writePenInk(machine, 3, 11, earlyInkTState);
+        long boundaryTState = candidateFreeFrameBase + (233 * 256L) + 100;
+        advanceGateArray(machine, earlyInkTState, boundaryTState);
+        writePenInk(machine, 3, 27, boundaryTState);
+        long candidateFreeFrameEnd = candidateFreeFrameBase + machine.frameTStates();
+        advanceGateArray(machine, boundaryTState, candidateFreeFrameEnd);
+
+        FrameBuffer candidateFreeFrame = machine.board().renderVideoFrame();
+        assertEquals(
+                CpcGateArrayDevice.argbForHardwareColor(27),
+                displayPixel(candidateFreeFrame, hudByteColumn * 8, hudDisplayLine)
+        );
+
+        long gapDecoyFrameBase = candidateFreeFrameBase + machine.frameTStates();
+        prepareHudFrame(machine, gapDecoyFrameBase);
+        writeHudPaletteSequence(machine, shiftedHudFrameLine, gapDecoyFrameBase, gapDecoyFrameBase, 250);
+        machine.board().renderVideoFrame();
+
+        long gapFrameBase = gapDecoyFrameBase + machine.frameTStates();
+        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), gapFrameBase);
+        long gapInkTState = gapFrameBase + (190 * 256L) + 100;
+        advanceGateArray(machine, gapFrameBase, gapInkTState);
+        writePenInk(machine, 3, 11, gapInkTState);
+        long gapFrameEnd = gapFrameBase + machine.frameTStates();
+        advanceGateArray(machine, gapInkTState, gapFrameEnd);
+        machine.board().renderVideoFrame();
+
+        long repeatDecoyFrameBase = gapFrameBase + machine.frameTStates();
+        prepareHudFrame(machine, repeatDecoyFrameBase);
+        writeHudPaletteSequence(machine, shiftedHudFrameLine, repeatDecoyFrameBase, repeatDecoyFrameBase, 250);
+
+        FrameBuffer repeatDecoyFrame = machine.board().renderVideoFrame();
+        assertEquals(
+                CpcGateArrayDevice.argbForHardwareColor(11),
+                displayPixel(repeatDecoyFrame, hudByteColumn * 8, hudDisplayLine)
+        );
+    }
+
+    private static void prepareHudFrame(CpcMachine machine, long frameBase) {
+        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), frameBase);
+        writePenInk(machine, 0, 20, frameBase);
+        writePenInk(machine, 1, 23, frameBase);
+        writePenInk(machine, 2, 19, frameBase);
+        writePenInk(machine, 3, 27, frameBase);
+    }
+
+    private static void writePenInk(CpcMachine machine, int pen, int hardwareColor, long eventTState) {
+        machine.board().gateArray().writeRegister(pen & 0x0F, machine.board().memory(), eventTState);
+        machine.board().gateArray().writeRegister(
+                0x40 | (hardwareColor & 0x1F),
+                machine.board().memory(),
+                eventTState
+        );
+    }
+
+    private static void advanceGateArray(CpcMachine machine, long fromTState, long targetTState) {
+        machine.board().gateArray().onTStatesElapsed((int) (targetTState - fromTState), targetTState);
     }
 
     @Test
@@ -426,11 +508,26 @@ class CpcMachineTest {
         machine.board().cpuBus().writePort(0x7F00, 0x80 | (mode & 0x03));
     }
 
-    private static void writeHudPaletteSequence(CpcMachine machine, int hudFrameLine, long alreadyElapsedTStates) {
-        int hudModeTState = (hudFrameLine * 256) + 70;
-        int pen1TState = (hudFrameLine * 256) + 101;
-        int pen2TState = (hudFrameLine * 256) + 136;
-        int pen3TState = (hudFrameLine * 256) + 171;
+    private static void writeHudPaletteSequence(
+            CpcMachine machine,
+            int hudFrameLine,
+            long frameBase,
+            long alreadyElapsedTStates
+    ) {
+        writeHudPaletteSequence(machine, hudFrameLine, frameBase, alreadyElapsedTStates, -1);
+    }
+
+    private static void writeHudPaletteSequence(
+            CpcMachine machine,
+            int hudFrameLine,
+            long frameBase,
+            long alreadyElapsedTStates,
+            int decoyModeOneLine
+    ) {
+        long hudModeTState = frameBase + (hudFrameLine * 256L) + 70;
+        long pen1TState = frameBase + (hudFrameLine * 256L) + 101;
+        long pen2TState = frameBase + (hudFrameLine * 256L) + 136;
+        long pen3TState = frameBase + (hudFrameLine * 256L) + 171;
         machine.board().gateArray().onTStatesElapsed(
                 (int) (hudModeTState - alreadyElapsedTStates),
                 hudModeTState
@@ -442,7 +539,15 @@ class CpcMachineTest {
         machine.board().gateArray().writeRegister(0x55, machine.board().memory(), pen2TState);
         machine.board().gateArray().writeRegister(0x03, machine.board().memory(), pen3TState);
         machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), pen3TState);
-        machine.board().gateArray().onTStatesElapsed(machine.frameTStates() - pen3TState, machine.frameTStates());
+        long lastEventTState = pen3TState;
+        if (decoyModeOneLine >= 0) {
+            long decoyTState = frameBase + (decoyModeOneLine * 256L) + 100;
+            advanceGateArray(machine, pen3TState, decoyTState);
+            writePenInk(machine, 3, 12, decoyTState);
+            lastEventTState = decoyTState;
+        }
+        long frameEnd = frameBase + machine.frameTStates();
+        advanceGateArray(machine, lastEventTState, frameEnd);
     }
 
     private static int readKeyboardLine(CpcMachine machine, int line) {

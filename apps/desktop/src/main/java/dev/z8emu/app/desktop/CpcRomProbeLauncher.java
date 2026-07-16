@@ -31,7 +31,7 @@ import static dev.z8emu.app.desktop.ProbeOutput.writePng;
 public final class CpcRomProbeLauncher {
     private static final long DEFAULT_MAX_INSTRUCTIONS = 3_000_000L;
     private static final long DEFAULT_KEYS_AFTER_FRAMES = 300;
-    private static final String USAGE = "Usage: CpcRomProbeLauncher <rom-file> [max-instructions] [--disk=<dsk>] [--keys=<script>] [--keys-after-frames=<n>] [--press-key-after-frames=<n>:<char>] [--expect-frame-crc=<crc32>] [--dump-frame=<png>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-fdc] [--trace-limit=<count>] [--trace-tail]";
+    private static final String USAGE = "Usage: CpcRomProbeLauncher <rom-file> [max-instructions] [--disk=<dsk>] [--keys=<script>] [--keys-after-frames=<n>] [--press-key-after-frames=<n>:<char>] [--hold-key=<start-frame>:<hold-frames>:<name>] [--expect-frame-crc=<crc32>] [--dump-frame=<png>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-fdc] [--trace-limit=<count>] [--trace-tail]";
 
     private CpcRomProbeLauncher() {
     }
@@ -110,6 +110,7 @@ public final class CpcRomProbeLauncher {
         long keysAfterFrames = DEFAULT_KEYS_AFTER_FRAMES;
         boolean keysAfterFramesSpecified = false;
         List<PressKey> pressKeys = new ArrayList<>();
+        List<HoldKeyEvent> holdKeyEvents = new ArrayList<>();
         Long expectedFrameCrc32 = null;
         Path dumpFramePath = null;
         int[] stopPcs = new int[0];
@@ -133,6 +134,13 @@ public final class CpcRomProbeLauncher {
                     return null;
                 }
                 pressKeys.add(pressKey);
+            } else if (arg.startsWith("--hold-key=")) {
+                HoldKey holdKey = parseHoldKey(arg.substring("--hold-key=".length()));
+                if (holdKey == null) {
+                    return null;
+                }
+                holdKeyEvents.add(new HoldKeyEvent(holdKey.startFrame(), holdKey.chord(), true));
+                holdKeyEvents.add(new HoldKeyEvent(holdKey.endFrame(), holdKey.chord(), false));
             } else if (arg.startsWith("--expect-frame-crc=")) {
                 expectedFrameCrc32 = parseCrc32(arg.substring("--expect-frame-crc=".length()));
             } else if (arg.startsWith("--dump-frame=")) {
@@ -177,6 +185,7 @@ public final class CpcRomProbeLauncher {
         }
         String keyScript = keyScriptArgument == null ? null : decodeScript(keyScriptArgument);
         pressKeys.sort(Comparator.comparingLong(PressKey::frame));
+        holdKeyEvents.sort(Comparator.comparingLong(HoldKeyEvent::frame));
         return new ProbeConfig(
                 normalizedPath(positional.get(0)),
                 maxInstructions,
@@ -184,6 +193,7 @@ public final class CpcRomProbeLauncher {
                 keyScript,
                 keysAfterFrames,
                 List.copyOf(pressKeys),
+                List.copyOf(holdKeyEvents),
                 expectedFrameCrc32,
                 dumpFramePath,
                 stopPcs,
@@ -207,6 +217,28 @@ public final class CpcRomProbeLauncher {
         return new PressKey(frame, rawScript, decoded.charAt(0));
     }
 
+    private static HoldKey parseHoldKey(String value) {
+        int firstSeparator = value.indexOf(':');
+        int secondSeparator = firstSeparator < 0 ? -1 : value.indexOf(':', firstSeparator + 1);
+        if (firstSeparator <= 0 || secondSeparator <= firstSeparator + 1) {
+            return null;
+        }
+        long startFrame = parseNonNegativeLong(value.substring(0, firstSeparator));
+        long holdFrames = Long.parseLong(value.substring(firstSeparator + 1, secondSeparator));
+        if (holdFrames <= 0) {
+            return null;
+        }
+        CpcKeyMap.KeyChord chord = CpcKeyMap.forNameOrNull(value.substring(secondSeparator + 1));
+        if (chord == null) {
+            return null;
+        }
+        try {
+            return new HoldKey(startFrame, Math.addExact(startFrame, holdFrames), chord);
+        } catch (ArithmeticException overflow) {
+            return null;
+        }
+    }
+
     private static long parseNonNegativeLong(String value) {
         long parsed = Long.parseLong(value);
         if (parsed < 0) {
@@ -222,16 +254,34 @@ public final class CpcRomProbeLauncher {
     private static void runScheduledInput(CpcMachine machine, ProbeConfig config, ProbeState state) {
         boolean keysPending = config.keyScript() != null;
         int pressKeyIndex = 0;
-        while ((keysPending || pressKeyIndex < config.pressKeys().size())
+        int holdKeyEventIndex = 0;
+        while ((keysPending
+                || pressKeyIndex < config.pressKeys().size()
+                || holdKeyEventIndex < config.holdKeyEvents().size())
                 && state.stopPc < 0
                 && state.steps < config.maxInstructions()) {
             long nextKeysFrame = keysPending ? config.keysAfterFrames() : Long.MAX_VALUE;
             long nextPressFrame = pressKeyIndex < config.pressKeys().size()
                     ? config.pressKeys().get(pressKeyIndex).frame()
                     : Long.MAX_VALUE;
-            runUntilFrame(machine, config, state, Math.min(nextKeysFrame, nextPressFrame));
+            long nextHoldKeyEventFrame = holdKeyEventIndex < config.holdKeyEvents().size()
+                    ? config.holdKeyEvents().get(holdKeyEventIndex).frame()
+                    : Long.MAX_VALUE;
+            runUntilFrame(
+                    machine,
+                    config,
+                    state,
+                    Math.min(nextKeysFrame, Math.min(nextPressFrame, nextHoldKeyEventFrame))
+            );
             if (state.stopPc >= 0 || state.steps >= config.maxInstructions()) {
                 break;
+            }
+
+            while (holdKeyEventIndex < config.holdKeyEvents().size()
+                    && config.holdKeyEvents().get(holdKeyEventIndex).frame() <= state.framesRun) {
+                HoldKeyEvent event = config.holdKeyEvents().get(holdKeyEventIndex++);
+                setChordState(machine, event.chord(), event.pressed());
+                state.holdKeyEventsApplied++;
             }
 
             if (keysPending && config.keysAfterFrames() <= state.framesRun) {
@@ -247,6 +297,12 @@ public final class CpcRomProbeLauncher {
                 typeScript(machine, config, state, String.valueOf(pressKey.character()), false);
                 state.pressKeysTyped++;
             }
+        }
+    }
+
+    private static void setChordState(CpcMachine machine, CpcKeyMap.KeyChord chord, boolean pressed) {
+        for (CpcKeyMap.MatrixKey key : chord.keys()) {
+            machine.board().keyboard().setKeyPressed(key.line(), key.bit(), pressed);
         }
     }
 
@@ -363,6 +419,7 @@ public final class CpcRomProbeLauncher {
         System.out.println("keysTypedAtFrame=" + (state.keysTypedAtFrame < 0 ? "absent" : state.keysTypedAtFrame));
         System.out.println("pressKeys=" + printablePressKeys(config.pressKeys()));
         System.out.println("pressKeysTyped=" + state.pressKeysTyped + "/" + config.pressKeys().size());
+        System.out.println("holdKeyEvents=" + state.holdKeyEventsApplied + "/" + config.holdKeyEvents().size());
         System.out.println("pc=0x" + hex16(pc));
         System.out.println("opcode=0x" + hex8(opcode));
         if (state.lastExecutedPc >= 0) {
@@ -456,6 +513,7 @@ public final class CpcRomProbeLauncher {
         private int keysTyped;
         private long keysTypedAtFrame = -1;
         private int pressKeysTyped;
+        private int holdKeyEventsApplied;
 
         private ProbeState(int profilePcTop) {
             pcHits = profilePcTop > 0 ? new long[0x10000] : null;
@@ -578,6 +636,7 @@ public final class CpcRomProbeLauncher {
             String keyScript,
             long keysAfterFrames,
             List<PressKey> pressKeys,
+            List<HoldKeyEvent> holdKeyEvents,
             Long expectedFrameCrc32,
             Path dumpFramePath,
             int[] stopPcs,
@@ -588,6 +647,12 @@ public final class CpcRomProbeLauncher {
     }
 
     private record PressKey(long frame, String rawScript, char character) {
+    }
+
+    private record HoldKey(long startFrame, long endFrame, CpcKeyMap.KeyChord chord) {
+    }
+
+    private record HoldKeyEvent(long frame, CpcKeyMap.KeyChord chord, boolean pressed) {
     }
 
     private record TraceOptions(boolean traceIo, boolean traceFdc, int limit, boolean tail) {
