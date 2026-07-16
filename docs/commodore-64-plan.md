@@ -187,7 +187,11 @@ can re-latch within the next instruction).
   charset pointers + CIA2 port A VIC bank; standard text mode (ECM/BMM/MCM
   = 0): 40×25, charset from CHAR ROM or RAM per bank rules, color RAM low
   nibbles, border $D020 / background $D021; fixed 16-color PAL palette
-  (Pepto values as named ARGB constants — hand-tuned, deliberate).
+  (Colodore values as named ARGB constants — colodore.com defaults,
+  Pepto's own gamma-corrected successor; switched from the 2001 Pepto
+  palette 2026-07-16 after user feedback that it rendered too purple.
+  Note: VICE's colodore.vpl is a non-default oversaturated export — do
+  not source values from it).
   Rendering reuses the FrameBuffer (Apple II scratch-reuse pattern).
 - `C64RomProbeLauncher` (lean `Apple2RomProbeLauncher` descendant): boot
   with the three ROMs, run N instructions, screen scrape via the PETSCII
@@ -205,8 +209,10 @@ findings, fault-injection 6/6 killed). The real KERNAL 901227-03 + BASIC
 901226-01 boot to READY. in 591 300 instructions on the first attempt —
 through RAMTAS, CINT's $FF5E `LDA $D012` PAL-detection poll (which also
 exercises the raster-compare IRST latch at line 311) and the CIA1 jiffy
-IRQ. **Phase-2 frame CRC baseline: 0xC72BD0D1** (`c64ReadySmoke` boot
-screen, 384×272, Pepto palette, border 14 / background 6). Frozen Phase 2
+IRQ. **Phase-2 frame CRC baseline: 0xC5D02287** (`c64ReadySmoke` boot
+screen, 384×272, Colodore palette, border 14 / background 6; original
+Pepto-palette baseline was 0xC72BD0D1 until the 2026-07-16 palette
+switch — text visibleCrc32 0x3AC9CBBE unchanged). Frozen Phase 2
 simplifications: light pen reads 0, sprite/collision registers read 0
 (real chip read-clears), ECM/BMM/MCM stored but renderer is always
 standard text, XSCROLL/YSCROLL inert, full-frame snapshot only.

@@ -167,11 +167,11 @@ class C64VideoDeviceTest {
     }
 
     @Test
-    void paletteMatchesTheFrozenPeptoSpotChecks() {
+    void paletteMatchesTheFrozenColodoreSpotChecks() {
         assertEquals(0xFF000000, C64VideoDevice.paletteArgb(0));
         assertEquals(0xFFFFFFFF, C64VideoDevice.paletteArgb(1));
-        assertEquals(0xFF352879, C64VideoDevice.paletteArgb(6));
-        assertEquals(0xFF6C5EB5, C64VideoDevice.paletteArgb(14));
+        assertEquals(0xFF2E2C9B, C64VideoDevice.paletteArgb(6));
+        assertEquals(0xFF706DEB, C64VideoDevice.paletteArgb(14));
     }
 
     private static C64VideoDevice videoWithChargen(byte[] chargenRom) {

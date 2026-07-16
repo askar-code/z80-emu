@@ -21,20 +21,20 @@ public final class C64VideoDevice implements TimedDevice {
     private static final int[] PALETTE = {
             0xFF000000, // black
             0xFFFFFFFF, // white
-            0xFF68372B, // red
-            0xFF70A4B2, // cyan
-            0xFF6F3D86, // purple
-            0xFF588D43, // green
-            0xFF352879, // blue
-            0xFFB8C76F, // yellow
-            0xFF6F4F25, // orange
-            0xFF433900, // brown
-            0xFF9A6759, // light red
-            0xFF444444, // dark grey
-            0xFF6C6C6C, // grey
-            0xFF9AD284, // light green
-            0xFF6C5EB5, // light blue
-            0xFF959595, // light grey
+            0xFF813338, // red
+            0xFF75CEC8, // cyan
+            0xFF8E3C97, // purple
+            0xFF56AC4D, // green
+            0xFF2E2C9B, // blue
+            0xFFEDF171, // yellow
+            0xFF8E5029, // orange
+            0xFF553800, // brown
+            0xFFC46C71, // light red
+            0xFF4A4A4A, // dark grey
+            0xFF7B7B7B, // grey
+            0xFFA9FF9F, // light green
+            0xFF706DEB, // light blue
+            0xFFB2B2B2, // light grey
     };
 
     private final C64Memory memory;
