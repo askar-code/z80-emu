@@ -39,6 +39,11 @@ public final class CpcFdcDevice {
     private final Queue<SeekCompletion> seekCompletions = new ArrayDeque<>();
     private final List<Integer> commandBytes = new ArrayList<>(9);
     private int expectedCommandLength;
+    private TraceSink traceSink;
+    private int executingCommandByte;
+    private int pendingResultCommandByte;
+    private int pendingResultSt0;
+    private boolean pendingResultTrace;
 
     public void reset() {
         motorOn = false;
@@ -50,6 +55,7 @@ public final class CpcFdcDevice {
         seekCompletions.clear();
         commandBytes.clear();
         expectedCommandLength = 0;
+        pendingResultTrace = false;
     }
 
     public void insertDisk(CpcDskImage disk) {
@@ -62,6 +68,7 @@ public final class CpcFdcDevice {
         dataQueueCount = 0;
         resultQueueHead = 0;
         resultQueueCount = 0;
+        pendingResultTrace = false;
     }
 
     public boolean diskPresent() {
@@ -99,6 +106,7 @@ public final class CpcFdcDevice {
             dataQueueCount--;
             if (dataQueueCount == 0) {
                 dataQueueHead = 0;
+                emitPendingResultTrace();
             }
             return value;
         }
@@ -139,8 +147,24 @@ public final class CpcFdcDevice {
         }
     }
 
+    public void setTraceSink(TraceSink traceSink) {
+        this.traceSink = traceSink;
+        if (traceSink == null) {
+            pendingResultTrace = false;
+        }
+    }
+
     private void executeCommand() {
-        int command = commandBytes.get(0) & 0x1F;
+        executingCommandByte = commandBytes.get(0) & 0xFF;
+        TraceSink sink = traceSink;
+        if (sink != null) {
+            int[] args = new int[commandBytes.size() - 1];
+            for (int index = 1; index < commandBytes.size(); index++) {
+                args[index - 1] = commandBytes.get(index) & 0xFF;
+            }
+            sink.command(executingCommandByte, args);
+        }
+        int command = executingCommandByte & 0x1F;
         switch (command) {
             case 0x03 -> {
                 // Specify only programs timing/non-DMA flags. The current model is polling-only.
@@ -348,6 +372,27 @@ public final class CpcFdcDevice {
             }
         }
         resultQueueCount += values.length;
+        TraceSink sink = traceSink;
+        if (sink != null) {
+            if (dataQueueCount == 0) {
+                sink.result(executingCommandByte, values[0] & 0xFF);
+            } else {
+                pendingResultCommandByte = executingCommandByte;
+                pendingResultSt0 = values[0] & 0xFF;
+                pendingResultTrace = true;
+            }
+        }
+    }
+
+    private void emitPendingResultTrace() {
+        if (!pendingResultTrace || resultQueueCount == 0) {
+            return;
+        }
+        pendingResultTrace = false;
+        TraceSink sink = traceSink;
+        if (sink != null) {
+            sink.result(pendingResultCommandByte, pendingResultSt0);
+        }
     }
 
     private void ensureDataQueueCapacity(int requiredCapacity) {
@@ -393,5 +438,11 @@ public final class CpcFdcDevice {
     }
 
     private record SeekCompletion(int status0, int presentCylinder) {
+    }
+
+    public interface TraceSink {
+        void command(int commandByte, int[] args);
+
+        void result(int commandByte, int st0);
     }
 }

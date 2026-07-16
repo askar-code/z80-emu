@@ -8,6 +8,7 @@ import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.platform.bus.ClockedCpuBus;
 import dev.z8emu.platform.bus.io.IoAddressSpace;
 import dev.z8emu.platform.bus.io.IoSelector;
+import dev.z8emu.platform.bus.io.IoTraceSink;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Objects;
 
@@ -83,6 +84,10 @@ public final class CpcBus extends ClockedCpuBus {
     public int acknowledgeInterrupt() {
         gateArray.acknowledgeInterrupt();
         return 0xFF;
+    }
+
+    public void setIoTraceSink(IoTraceSink traceSink) {
+        ports.setTraceSink(traceSink);
     }
 
     private IoAddressSpace buildPortMap() {
