@@ -1,6 +1,7 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64EasyFlashCartridge;
 import dev.z8emu.machine.c64.device.C64SidDevice;
 import dev.z8emu.machine.c64.device.C64VideoDevice;
 import dev.z8emu.platform.bus.ClockedCpuBus;
@@ -17,6 +18,7 @@ public final class C64Bus extends ClockedCpuBus {
     private final C64SidDevice sid;
     private final C64CiaDevice cia1;
     private final C64CiaDevice cia2;
+    private final C64EasyFlashCartridge cartridge;
     private final IoAddressSpace memoryMappedIo;
 
     public C64Bus(
@@ -26,7 +28,8 @@ public final class C64Bus extends ClockedCpuBus {
             C64VideoDevice video,
             C64SidDevice sid,
             C64CiaDevice cia1,
-            C64CiaDevice cia2
+            C64CiaDevice cia2,
+            C64EasyFlashCartridge cartridge
     ) {
         super(clock);
         this.memory = Objects.requireNonNull(memory, "memory");
@@ -35,6 +38,7 @@ public final class C64Bus extends ClockedCpuBus {
         this.sid = Objects.requireNonNull(sid, "sid");
         this.cia1 = Objects.requireNonNull(cia1, "cia1");
         this.cia2 = Objects.requireNonNull(cia2, "cia2");
+        this.cartridge = cartridge;
         this.memoryMappedIo = buildMemoryMappedIo();
     }
 
@@ -47,8 +51,34 @@ public final class C64Bus extends ClockedCpuBus {
         if (normalized == 0x0001) {
             return cpuPort.readData();
         }
+        boolean exrom = cartridge != null && cartridge.exromAsserted();
+        boolean game = cartridge != null && cartridge.gameAsserted();
+        if (game && !exrom) {
+            if (normalized < 0x1000) {
+                return memory.readRam(normalized);
+            }
+            if (normalized >= 0x8000 && normalized < 0xA000) {
+                return cartridge.readRoml(normalized - 0x8000);
+            }
+            if (normalized >= C64Memory.IO_START && normalized < C64Memory.KERNAL_ROM_START) {
+                return memoryMappedIo.read(normalized, clockValue(), 0);
+            }
+            if (normalized >= C64Memory.KERNAL_ROM_START) {
+                return cartridge.readRomh(normalized - C64Memory.KERNAL_ROM_START);
+            }
+            return 0xFF;
+        }
+        if (normalized >= 0x8000 && normalized < C64Memory.BASIC_ROM_START) {
+            if (cpuPort.loram() && cpuPort.hiram() && exrom) {
+                return cartridge.readRoml(normalized - 0x8000);
+            }
+            return memory.readRam(normalized);
+        }
         if (normalized >= C64Memory.BASIC_ROM_START
                 && normalized < C64Memory.BASIC_ROM_START + C64Memory.BASIC_ROM_SIZE) {
+            if (cpuPort.hiram() && exrom && game) {
+                return cartridge.readRomh(normalized - C64Memory.BASIC_ROM_START);
+            }
             if (cpuPort.loram() && cpuPort.hiram()) {
                 return memory.readBasicRom(normalized - C64Memory.BASIC_ROM_START);
             }
@@ -60,6 +90,9 @@ public final class C64Bus extends ClockedCpuBus {
             }
             if (cpuPort.charen()) {
                 return memoryMappedIo.read(normalized, clockValue(), 0);
+            }
+            if (exrom && game && !cpuPort.hiram()) {
+                return memory.readRam(normalized);
             }
             return memory.readCharRom(normalized - C64Memory.IO_START);
         }
@@ -81,6 +114,16 @@ public final class C64Bus extends ClockedCpuBus {
         }
         if (normalized == 0x0001) {
             cpuPort.writeData(value);
+            return;
+        }
+        boolean exrom = cartridge != null && cartridge.exromAsserted();
+        boolean game = cartridge != null && cartridge.gameAsserted();
+        if (game && !exrom) {
+            if (normalized < 0x1000) {
+                memory.writeRam(normalized, value);
+            } else if (normalized >= C64Memory.IO_START && normalized < C64Memory.KERNAL_ROM_START) {
+                memoryMappedIo.write(normalized, value, clockValue(), 0);
+            }
             return;
         }
         if (normalized >= C64Memory.IO_START
@@ -129,6 +172,25 @@ public final class C64Bus extends ClockedCpuBus {
                 access -> cia2.readRegister(access.offset()),
                 (access, value) -> cia2.writeRegister(access.offset(), value)
         );
+        if (cartridge != null) {
+            ioMap.mapWrite(
+                    "c64.easyflash",
+                    IoSelector.range(0xDE00, 0xDEFF),
+                    (access, value) -> {
+                        if (access.offset() == 0x00) {
+                            cartridge.writeBankRegister(value);
+                        } else if (access.offset() == 0x02) {
+                            cartridge.writeControlRegister(value);
+                        }
+                    }
+            );
+            ioMap.mapReadWrite(
+                    "c64.easyflash-ram",
+                    IoSelector.range(0xDF00, 0xDFFF),
+                    access -> cartridge.readRam(access.offset()),
+                    (access, value) -> cartridge.writeRam(access.offset(), value)
+            );
+        }
         return ioMap;
     }
 }

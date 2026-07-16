@@ -1,3 +1,5 @@
+import java.io.ByteArrayOutputStream
+
 plugins {
     application
 }
@@ -86,6 +88,94 @@ tasks.register<JavaExec>("c64PrgSmoke") {
         "--prg=build/c64/hello.prg",
         "--expect-screen=HELLO",
         "--dump-frame=build/c64/prg-hello.png"
+    )
+}
+
+val c64CrtFile = rootProject.layout.projectDirectory.file("build/c64/easyflash-smoke.crt")
+tasks.register<JavaExec>("c64CrtSmoke") {
+    group = "verification"
+    description = "Boots a synthetic EasyFlash cartridge and checks its screen output."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+    val targetFile = c64CrtFile.asFile
+    doFirst {
+        val target = targetFile
+        target.parentFile.mkdirs()
+        fun putShort(bytes: ByteArray, offset: Int, value: Int) {
+            bytes[offset] = (value ushr 8).toByte()
+            bytes[offset + 1] = value.toByte()
+        }
+        fun putInt(bytes: ByteArray, offset: Int, value: Int) {
+            bytes[offset] = (value ushr 24).toByte()
+            bytes[offset + 1] = (value ushr 16).toByte()
+            bytes[offset + 2] = (value ushr 8).toByte()
+            bytes[offset + 3] = value.toByte()
+        }
+        fun chip(type: Int, bank: Int, loadAddress: Int, data: ByteArray): ByteArray {
+            val packet = ByteArray(0x10 + data.size)
+            "CHIP".toByteArray(Charsets.US_ASCII).copyInto(packet)
+            putInt(packet, 0x04, packet.size)
+            putShort(packet, 0x08, type)
+            putShort(packet, 0x0A, bank)
+            putShort(packet, 0x0C, loadAddress)
+            putShort(packet, 0x0E, data.size)
+            data.copyInto(packet, 0x10)
+            return packet
+        }
+
+        val header = ByteArray(0x40)
+        "C64 CARTRIDGE   ".toByteArray(Charsets.US_ASCII).copyInto(header)
+        putInt(header, 0x10, 0x40)
+        putShort(header, 0x14, 0x0100)
+        putShort(header, 0x16, 32)
+        header[0x18] = 1
+        header.fill(0x20, 0x20, 0x40)
+        "EASYFLASH SMOKE".toByteArray(Charsets.US_ASCII).copyInto(header, 0x20)
+
+        val hirom = ByteArray(0x2000) { 0xEA.toByte() }
+        val code = ByteArrayOutputStream()
+        fun ldaSta(value: Int, address: Int) {
+            code.write(0xA9)
+            code.write(value)
+            code.write(0x8D)
+            code.write(address and 0xFF)
+            code.write(address ushr 8)
+        }
+        ldaSta(0x1B, 0xD011)
+        ldaSta(0xC8, 0xD016)
+        ldaSta(0x14, 0xD018)
+        ldaSta(0x0E, 0xD020)
+        ldaSta(0x06, 0xD021)
+        byteArrayOf(
+            0x05, 0x01, 0x13, 0x19, 0x06, 0x0C, 0x01, 0x13, 0x08, 0x20, 0x0F, 0x0B
+        ).forEachIndexed { index, screenCode ->
+            ldaSta(screenCode.toInt(), 0x0400 + index)
+        }
+        val loopAddress = 0xE000 + code.size()
+        code.write(0x4C)
+        code.write(loopAddress and 0xFF)
+        code.write(loopAddress ushr 8)
+        code.toByteArray().copyInto(hirom)
+        hirom[0x1FFC] = 0x00
+        hirom[0x1FFD] = 0xE0.toByte()
+
+        val output = ByteArrayOutputStream()
+        output.writeBytes(header)
+        output.writeBytes(chip(0, 0, 0x8000, ByteArray(0x2000)))
+        output.writeBytes(chip(2, 0, 0xE000, hirom))
+        target.writeBytes(output.toByteArray())
+    }
+    args(
+        providers.gradleProperty("c64.roms").orElse("media").get(),
+        "2000000",
+        "--crt=build/c64/easyflash-smoke.crt",
+        "--expect-screen=EASYFLASH<SP>OK",
+        "--dump-frame=build/c64/crt-smoke.png",
+        "--expect-frame-crc=81533B92"
     )
 }
 
