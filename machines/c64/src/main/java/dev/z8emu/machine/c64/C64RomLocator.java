@@ -7,6 +7,9 @@ public final class C64RomLocator {
     public static final String BASIC_ROM = "basic.901226-01.bin";
     public static final String KERNAL_ROM = "kernal.901227-03.bin";
     public static final String CHARGEN_ROM = "characters.901225-01.bin";
+    public static final String BASIC_ROM_PROPERTY = "c64.basicRom";
+    public static final String KERNAL_ROM_PROPERTY = "c64.kernalRom";
+    public static final String CHARGEN_ROM_PROPERTY = "c64.chargenRom";
 
     private C64RomLocator() {
     }

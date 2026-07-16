@@ -1,5 +1,7 @@
 package dev.z8emu.machine.c64;
 
+import dev.z8emu.machine.c64.device.C64VideoDevice;
+
 public record C64ModelConfig(
         String modelName,
         long cpuClockHz,
@@ -11,9 +13,9 @@ public record C64ModelConfig(
         return new C64ModelConfig(
                 "Commodore 64 (PAL)",
                 985_248,
-                19_656,
-                384,
-                272
+                C64VideoDevice.CYCLES_PER_LINE * C64VideoDevice.LINES_PER_FRAME,
+                C64VideoDevice.FRAME_WIDTH,
+                C64VideoDevice.FRAME_HEIGHT
         );
     }
 }

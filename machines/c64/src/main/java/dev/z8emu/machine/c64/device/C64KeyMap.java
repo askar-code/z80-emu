@@ -7,6 +7,14 @@ public final class C64KeyMap {
     }
 
     public static KeyChord forCharacter(char character) {
+        KeyChord chord = forCharacterOrNull(character);
+        if (chord == null) {
+            throw new IllegalArgumentException("Unsupported C64 host character: " + character);
+        }
+        return chord;
+    }
+
+    public static KeyChord forCharacterOrNull(char character) {
         return switch (Character.toUpperCase(character)) {
             case '\r', '\n' -> chord(key(0, 1));
             case ' ' -> chord(key(7, 4));
@@ -68,7 +76,7 @@ public final class C64KeyMap {
             case '?' -> shifted(key(6, 7));
             case '<' -> shifted(key(5, 7));
             case '>' -> shifted(key(5, 4));
-            default -> throw new IllegalArgumentException("Unsupported C64 host character: " + character);
+            default -> null;
         };
     }
 

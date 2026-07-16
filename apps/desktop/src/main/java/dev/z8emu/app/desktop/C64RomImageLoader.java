@@ -1,6 +1,7 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.c64.C64Memory;
+import dev.z8emu.machine.c64.C64RomLocator;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,18 +13,27 @@ final class C64RomImageLoader {
     static final int BUNDLE_SIZE = C64Memory.BASIC_ROM_SIZE
             + C64Memory.KERNAL_ROM_SIZE
             + C64Memory.CHAR_ROM_SIZE;
-    static final String BASIC_ROM = "basic.901226-01.bin";
-    static final String KERNAL_ROM = "kernal.901227-03.bin";
-    static final String CHARGEN_ROM = "characters.901225-01.bin";
+    static final String BASIC_ROM = C64RomLocator.BASIC_ROM;
+    static final String KERNAL_ROM = C64RomLocator.KERNAL_ROM;
+    static final String CHARGEN_ROM = C64RomLocator.CHARGEN_ROM;
 
     private C64RomImageLoader() {
     }
 
     static C64RomSet load(Path romDirectoryOrFile) throws IOException {
         Path directory = romDirectory(romDirectoryOrFile);
-        Path basicPath = overriddenPath("c64.basicRom", directory.resolve(BASIC_ROM));
-        Path kernalPath = overriddenPath("c64.kernalRom", directory.resolve(KERNAL_ROM));
-        Path chargenPath = overriddenPath("c64.chargenRom", directory.resolve(CHARGEN_ROM));
+        Path basicPath = overriddenPath(
+                C64RomLocator.BASIC_ROM_PROPERTY,
+                directory.resolve(C64RomLocator.BASIC_ROM)
+        );
+        Path kernalPath = overriddenPath(
+                C64RomLocator.KERNAL_ROM_PROPERTY,
+                directory.resolve(C64RomLocator.KERNAL_ROM)
+        );
+        Path chargenPath = overriddenPath(
+                C64RomLocator.CHARGEN_ROM_PROPERTY,
+                directory.resolve(C64RomLocator.CHARGEN_ROM)
+        );
         return new C64RomSet(
                 readRom(basicPath, C64Memory.BASIC_ROM_SIZE),
                 readRom(kernalPath, C64Memory.KERNAL_ROM_SIZE),
@@ -79,7 +89,9 @@ final class C64RomImageLoader {
             return false;
         }
         String normalized = fileName.toString().toLowerCase(Locale.ROOT);
-        return normalized.equals(BASIC_ROM) || normalized.equals(KERNAL_ROM) || normalized.equals(CHARGEN_ROM);
+        return normalized.equals(C64RomLocator.BASIC_ROM)
+                || normalized.equals(C64RomLocator.KERNAL_ROM)
+                || normalized.equals(C64RomLocator.CHARGEN_ROM);
     }
 
     private static Path overriddenPath(String propertyName, Path defaultPath) {

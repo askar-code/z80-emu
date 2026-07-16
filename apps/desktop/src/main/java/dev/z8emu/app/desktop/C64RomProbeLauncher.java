@@ -1,5 +1,6 @@
 package dev.z8emu.app.desktop;
 
+import dev.z8emu.app.desktop.ProbeOutput.FrameProbeResult;
 import dev.z8emu.machine.c64.C64KeyboardTyper;
 import dev.z8emu.machine.c64.C64Machine;
 import dev.z8emu.machine.c64.C64PrgLoader;
@@ -13,12 +14,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.zip.CRC32;
 
 import static dev.z8emu.app.desktop.ProbeOutput.countVisibleCharacters;
+import static dev.z8emu.app.desktop.ProbeOutput.decodeScript;
+import static dev.z8emu.app.desktop.ProbeOutput.frameCrc32;
 import static dev.z8emu.app.desktop.ProbeOutput.hex16;
 import static dev.z8emu.app.desktop.ProbeOutput.hex8;
+import static dev.z8emu.app.desktop.ProbeOutput.isPcMatch;
+import static dev.z8emu.app.desktop.ProbeOutput.parseAddress;
+import static dev.z8emu.app.desktop.ProbeOutput.parseAddresses;
+import static dev.z8emu.app.desktop.ProbeOutput.parseCrc32;
+import static dev.z8emu.app.desktop.ProbeOutput.printable;
+import static dev.z8emu.app.desktop.ProbeOutput.printFrameResult;
+import static dev.z8emu.app.desktop.ProbeOutput.printPcProfile;
 import static dev.z8emu.app.desktop.ProbeOutput.writePng;
 
 public final class C64RomProbeLauncher {
@@ -44,157 +52,67 @@ public final class C64RomProbeLauncher {
         String typeAfterScreen = config.typeAfterScreen() == null ? null : decodeScript(config.typeAfterScreen());
         String expectedScreen = config.expectedScreen() == null ? null : decodeScript(config.expectedScreen());
         String prgCommand = prgImage == null ? null : C64PrgLoader.startCommand(prgImage, config.prgSysAddress());
-        int keysTyped = 0;
-        boolean typeAfterScreenFound = false;
-        boolean readyFound = false;
-        boolean expectationMet = false;
-        int stopPc = -1;
-        long[] pcHits = config.profilePcTop() > 0 ? new long[0x10000] : null;
-        int lastExecutedPc = -1;
-        int lastExecutedOpcode = -1;
-        long steps = 0;
+        ProbeState state = new ProbeState(config.profilePcTop());
 
         try {
             if (keyScript != null && typeAfterScreen != null) {
-                while (steps < config.maxInstructions()) {
-                    int pc = machine.cpu().registers().pc();
-                    if (isPcMatch(pc, config.stopPcs())) {
-                        stopPc = pc;
-                        break;
-                    }
-                    if (pcHits != null) {
-                        pcHits[pc]++;
-                    }
-                    lastExecutedPc = pc;
-                    lastExecutedOpcode = machine.board().cpuBus().readMemory(pc);
-                    machine.runInstruction();
-                    steps++;
-
-                    if ((steps % 100) == 0 && C64ScreenText.contains(machine, typeAfterScreen)) {
-                        typeAfterScreenFound = true;
-                        break;
-                    }
-                }
-
-                if (!typeAfterScreenFound && steps >= config.maxInstructions()) {
-                    traceCollector.pause();
-                    FrameProbeResult frameResult = renderFrame(
-                            machine,
-                            config.dumpFramePath(),
-                            config.expectedFrameCrc32()
-                    );
-                    System.out.println("status=type-screen-not-found");
-                    printProbeReport(
+                state.typeAfterScreenFound = runUntilScreenText(machine, config, state, typeAfterScreen);
+                if (!state.typeAfterScreenFound && state.steps >= config.maxInstructions()) {
+                    reportFailureAndExit(
                             machine,
                             config,
                             roms,
-                            steps,
+                            state,
                             keyScript,
-                            keysTyped,
                             typeAfterScreen,
-                            typeAfterScreenFound,
                             prgImage,
                             prgCommand,
-                            readyFound,
                             expectedScreen,
-                            lastExecutedPc,
-                            lastExecutedOpcode,
-                            stopPc,
-                            pcHits,
                             traceCollector,
-                            frameResult
+                            "type-screen-not-found"
                     );
-                    System.exit(1);
                     return;
                 }
             }
 
             if (prgImage != null) {
-                while (steps < config.maxInstructions()) {
-                    int pc = machine.cpu().registers().pc();
-                    if (isPcMatch(pc, config.stopPcs())) {
-                        stopPc = pc;
-                        break;
-                    }
-                    if (pcHits != null) {
-                        pcHits[pc]++;
-                    }
-                    lastExecutedPc = pc;
-                    lastExecutedOpcode = machine.board().cpuBus().readMemory(pc);
-                    machine.runInstruction();
-                    steps++;
-
-                    if ((steps % 100) == 0 && C64ScreenText.contains(machine, "READY.")) {
-                        readyFound = true;
-                        break;
-                    }
-                }
-
-                if (!readyFound && steps >= config.maxInstructions()) {
-                    traceCollector.pause();
-                    FrameProbeResult frameResult = renderFrame(
-                            machine,
-                            config.dumpFramePath(),
-                            config.expectedFrameCrc32()
-                    );
-                    System.out.println("status=ready-not-found");
-                    printProbeReport(
+                state.readyFound = runUntilScreenText(machine, config, state, "READY.");
+                if (!state.readyFound && state.steps >= config.maxInstructions()) {
+                    reportFailureAndExit(
                             machine,
                             config,
                             roms,
-                            steps,
+                            state,
                             keyScript,
-                            keysTyped,
                             typeAfterScreen,
-                            typeAfterScreenFound,
                             prgImage,
                             prgCommand,
-                            readyFound,
                             expectedScreen,
-                            lastExecutedPc,
-                            lastExecutedOpcode,
-                            stopPc,
-                            pcHits,
                             traceCollector,
-                            frameResult
+                            "ready-not-found"
                     );
-                    System.exit(1);
                     return;
                 }
 
-                if (readyFound && stopPc < 0) {
+                if (state.readyFound && state.stopPc < 0) {
                     C64PrgLoader.inject(machine, prgImage);
                     for (int keyIndex = 0; keyIndex < prgCommand.length(); keyIndex++) {
-                        steps += C64KeyboardTyper.typeCharacter(machine, prgCommand.charAt(keyIndex));
+                        state.steps += C64KeyboardTyper.typeCharacter(machine, prgCommand.charAt(keyIndex));
                     }
                 }
             }
 
-            if (keyScript != null && (typeAfterScreen == null || typeAfterScreenFound) && stopPc < 0) {
+            if (keyScript != null
+                    && (typeAfterScreen == null || state.typeAfterScreenFound)
+                    && state.stopPc < 0) {
                 for (int keyIndex = 0; keyIndex < keyScript.length(); keyIndex++) {
-                    steps += C64KeyboardTyper.typeCharacter(machine, keyScript.charAt(keyIndex));
-                    keysTyped++;
+                    state.steps += C64KeyboardTyper.typeCharacter(machine, keyScript.charAt(keyIndex));
+                    state.keysTyped++;
                 }
             }
 
-            while (steps < config.maxInstructions() && stopPc < 0) {
-                int pc = machine.cpu().registers().pc();
-                if (isPcMatch(pc, config.stopPcs())) {
-                    stopPc = pc;
-                    break;
-                }
-                if (pcHits != null) {
-                    pcHits[pc]++;
-                }
-                lastExecutedPc = pc;
-                lastExecutedOpcode = machine.board().cpuBus().readMemory(pc);
-                machine.runInstruction();
-                steps++;
-
-                if (expectedScreen != null && (steps % 100) == 0 && C64ScreenText.contains(machine, expectedScreen)) {
-                    expectationMet = true;
-                    break;
-                }
+            if (state.stopPc < 0) {
+                state.expectationMet = runUntilScreenText(machine, config, state, expectedScreen);
             }
 
             traceCollector.pause();
@@ -203,12 +121,12 @@ public final class C64RomProbeLauncher {
                     config.dumpFramePath(),
                     config.expectedFrameCrc32()
             );
-            boolean screenExpectationFailed = expectedScreen != null && !expectationMet;
+            boolean screenExpectationFailed = expectedScreen != null && !state.expectationMet;
             boolean frameExpectationFailed = config.expectedFrameCrc32() != null
                     && frameResult.crc32() != config.expectedFrameCrc32();
             System.out.println("status=" + status(
-                    expectationMet,
-                    stopPc,
+                    state.expectationMet,
+                    state.stopPc,
                     config.expectedFrameCrc32(),
                     screenExpectationFailed,
                     frameExpectationFailed
@@ -217,19 +135,12 @@ public final class C64RomProbeLauncher {
                     machine,
                     config,
                     roms,
-                    steps,
+                    state,
                     keyScript,
-                    keysTyped,
                     typeAfterScreen,
-                    typeAfterScreenFound,
                     prgImage,
                     prgCommand,
-                    readyFound,
                     expectedScreen,
-                    lastExecutedPc,
-                    lastExecutedOpcode,
-                    stopPc,
-                    pcHits,
                     traceCollector,
                     frameResult
             );
@@ -244,19 +155,12 @@ public final class C64RomProbeLauncher {
                         machine,
                         config,
                         roms,
-                        steps,
+                        state,
                         keyScript,
-                        keysTyped,
                         typeAfterScreen,
-                        typeAfterScreenFound,
                         prgImage,
                         prgCommand,
-                        readyFound,
                         expectedScreen,
-                        lastExecutedPc,
-                        lastExecutedOpcode,
-                        stopPc,
-                        pcHits,
                         traceCollector,
                         renderFrame(machine, config.dumpFramePath(), config.expectedFrameCrc32())
                 );
@@ -353,44 +257,6 @@ public final class C64RomProbeLauncher {
         );
     }
 
-    private static int parseAddress(String value) {
-        String normalized = value.toLowerCase(Locale.ROOT);
-        if (normalized.startsWith("0x")) {
-            normalized = normalized.substring(2);
-        }
-        return Integer.parseInt(normalized, 16) & 0xFFFF;
-    }
-
-    private static int[] parseAddresses(String value) {
-        String[] parts = value.split(",");
-        int[] addresses = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            addresses[i] = parseAddress(parts[i]);
-        }
-        return addresses;
-    }
-
-    private static long parseCrc32(String value) {
-        String normalized = value.toLowerCase(Locale.ROOT);
-        if (normalized.startsWith("0x")) {
-            normalized = normalized.substring(2);
-        }
-        long parsed = Long.parseUnsignedLong(normalized, 16);
-        if ((parsed & ~0xFFFF_FFFFL) != 0) {
-            throw new IllegalArgumentException("CRC32 value out of range: " + value);
-        }
-        return parsed;
-    }
-
-    private static boolean isPcMatch(int pc, int[] pcs) {
-        for (int expectedPc : pcs) {
-            if (pc == expectedPc) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private static String status(
             boolean expectationMet,
             int stopPc,
@@ -416,76 +282,81 @@ public final class C64RomProbeLauncher {
         return "max-instructions-reached";
     }
 
-    private static String decodeScript(String value) {
-        StringBuilder decoded = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char character = value.charAt(i);
-            if (character == '<') {
-                int end = value.indexOf('>', i + 1);
-                if (end > i) {
-                    String token = value.substring(i + 1, end).toUpperCase(Locale.ROOT);
-                    Character tokenCharacter = decodeAngleToken(token);
-                    if (tokenCharacter != null) {
-                        decoded.append(tokenCharacter);
-                        i = end;
-                        continue;
-                    }
-                }
+    private static boolean runUntilScreenText(
+            C64Machine machine,
+            ProbeConfig config,
+            ProbeState state,
+            String awaitedScreenTextOrNull
+    ) {
+        while (state.steps < config.maxInstructions()) {
+            int pc = machine.cpu().registers().pc();
+            if (isPcMatch(pc, config.stopPcs())) {
+                state.stopPc = pc;
+                break;
             }
-            if (character == '\\' && i + 1 < value.length()) {
-                char escaped = value.charAt(++i);
-                switch (escaped) {
-                    case 'r' -> decoded.append('\r');
-                    case 'n' -> decoded.append('\n');
-                    case 't' -> decoded.append('\t');
-                    case '\\' -> decoded.append('\\');
-                    case 'x' -> {
-                        if (i + 2 >= value.length()) {
-                            throw new IllegalArgumentException("Incomplete hex escape in key script");
-                        }
-                        String hex = value.substring(i + 1, i + 3);
-                        decoded.append((char) Integer.parseInt(hex, 16));
-                        i += 2;
-                    }
-                    default -> decoded.append(escaped);
-                }
-            } else {
-                decoded.append(character);
+            if (state.pcHits != null) {
+                state.pcHits[pc]++;
+            }
+            state.lastExecutedPc = pc;
+            state.lastExecutedOpcode = machine.board().cpuBus().readMemory(pc);
+            machine.runInstruction();
+            state.steps++;
+
+            if (awaitedScreenTextOrNull != null
+                    && (state.steps % 100) == 0
+                    && C64ScreenText.contains(machine, awaitedScreenTextOrNull)) {
+                return true;
             }
         }
-        return decoded.toString();
+        return false;
     }
 
-    private static Character decodeAngleToken(String token) {
-        return switch (token) {
-            case "CR", "ENTER", "RETURN" -> '\r';
-            case "LF", "NL", "NEWLINE" -> '\n';
-            case "SP", "SPACE" -> ' ';
-            case "TAB" -> '\t';
-            case "ESC", "ESCAPE" -> 0x1B;
-            case "BS", "BACKSPACE", "LEFT" -> 0x08;
-            case "RIGHT" -> 0x15;
-            default -> null;
-        };
+    private static void reportFailureAndExit(
+            C64Machine machine,
+            ProbeConfig config,
+            C64RomImageLoader.C64RomSet roms,
+            ProbeState state,
+            String keyScript,
+            String typeAfterScreen,
+            C64PrgImage prgImage,
+            String prgCommand,
+            String expectedScreen,
+            TraceCollector traceCollector,
+            String status
+    ) throws IOException {
+        traceCollector.pause();
+        FrameProbeResult frameResult = renderFrame(
+                machine,
+                config.dumpFramePath(),
+                config.expectedFrameCrc32()
+        );
+        System.out.println("status=" + status);
+        printProbeReport(
+                machine,
+                config,
+                roms,
+                state,
+                keyScript,
+                typeAfterScreen,
+                prgImage,
+                prgCommand,
+                expectedScreen,
+                traceCollector,
+                frameResult
+        );
+        System.exit(1);
     }
 
     private static void printProbeReport(
             C64Machine machine,
             ProbeConfig config,
             C64RomImageLoader.C64RomSet roms,
-            long steps,
+            ProbeState state,
             String keyScript,
-            int keysTyped,
             String typeAfterScreen,
-            boolean typeAfterScreenFound,
             C64PrgImage prgImage,
             String prgCommand,
-            boolean readyFound,
             String expectedScreen,
-            int lastExecutedPc,
-            int lastExecutedOpcode,
-            int stopPc,
-            long[] pcHits,
             TraceCollector traceCollector,
             FrameProbeResult frameResult
     ) {
@@ -501,24 +372,24 @@ public final class C64RomProbeLauncher {
         System.out.println("basicBytes=" + roms.basic().length);
         System.out.println("kernalBytes=" + roms.kernal().length);
         System.out.println("chargenBytes=" + roms.chargen().length);
-        System.out.println("steps=" + steps);
-        System.out.println("keysTyped=" + keysTyped + "/" + (keyScript == null ? 0 : keyScript.length()));
+        System.out.println("steps=" + state.steps);
+        System.out.println("keysTyped=" + state.keysTyped + "/" + (keyScript == null ? 0 : keyScript.length()));
         if (typeAfterScreen != null) {
             System.out.println("typeAfterScreen=" + printable(typeAfterScreen));
         }
-        System.out.println("typeAfterScreenFound=" + typeAfterScreenFound);
+        System.out.println("typeAfterScreenFound=" + state.typeAfterScreenFound);
         if (prgImage != null) {
             System.out.println("prgSource=" + config.prgPath());
             System.out.println("prgLoadAddress=0x" + hex16(prgImage.loadAddress()));
             System.out.println("prgBytes=" + prgImage.payload().length);
             System.out.println("prgCommand=" + printable(prgCommand));
-            System.out.println("readyFound=" + readyFound);
+            System.out.println("readyFound=" + state.readyFound);
         }
         System.out.println("pc=0x" + hex16(pc));
         System.out.println("opcode=0x" + hex8(opcode));
-        if (lastExecutedPc >= 0) {
-            System.out.println("lastPc=0x" + hex16(lastExecutedPc));
-            System.out.println("lastOpcode=0x" + hex8(lastExecutedOpcode));
+        if (state.lastExecutedPc >= 0) {
+            System.out.println("lastPc=0x" + hex16(state.lastExecutedPc));
+            System.out.println("lastOpcode=0x" + hex8(state.lastExecutedOpcode));
         }
         System.out.println("a=0x" + hex8(machine.cpu().registers().a()));
         System.out.println("x=0x" + hex8(machine.cpu().registers().x()));
@@ -551,37 +422,12 @@ public final class C64RomProbeLauncher {
                 System.out.println(hex16(address) + ": " + hex8(machine.board().cpuBus().readMemory(address)));
             }
         }
-        if (stopPc >= 0) {
-            System.out.println("stopPc=0x" + hex16(stopPc));
+        if (state.stopPc >= 0) {
+            System.out.println("stopPc=0x" + hex16(state.stopPc));
         }
-        printPcProfile(pcHits, config.profilePcTop());
+        printPcProfile(state.pcHits, config.profilePcTop());
         traceCollector.print();
         printFrameResult(frameResult);
-    }
-
-    private static void printPcProfile(long[] pcHits, int topCount) {
-        if (pcHits == null || topCount <= 0) {
-            return;
-        }
-        int printed = 0;
-        System.out.println("pcProfileTop:");
-        while (printed < topCount) {
-            int bestPc = -1;
-            long bestHits = 0;
-            for (int pc = 0; pc < pcHits.length; pc++) {
-                long hits = pcHits[pc];
-                if (hits > bestHits) {
-                    bestHits = hits;
-                    bestPc = pc;
-                }
-            }
-            if (bestPc < 0) {
-                break;
-            }
-            System.out.println("%02d|pc=0x%s hits=%d".formatted(printed + 1, hex16(bestPc), bestHits));
-            pcHits[bestPc] = 0;
-            printed++;
-        }
     }
 
     private static FrameProbeResult renderFrame(
@@ -606,41 +452,6 @@ public final class C64RomProbeLauncher {
         );
     }
 
-    private static void printFrameResult(FrameProbeResult frameResult) {
-        if (frameResult.dumpPath() != null) {
-            System.out.println("frameDump=" + frameResult.dumpPath());
-        }
-        System.out.println("frameSize=" + frameResult.width() + "x" + frameResult.height());
-        System.out.println("frameCrc32=0x" + crc32Hex(frameResult.crc32()));
-        if (frameResult.expectedCrc32() != null) {
-            System.out.println("expectFrameCrc32=0x" + crc32Hex(frameResult.expectedCrc32()));
-            System.out.println("expectFrameCrc32Found=" + (frameResult.crc32() == frameResult.expectedCrc32()));
-        }
-    }
-
-    private static String crc32Hex(long value) {
-        return "%08X".formatted(value & 0xFFFF_FFFFL);
-    }
-
-    private static long frameCrc32(FrameBuffer frame) {
-        CRC32 crc32 = new CRC32();
-        for (int pixel : frame.pixels()) {
-            crc32.update((pixel >>> 24) & 0xFF);
-            crc32.update((pixel >>> 16) & 0xFF);
-            crc32.update((pixel >>> 8) & 0xFF);
-            crc32.update(pixel & 0xFF);
-        }
-        return crc32.getValue();
-    }
-
-    private static String printable(String value) {
-        return value
-                .replace("\\", "\\\\")
-                .replace("\r", "\\r")
-                .replace("\n", "\\n")
-                .replace("\t", "\\t");
-    }
-
     private static void rethrow(Throwable failure) throws IOException {
         if (failure instanceof IOException ioFailure) {
             throw ioFailure;
@@ -652,6 +463,22 @@ public final class C64RomProbeLauncher {
             throw error;
         }
         throw new IOException(failure);
+    }
+
+    private static final class ProbeState {
+        private long steps;
+        private int stopPc = -1;
+        private int lastExecutedPc = -1;
+        private int lastExecutedOpcode = -1;
+        private final long[] pcHits;
+        private int keysTyped;
+        private boolean typeAfterScreenFound;
+        private boolean readyFound;
+        private boolean expectationMet;
+
+        private ProbeState(int profilePcTop) {
+            pcHits = profilePcTop > 0 ? new long[0x10000] : null;
+        }
     }
 
     private static final class TraceCollector {
@@ -749,12 +576,4 @@ public final class C64RomProbeLauncher {
         private static final int DEFAULT_LIMIT = 256;
     }
 
-    private record FrameProbeResult(
-            Path dumpPath,
-            int width,
-            int height,
-            long crc32,
-            Long expectedCrc32
-    ) {
-    }
 }

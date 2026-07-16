@@ -52,6 +52,7 @@ public final class C64VideoDevice implements TimedDevice {
     private int spriteSpriteLatch;
     private int spriteDataLatch;
     private int rasterCompare;
+    private int rasterCompareCycle;
     private int frameCycle;
 
     public C64VideoDevice(C64Memory memory) {
@@ -89,10 +90,12 @@ public final class C64VideoDevice implements TimedDevice {
             case 0x11 -> {
                 registers[registerIndex] = byteValue & 0x7F;
                 rasterCompare = (rasterCompare & 0xFF) | ((byteValue & 0x80) << 1);
+                rasterCompareCycle = rasterCompare * CYCLES_PER_LINE;
             }
             case 0x12 -> {
                 registers[registerIndex] = byteValue;
                 rasterCompare = (rasterCompare & 0x100) | byteValue;
+                rasterCompareCycle = rasterCompare * CYCLES_PER_LINE;
             }
             case 0x19 -> interruptLatch &= ~(byteValue & 0x0F);
             case 0x1E, 0x1F -> {
@@ -108,6 +111,7 @@ public final class C64VideoDevice implements TimedDevice {
         spriteSpriteLatch = 0;
         spriteDataLatch = 0;
         rasterCompare = 0;
+        rasterCompareCycle = rasterCompare * CYCLES_PER_LINE;
         frameCycle = 0;
     }
 
@@ -118,7 +122,7 @@ public final class C64VideoDevice implements TimedDevice {
             if (frameCycle == FRAME_CYCLES) {
                 frameCycle = 0;
             }
-            if (frameCycle % CYCLES_PER_LINE == 0 && rasterLine() == rasterCompare) {
+            if (frameCycle == rasterCompareCycle) {
                 interruptLatch |= 0x01;
             }
         }
@@ -184,29 +188,41 @@ public final class C64VideoDevice implements TimedDevice {
                 for (int y = 0; y < CELL_SIZE; y++) {
                     int glyphBits = vicRead(charsetBase + glyphCode * CELL_SIZE + y, bankBase);
                     if (multicolorMode && (colorRam & 0x08) != 0) {
-                        renderMulticolorTextRow(glyphBits, colorRam, targetX, targetY + y);
+                        renderMulticolorRow(
+                                glyphBits,
+                                registers[0x21],
+                                registers[0x22],
+                                registers[0x23],
+                                colorRam & 0x07,
+                                targetX,
+                                targetY + y
+                        );
                     } else {
                         int foregroundIndex = multicolorMode ? colorRam & 0x07 : colorRam;
                         int foreground = PALETTE[foregroundIndex];
-                        for (int x = 0; x < CELL_SIZE; x++) {
-                            boolean foregroundPixel = ((glyphBits >>> (7 - x)) & 1) != 0;
-                            drawGraphicsPixel(targetX + x, targetY + y,
-                                    foregroundPixel ? foreground : background, foregroundPixel);
-                        }
+                        renderHiresRow(glyphBits, foreground, background, targetX, targetY + y);
                     }
                 }
             }
         }
     }
 
-    private void renderMulticolorTextRow(int glyphBits, int colorRam, int targetX, int targetY) {
+    private void renderMulticolorRow(
+            int bits,
+            int c0,
+            int c1,
+            int c2,
+            int c3,
+            int targetX,
+            int targetY
+    ) {
         for (int pair = 0; pair < 4; pair++) {
-            int pairValue = (glyphBits >>> (6 - pair * 2)) & 0x03;
+            int pairValue = (bits >>> (6 - pair * 2)) & 0x03;
             int colorIndex = switch (pairValue) {
-                case 0 -> registers[0x21];
-                case 1 -> registers[0x22];
-                case 2 -> registers[0x23];
-                default -> colorRam & 0x07;
+                case 0 -> c0;
+                case 1 -> c1;
+                case 2 -> c2;
+                default -> c3;
             };
             boolean foregroundPixel = pairValue >= 2;
             int pixelX = pair * 2;
@@ -228,37 +244,36 @@ public final class C64VideoDevice implements TimedDevice {
                 for (int y = 0; y < CELL_SIZE; y++) {
                     int bitmapByte = vicRead(bitmapBase + cellOffset * CELL_SIZE + y, bankBase);
                     if (multicolorMode) {
-                        renderMulticolorBitmapRow(bitmapByte, matrixByte, colorRam, targetX,
-                                targetY + y);
+                        renderMulticolorRow(
+                                bitmapByte,
+                                registers[0x21],
+                                matrixByte >>> 4,
+                                matrixByte,
+                                colorRam,
+                                targetX,
+                                targetY + y
+                        );
                     } else {
                         int foreground = PALETTE[(matrixByte >>> 4) & 0x0F];
                         int background = PALETTE[matrixByte & 0x0F];
-                        for (int x = 0; x < CELL_SIZE; x++) {
-                            boolean foregroundPixel = ((bitmapByte >>> (7 - x)) & 1) != 0;
-                            drawGraphicsPixel(targetX + x, targetY + y,
-                                    foregroundPixel ? foreground : background, foregroundPixel);
-                        }
+                        renderHiresRow(bitmapByte, foreground, background, targetX, targetY + y);
                     }
                 }
             }
         }
     }
 
-    private void renderMulticolorBitmapRow(int bitmapByte, int matrixByte, int colorRam,
-            int targetX, int targetY) {
-        for (int pair = 0; pair < 4; pair++) {
-            int pairValue = (bitmapByte >>> (6 - pair * 2)) & 0x03;
-            int colorIndex = switch (pairValue) {
-                case 0 -> registers[0x21];
-                case 1 -> matrixByte >>> 4;
-                case 2 -> matrixByte;
-                default -> colorRam;
-            };
-            boolean foregroundPixel = pairValue >= 2;
-            int pixelX = pair * 2;
-            int color = PALETTE[colorIndex & 0x0F];
-            drawGraphicsPixel(targetX + pixelX, targetY, color, foregroundPixel);
-            drawGraphicsPixel(targetX + pixelX + 1, targetY, color, foregroundPixel);
+    private void renderHiresRow(
+            int bits,
+            int foreground,
+            int background,
+            int targetX,
+            int targetY
+    ) {
+        for (int x = 0; x < CELL_SIZE; x++) {
+            boolean foregroundPixel = ((bits >>> (7 - x)) & 1) != 0;
+            drawGraphicsPixel(targetX + x, targetY,
+                    foregroundPixel ? foreground : background, foregroundPixel);
         }
     }
 
