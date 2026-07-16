@@ -1,6 +1,7 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64SidDevice;
 import dev.z8emu.machine.c64.device.C64VideoDevice;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Arrays;
@@ -33,6 +34,7 @@ class C64BusTest {
     private C64Memory memory;
     private C64Bus bus;
     private C64VideoDevice video;
+    private C64SidDevice sid;
     private C64CiaDevice cia1;
     private C64CiaDevice cia2;
 
@@ -45,11 +47,12 @@ class C64BusTest {
         C64CpuPort cpuPort = new C64CpuPort();
         cpuPort.reset();
         video = new C64VideoDevice(memory);
+        sid = new C64SidDevice(C64ModelConfig.pal().cpuClockHz());
         cia1 = new C64CiaDevice();
         cia2 = new C64CiaDevice();
         cia1.reset();
         cia2.reset();
-        bus = new C64Bus(new TStateCounter(), memory, cpuPort, video, cia1, cia2);
+        bus = new C64Bus(new TStateCounter(), memory, cpuPort, video, sid, cia1, cia2);
 
         memory.writeRam(0xA123, BASIC_RAM_SENTINEL);
         memory.writeRam(0xD123, IO_RAM_SENTINEL);
@@ -132,6 +135,29 @@ class C64BusTest {
         assertEquals(0xF1, bus.readMemory(0xD019));
         bus.writeMemory(0xD019, 0x01);
         assertEquals(0x70, bus.readMemory(0xD019));
+    }
+
+    @Test
+    void sidRegistersMirrorAcrossTheD400ToD7ffWindow() {
+        driveMode(1, 1, 1);
+        bus.writeMemory(0xD40E, 0x45);
+        bus.writeMemory(0xD40F, 0x1D);
+        bus.writeMemory(0xD412, 0x20);
+        sid.onTStatesElapsed(1_000);
+
+        int baseOscillator = bus.readMemory(0xD41B);
+        assertEquals(baseOscillator, bus.readMemory(0xD7DB));
+        assertNotEquals(0xFF, baseOscillator);
+
+        sid.reset();
+        bus.writeMemory(0xD50E, 0x45);
+        bus.writeMemory(0xD50F, 0x1D);
+        bus.writeMemory(0xD412, 0x20);
+        sid.onTStatesElapsed(1_000);
+        int first = bus.readMemory(0xD41B);
+        sid.onTStatesElapsed(1_000);
+
+        assertNotEquals(first, bus.readMemory(0xD41B));
     }
 
     @Test
