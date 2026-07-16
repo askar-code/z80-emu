@@ -358,9 +358,26 @@ BASIC POKE tone.
   gitignored, user-supplied). Desktop play: F9 twice (port 1), arrows +
   left Ctrl. Prince of Persia (EasyFlash .crt) stays the stretch target
   behind 6e.
-- Badline/cycle-stealing approximation (board clock skew; possibly a CPU
-  stall hook later), border tricks, per-line raster rendering. Each
-  lands with new frame-CRC baselines.
+- [x] Per-line beam rendering (Phase 6e). Landed 2026-07-16
+  (`codex/c64-p6e-perline`, spec critiqued twice — 24+9 findings incl.
+  4 structural blockers pre-applied; review 4 accepted notes;
+  fault-injection 8/8, blackout/overlay ordering gap closed at review).
+  Lines render when the beam leaves them from live registers/RAM/CIA2
+  bank: raster splits, $D020 bars, FLD, per-line DEN, sprite
+  multiplexing all work (Boulder Dash intro split verified at the
+  1,250,000-instruction oracle point). Delivery: after the first wrap
+  the framebuffer is beam-owned (renderFrame returns it as-is —
+  deterministic composites, bounded one-frame staleness); the no-tick
+  snapshot path stays byte-identical (all four in-test scene CRCs and
+  Basic/PRG/CRT/Joy smoke frames unchanged). New locked baseline:
+  composite split scene CRC 0xC5205817. Sanctioned rebaseline (beam
+  composites): c64ReadySmoke frame 0xC5D02287→0x8C23AF62,
+  c64BoulderDashSmoke 0xD3C962E1→0xB96BF819 (BD execution state proven
+  identical; all visibleCrc32 untouched). Frozen deviations: per-line
+  DEN (hardware latches at raster $30), sprite first line at Y+1.
+- Badline/cycle-stealing approximation (6e-b: board clock skew;
+  possibly a CPU stall hook later), border tricks. Each lands with new
+  frame-CRC baselines.
 - CIA TOD alarm, datasette (.tap), KERNAL LOAD/SAVE vector trap for fast
   host/.d64 file access; true 1541 is far-future.
 - SID filter (multimode 12dB) once something audible needs it.
