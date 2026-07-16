@@ -40,7 +40,7 @@ public final class C64RomProbeLauncher {
     public static void main(String[] args) throws IOException {
         ProbeConfig config = parseArgs(args);
         if (config == null) {
-            System.err.println("Usage: C64RomProbeLauncher <rom-dir-or-rom-file> [max-instructions] [--keys=<script>] [--type-after-screen=<text>] [--prg=<path>] [--prg-sys=<hex-addr>] [--crt=<path>] [--expect-screen=<text>] [--dump-frame=<png>] [--expect-frame-crc=<crc32>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-limit=<count>] [--trace-tail]");
+            System.err.println("Usage: C64RomProbeLauncher <rom-dir-or-rom-file> [max-instructions] [--keys=<script>] [--type-after-screen=<text>] [--joy=<script>] [--joy-port=<1|2>] [--prg=<path>] [--prg-sys=<hex-addr>] [--crt=<path>] [--expect-screen=<text>] [--dump-frame=<png>] [--expect-frame-crc=<crc32>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-limit=<count>] [--trace-tail]");
             System.exit(2);
             return;
         }
@@ -123,6 +123,10 @@ public final class C64RomProbeLauncher {
                 }
             }
 
+            if (config.joyScript() != null && state.stopPc < 0) {
+                runJoyScript(machine, config, state);
+            }
+
             if (state.stopPc < 0) {
                 state.expectationMet = runUntilScreenText(machine, config, state, expectedScreen);
             }
@@ -194,6 +198,9 @@ public final class C64RomProbeLauncher {
         List<String> positional = new ArrayList<>(2);
         String keyScript = null;
         String typeAfterScreen = null;
+        String joyScript = null;
+        int joyPort = 2;
+        boolean joyPortSpecified = false;
         Path prgPath = null;
         Integer prgSysAddress = null;
         Path crtPath = null;
@@ -211,6 +218,15 @@ public final class C64RomProbeLauncher {
                 keyScript = arg.substring("--keys=".length());
             } else if (arg.startsWith("--type-after-screen=")) {
                 typeAfterScreen = arg.substring("--type-after-screen=".length());
+            } else if (arg.startsWith("--joy=")) {
+                joyScript = arg.substring("--joy=".length());
+            } else if (arg.startsWith("--joy-port=")) {
+                String value = arg.substring("--joy-port=".length());
+                if (!value.equals("1") && !value.equals("2")) {
+                    return null;
+                }
+                joyPort = value.charAt(0) - '0';
+                joyPortSpecified = true;
             } else if (arg.startsWith("--prg=")) {
                 prgPath = Path.of(arg.substring("--prg=".length())).toAbsolutePath().normalize();
             } else if (arg.startsWith("--prg-sys=")) {
@@ -252,7 +268,12 @@ public final class C64RomProbeLauncher {
                 || (typeAfterScreen != null && keyScript == null)
                 || (prgPath != null && (keyScript != null || typeAfterScreen != null))
                 || (prgSysAddress != null && prgPath == null)
-                || (crtPath != null && (prgPath != null || prgSysAddress != null))) {
+                || (crtPath != null && (prgPath != null || prgSysAddress != null))
+                || (joyPortSpecified && joyScript == null)) {
+            return null;
+        }
+        JoyPattern joyPattern = joyScript == null ? new JoyPattern(new int[0], new int[0]) : parseJoyScript(joyScript);
+        if (joyPattern == null) {
             return null;
         }
         long maxInstructions = positional.size() == 2
@@ -263,6 +284,10 @@ public final class C64RomProbeLauncher {
                 maxInstructions,
                 keyScript,
                 typeAfterScreen,
+                joyScript,
+                joyPort,
+                joyPattern.lineMasks(),
+                joyPattern.frames(),
                 prgPath,
                 prgSysAddress,
                 crtPath,
@@ -274,6 +299,63 @@ public final class C64RomProbeLauncher {
                 profilePcTop,
                 new TraceOptions(traceIo, traceLimit, traceTail)
         );
+    }
+
+    private static JoyPattern parseJoyScript(String script) {
+        String[] tokens = script.split(",", -1);
+        int[] lineMasks = new int[tokens.length];
+        int[] frames = new int[tokens.length];
+        for (int tokenIndex = 0; tokenIndex < tokens.length; tokenIndex++) {
+            String token = tokens[tokenIndex];
+            int countStart = 0;
+            while (countStart < token.length()) {
+                char character = token.charAt(countStart);
+                if (character >= '0' && character <= '9') {
+                    break;
+                }
+                countStart++;
+            }
+            if (countStart == 0 || countStart == token.length()) {
+                return null;
+            }
+
+            int lineMask = 0;
+            if (countStart == 1 && token.charAt(0) == '.') {
+                lineMask = 0;
+            } else {
+                for (int letterIndex = 0; letterIndex < countStart; letterIndex++) {
+                    int line = switch (Character.toUpperCase(token.charAt(letterIndex))) {
+                        case 'U' -> 0;
+                        case 'D' -> 1;
+                        case 'L' -> 2;
+                        case 'R' -> 3;
+                        case 'F' -> 4;
+                        default -> -1;
+                    };
+                    if (line < 0) {
+                        return null;
+                    }
+                    lineMask |= 1 << line;
+                }
+            }
+
+            for (int digitIndex = countStart; digitIndex < token.length(); digitIndex++) {
+                char character = token.charAt(digitIndex);
+                if (character < '0' || character > '9') {
+                    return null;
+                }
+            }
+            try {
+                frames[tokenIndex] = Integer.parseInt(token.substring(countStart));
+            } catch (NumberFormatException malformedCount) {
+                return null;
+            }
+            if (frames[tokenIndex] <= 0) {
+                return null;
+            }
+            lineMasks[tokenIndex] = lineMask;
+        }
+        return new JoyPattern(lineMasks, frames);
     }
 
     private static String status(
@@ -328,6 +410,46 @@ public final class C64RomProbeLauncher {
             }
         }
         return false;
+    }
+
+    private static void runJoyScript(C64Machine machine, ProbeConfig config, ProbeState state) {
+        try {
+            for (int tokenIndex = 0; tokenIndex < config.joyLineMasks().length; tokenIndex++) {
+                int lineMask = config.joyLineMasks()[tokenIndex];
+                for (int line = 0; line < 5; line++) {
+                    machine.board().keyboard().setJoystickPressed(
+                            config.joyPort(),
+                            line,
+                            (lineMask & (1 << line)) != 0
+                    );
+                }
+                for (int frameIndex = 0; frameIndex < config.joyFrames()[tokenIndex]; frameIndex++) {
+                    long targetTState = machine.currentTState() + machine.frameTStates();
+                    while (machine.currentTState() < targetTState) {
+                        if (state.steps >= config.maxInstructions()) {
+                            return;
+                        }
+                        int pc = machine.cpu().registers().pc();
+                        if (isPcMatch(pc, config.stopPcs())) {
+                            state.stopPc = pc;
+                            return;
+                        }
+                        if (state.pcHits != null) {
+                            state.pcHits[pc]++;
+                        }
+                        state.lastExecutedPc = pc;
+                        state.lastExecutedOpcode = machine.board().cpuBus().readMemory(pc);
+                        machine.runInstruction();
+                        state.steps++;
+                    }
+                    state.joyFramesRun++;
+                }
+            }
+        } finally {
+            for (int line = 0; line < 5; line++) {
+                machine.board().keyboard().setJoystickPressed(config.joyPort(), line, false);
+            }
+        }
     }
 
     private static void reportFailureAndExit(
@@ -399,6 +521,9 @@ public final class C64RomProbeLauncher {
         }
         System.out.println("steps=" + state.steps);
         System.out.println("keysTyped=" + state.keysTyped + "/" + (keyScript == null ? 0 : keyScript.length()));
+        System.out.println("joyScript=" + (config.joyScript() == null ? "absent" : printable(config.joyScript())));
+        System.out.println("joyPort=" + config.joyPort());
+        System.out.println("joyFramesRun=" + state.joyFramesRun);
         if (typeAfterScreen != null) {
             System.out.println("typeAfterScreen=" + printable(typeAfterScreen));
         }
@@ -497,6 +622,7 @@ public final class C64RomProbeLauncher {
         private int lastExecutedOpcode = -1;
         private final long[] pcHits;
         private int keysTyped;
+        private long joyFramesRun;
         private boolean typeAfterScreenFound;
         private boolean readyFound;
         private boolean expectationMet;
@@ -585,6 +711,10 @@ public final class C64RomProbeLauncher {
             long maxInstructions,
             String keyScript,
             String typeAfterScreen,
+            String joyScript,
+            int joyPort,
+            int[] joyLineMasks,
+            int[] joyFrames,
             Path prgPath,
             Integer prgSysAddress,
             Path crtPath,
@@ -596,6 +726,9 @@ public final class C64RomProbeLauncher {
             int profilePcTop,
             TraceOptions traceOptions
     ) {
+    }
+
+    private record JoyPattern(int[] lineMasks, int[] frames) {
     }
 
     private record TraceOptions(boolean traceIo, int limit, boolean tail) {

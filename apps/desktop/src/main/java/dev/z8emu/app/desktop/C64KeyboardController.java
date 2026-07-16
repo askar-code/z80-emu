@@ -11,6 +11,7 @@ import javax.swing.JComponent;
 final class C64KeyboardController extends AbstractMappedHostKeyboardController<C64KeyMap.MatrixKey> {
     private final C64KeyboardDevice keyboard;
     private final Runnable keyActivityListener;
+    private int joystickPort;
 
     private C64KeyboardController(Window window, C64KeyboardDevice keyboard, Runnable keyActivityListener) {
         super(window);
@@ -31,16 +32,53 @@ final class C64KeyboardController extends AbstractMappedHostKeyboardController<C
 
     @Override
     protected boolean handleHostAction(KeyEvent event) {
-        if (event.getKeyCode() != KeyEvent.VK_PAGE_UP) {
+        if (event.getKeyCode() == KeyEvent.VK_F9) {
+            if (event.getID() == KeyEvent.KEY_PRESSED) {
+                joystickPort = switch (joystickPort) {
+                    case 0 -> 2;
+                    case 2 -> 1;
+                    default -> 0;
+                };
+                keyboard.releaseAllKeys();
+                setLastEvent(switch (joystickPort) {
+                    case 2 -> "joystick: port 2";
+                    case 1 -> "joystick: port 1";
+                    default -> "joystick: off";
+                });
+            }
+            return true;
+        }
+        if (event.getKeyCode() == KeyEvent.VK_PAGE_UP) {
+            if (event.getID() == KeyEvent.KEY_PRESSED) {
+                keyboard.setRestorePressed(true);
+                notifyKeyActivity();
+            } else if (event.getID() == KeyEvent.KEY_RELEASED) {
+                keyboard.setRestorePressed(false);
+            }
+            setLastEvent("restore");
+            return true;
+        }
+        if (joystickPort == 0) {
+            return false;
+        }
+
+        int line = switch (event.getKeyCode()) {
+            case KeyEvent.VK_UP -> 0;
+            case KeyEvent.VK_DOWN -> 1;
+            case KeyEvent.VK_LEFT -> 2;
+            case KeyEvent.VK_RIGHT -> 3;
+            case KeyEvent.VK_CONTROL -> event.getKeyLocation() == KeyEvent.KEY_LOCATION_LEFT ? 4 : -1;
+            default -> -1;
+        };
+        if (line < 0) {
             return false;
         }
         if (event.getID() == KeyEvent.KEY_PRESSED) {
-            keyboard.setRestorePressed(true);
+            keyboard.setJoystickPressed(joystickPort, line, true);
             notifyKeyActivity();
         } else if (event.getID() == KeyEvent.KEY_RELEASED) {
-            keyboard.setRestorePressed(false);
+            keyboard.setJoystickPressed(joystickPort, line, false);
         }
-        setLastEvent("restore");
         return true;
     }
 
