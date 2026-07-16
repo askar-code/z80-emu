@@ -9,6 +9,8 @@ import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImageLoader;
 import dev.z8emu.machine.c64.C64Machine;
+import dev.z8emu.machine.c64.device.C64EasyFlashCartridge;
+import dev.z8emu.machine.c64.media.C64CrtImage;
 import dev.z8emu.machine.c64.media.C64PrgImage;
 import dev.z8emu.machine.cpc.CpcMachine;
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
@@ -23,6 +25,7 @@ import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.machine.spectrum48k.tape.TapeLoaders;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -280,6 +283,8 @@ final class DesktopMachineDefinitions {
     }
 
     private static final class C64Definition implements DesktopMachineDefinition {
+        private static final byte[] CRT_MAGIC = "C64 CARTRIDGE   ".getBytes(StandardCharsets.US_ASCII);
+
         @Override
         public DesktopMachineKind kind() {
             return DesktopMachineKind.C64;
@@ -296,23 +301,38 @@ final class DesktopMachineDefinitions {
 
         @Override
         public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath) throws IOException {
-            Path prgPath = Path.of(rawPath).toAbsolutePath().normalize();
+            Path mediaPath = Path.of(rawPath).toAbsolutePath().normalize();
+            byte[] bytes = Files.readAllBytes(mediaPath);
+            boolean hasCrtMagic = bytes.length >= CRT_MAGIC.length;
+            for (int index = 0; hasCrtMagic && index < CRT_MAGIC.length; index++) {
+                hasCrtMagic = bytes[index] == CRT_MAGIC[index];
+            }
+            if (hasCrtMagic || mediaPath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".crt")) {
+                return new DesktopLaunchConfig.LoadedC64Crt(
+                        mediaPath.toString(),
+                        C64CrtImage.parse(bytes)
+                );
+            }
             return new DesktopLaunchConfig.LoadedC64Prg(
-                    prgPath.toString(),
-                    C64PrgImage.load(prgPath)
+                    mediaPath.toString(),
+                    C64PrgImage.parse(bytes)
             );
         }
 
         @Override
         public void open(DesktopLaunchConfig config) {
             C64RomImageLoader.C64RomSet roms = C64RomImageLoader.splitBundleImage(config.romImage());
-            C64Machine machine = new C64Machine(roms.basic(), roms.kernal(), roms.chargen());
+            C64EasyFlashCartridge cartridge = config.loadedMedia(DesktopLaunchConfig.LoadedC64Crt.class)
+                    .map(DesktopLaunchConfig.LoadedC64Crt::image)
+                    .map(C64EasyFlashCartridge::new)
+                    .orElse(null);
+            C64Machine machine = new C64Machine(roms.basic(), roms.kernal(), roms.chargen(), cartridge);
             SwingUtilities.invokeLater(() -> C64DesktopRunner.open(machine, config));
         }
 
         @Override
         public String usage() {
-            return "--machine=c64 <rom-directory-or-rom-file> [program.prg]";
+            return "--machine=c64 <rom-directory-or-rom-file> [program.prg|cartridge.crt]";
         }
     }
 

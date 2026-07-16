@@ -1,8 +1,10 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64EasyFlashCartridge;
 import dev.z8emu.machine.c64.device.C64SidDevice;
 import dev.z8emu.machine.c64.device.C64VideoDevice;
+import dev.z8emu.machine.c64.media.C64CrtTestImages;
 import dev.z8emu.platform.time.TStateCounter;
 import java.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +21,10 @@ class C64BusTest {
     private static final int COLOR_RAM_UNDERLAY_SENTINEL = 0xD9;
     private static final int KERNAL_RAM_SENTINEL = 0xE1;
     private static final int COLOR_SENTINEL = 0x0D;
+    private static final int ROML_BANK_0_SENTINEL = 0x61;
+    private static final int ROMH_BANK_0_SENTINEL = 0x62;
+    private static final int ROML_BANK_1_SENTINEL = 0x63;
+    private static final int ROMH_BANK_1_SENTINEL = 0x64;
 
     private static final int[][] PLA_ROWS = {
             {1, 1, 1, BASIC_SENTINEL, 0xF0, COLOR_SENTINEL, KERNAL_SENTINEL},
@@ -52,7 +58,7 @@ class C64BusTest {
         cia2 = new C64CiaDevice();
         cia1.reset();
         cia2.reset();
-        bus = new C64Bus(new TStateCounter(), memory, cpuPort, video, sid, cia1, cia2);
+        bus = new C64Bus(new TStateCounter(), memory, cpuPort, video, sid, cia1, cia2, null);
 
         memory.writeRam(0xA123, BASIC_RAM_SENTINEL);
         memory.writeRam(0xD123, IO_RAM_SENTINEL);
@@ -110,6 +116,120 @@ class C64BusTest {
 
         assertEquals(0xFF, bus.readMemory(0xDE05));
         assertEquals(0x44, memory.readRam(0xDE05));
+    }
+
+    @Test
+    void eightKilobyteModeSelectsRomlWithoutSuppressingBasic() {
+        C64EasyFlashCartridge cartridge = installCartridge();
+        cartridge.writeControlRegister(0x06);
+        memory.writeRam(0x8123, 0x81);
+
+        for (int rowIndex = 0; rowIndex < PLA_ROWS.length; rowIndex++) {
+            int[] row = PLA_ROWS[rowIndex];
+            int loram = row[0];
+            int hiram = row[1];
+            driveMode(loram, hiram, row[2]);
+
+            assertEquals(
+                    loram == 1 && hiram == 1 ? ROML_BANK_0_SENTINEL : 0x81,
+                    bus.readMemory(0x8123),
+                    "ROML source in PLA row " + rowIndex
+            );
+            assertEquals(
+                    loram == 1 && hiram == 1 ? BASIC_SENTINEL : BASIC_RAM_SENTINEL,
+                    bus.readMemory(0xA123),
+                    "BASIC source in PLA row " + rowIndex
+            );
+        }
+    }
+
+    @Test
+    void sixteenKilobyteModeSelectsRomhByHiramAndUsesHiramForCharacterRom() {
+        C64EasyFlashCartridge cartridge = installCartridge();
+        cartridge.writeControlRegister(0x07);
+
+        for (int rowIndex = 0; rowIndex < PLA_ROWS.length; rowIndex++) {
+            int[] row = PLA_ROWS[rowIndex];
+            driveMode(row[0], row[1], row[2]);
+
+            assertEquals(
+                    row[1] == 1 ? ROMH_BANK_0_SENTINEL : BASIC_RAM_SENTINEL,
+                    bus.readMemory(0xA123),
+                    "ROMH source in PLA row " + rowIndex
+            );
+        }
+
+        driveMode(0, 1, 0);
+        assertEquals(CHAR_SENTINEL, bus.readMemory(0xD123));
+        driveMode(1, 1, 0);
+        assertEquals(CHAR_SENTINEL, bus.readMemory(0xD123));
+        driveMode(1, 0, 0);
+        assertEquals(IO_RAM_SENTINEL, bus.readMemory(0xD123));
+    }
+
+    @Test
+    void nonUltimaxWritesPassThroughCartridgeRomToRam() {
+        C64EasyFlashCartridge cartridge = installCartridge();
+        cartridge.writeControlRegister(0x06);
+        driveMode(1, 1, 1);
+
+        bus.writeMemory(0x8123, 0x91);
+
+        assertEquals(0x91, memory.readRam(0x8123));
+        assertEquals(ROML_BANK_0_SENTINEL, bus.readMemory(0x8123));
+
+        cartridge.writeControlRegister(0x07);
+        bus.writeMemory(0xA123, 0x92);
+
+        assertEquals(0x92, memory.readRam(0xA123));
+        assertEquals(ROMH_BANK_0_SENTINEL, bus.readMemory(0xA123));
+    }
+
+    @Test
+    void ultimaxMapsCartridgeAndIoAndDropsOtherAccesses() {
+        installCartridge();
+        memory.writeRam(0x0400, 0x40);
+        memory.writeRam(0x2000, 0x20);
+        driveMode(0, 0, 0);
+
+        assertEquals(ROML_BANK_0_SENTINEL, bus.readMemory(0x8123));
+        assertEquals(ROMH_BANK_0_SENTINEL, bus.readMemory(0xE123));
+        assertEquals(0xFF, bus.readMemory(0xA123));
+        assertEquals(0xFF, bus.readMemory(0x1123));
+        assertEquals(0xF0, bus.readMemory(0xD123));
+
+        bus.writeMemory(0xD020, 0x0E);
+        bus.writeMemory(0x2000, 0x99);
+        bus.writeMemory(0x0400, 0x41);
+
+        assertEquals(0xFE, bus.readMemory(0xD020));
+        assertNotEquals(0x0E, memory.readRam(0xD020));
+        assertEquals(0x20, memory.readRam(0x2000));
+        assertEquals(0x41, memory.readRam(0x0400));
+    }
+
+    @Test
+    void easyFlashRegistersSwitchBanksModesAndExposeRam() {
+        installCartridge();
+        driveMode(1, 1, 1);
+
+        assertEquals(ROML_BANK_0_SENTINEL, bus.readMemory(0x8123));
+        bus.writeMemory(0xDE00, 1);
+        assertEquals(ROML_BANK_1_SENTINEL, bus.readMemory(0x8123));
+        assertEquals(0xFF, bus.readMemory(0xDE00));
+
+        bus.writeMemory(0xDE02, 0x07);
+        assertEquals(ROMH_BANK_1_SENTINEL, bus.readMemory(0xA123));
+        bus.writeMemory(0xDE02, 0x06);
+        assertEquals(ROML_BANK_1_SENTINEL, bus.readMemory(0x8123));
+        assertEquals(BASIC_SENTINEL, bus.readMemory(0xA123));
+        bus.writeMemory(0xDE02, 0x04);
+        memory.writeRam(0x8123, 0x81);
+        assertEquals(0x81, bus.readMemory(0x8123));
+        assertEquals(BASIC_SENTINEL, bus.readMemory(0xA123));
+
+        bus.writeMemory(0xDF00, 0xA5);
+        assertEquals(0xA5, bus.readMemory(0xDF00));
     }
 
     @Test
@@ -272,6 +392,19 @@ class C64BusTest {
     private void driveMode(int loram, int hiram, int charen) {
         bus.writeMemory(0x0000, 0x07);
         bus.writeMemory(0x0001, loram | (hiram << 1) | (charen << 2));
+    }
+
+    private C64EasyFlashCartridge installCartridge() {
+        C64EasyFlashCartridge cartridge = new C64EasyFlashCartridge(C64CrtTestImages.syntheticCart(
+                ROML_BANK_0_SENTINEL,
+                ROMH_BANK_0_SENTINEL,
+                ROML_BANK_1_SENTINEL,
+                ROMH_BANK_1_SENTINEL
+        ));
+        C64CpuPort cpuPort = new C64CpuPort();
+        cpuPort.reset();
+        bus = new C64Bus(new TStateCounter(), memory, cpuPort, video, sid, cia1, cia2, cartridge);
+        return cartridge;
     }
 
     private static byte[] filled(int size, int value) {

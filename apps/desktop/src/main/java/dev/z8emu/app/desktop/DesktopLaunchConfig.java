@@ -4,6 +4,7 @@ import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.apple2.disk.Apple2DosDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
+import dev.z8emu.machine.c64.media.C64CrtImage;
 import dev.z8emu.machine.c64.media.C64PrgImage;
 import dev.z8emu.machine.radio86rk.tape.Radio86TapeFile;
 import dev.z8emu.machine.spectrum48k.tape.TapeFile;
@@ -23,7 +24,7 @@ record DesktopLaunchConfig(
                 : Optional.empty();
     }
 
-    sealed interface LoadedMedia permits LoadedSpectrumTape, LoadedRadioTape, LoadedCpcDisk, LoadedC64Prg, LoadedApple2Program, LoadedApple2Disk, LoadedApple2WozDisk, LoadedApple2BlockDevice {
+    sealed interface LoadedMedia permits LoadedSpectrumTape, LoadedRadioTape, LoadedCpcDisk, LoadedC64Prg, LoadedC64Crt, LoadedApple2Program, LoadedApple2Disk, LoadedApple2WozDisk, LoadedApple2BlockDevice {
         String sourceLabel();
     }
 
@@ -37,6 +38,9 @@ record DesktopLaunchConfig(
     }
 
     record LoadedC64Prg(String sourceLabel, C64PrgImage image) implements LoadedMedia {
+    }
+
+    record LoadedC64Crt(String sourceLabel, C64CrtImage image) implements LoadedMedia {
     }
 
     record LoadedApple2Program(String sourceLabel, byte[] programImage, int loadAddress) implements LoadedMedia {

@@ -5,6 +5,8 @@ import dev.z8emu.machine.c64.C64KeyboardTyper;
 import dev.z8emu.machine.c64.C64Machine;
 import dev.z8emu.machine.c64.C64PrgLoader;
 import dev.z8emu.machine.c64.C64ScreenText;
+import dev.z8emu.machine.c64.device.C64EasyFlashCartridge;
+import dev.z8emu.machine.c64.media.C64CrtImage;
 import dev.z8emu.machine.c64.media.C64PrgImage;
 import dev.z8emu.platform.bus.io.IoAccess;
 import dev.z8emu.platform.video.FrameBuffer;
@@ -38,14 +40,22 @@ public final class C64RomProbeLauncher {
     public static void main(String[] args) throws IOException {
         ProbeConfig config = parseArgs(args);
         if (config == null) {
-            System.err.println("Usage: C64RomProbeLauncher <rom-dir-or-rom-file> [max-instructions] [--keys=<script>] [--type-after-screen=<text>] [--prg=<path>] [--prg-sys=<hex-addr>] [--expect-screen=<text>] [--dump-frame=<png>] [--expect-frame-crc=<crc32>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-limit=<count>] [--trace-tail]");
+            System.err.println("Usage: C64RomProbeLauncher <rom-dir-or-rom-file> [max-instructions] [--keys=<script>] [--type-after-screen=<text>] [--prg=<path>] [--prg-sys=<hex-addr>] [--crt=<path>] [--expect-screen=<text>] [--dump-frame=<png>] [--expect-frame-crc=<crc32>] [--stop-pc=<hex[,hex...]>] [--watch-addr=<hex[,hex...]>] [--profile-pc-top=<count>] [--trace-io] [--trace-limit=<count>] [--trace-tail]");
             System.exit(2);
             return;
         }
 
         C64RomImageLoader.C64RomSet roms = C64RomImageLoader.load(config.romPath());
         C64PrgImage prgImage = config.prgPath() == null ? null : C64PrgImage.load(config.prgPath());
-        C64Machine machine = new C64Machine(roms.basic(), roms.kernal(), roms.chargen());
+        C64CrtImage crtImage = config.crtPath() == null ? null : C64CrtImage.load(config.crtPath());
+        C64Machine machine = crtImage == null
+                ? new C64Machine(roms.basic(), roms.kernal(), roms.chargen())
+                : new C64Machine(
+                        roms.basic(),
+                        roms.kernal(),
+                        roms.chargen(),
+                        new C64EasyFlashCartridge(crtImage)
+                );
         TraceCollector traceCollector = new TraceCollector(machine, config.traceOptions());
         traceCollector.install();
         String keyScript = config.keyScript() == null ? null : decodeScript(config.keyScript());
@@ -67,6 +77,7 @@ public final class C64RomProbeLauncher {
                             typeAfterScreen,
                             prgImage,
                             prgCommand,
+                            crtImage,
                             expectedScreen,
                             traceCollector,
                             "type-screen-not-found"
@@ -87,6 +98,7 @@ public final class C64RomProbeLauncher {
                             typeAfterScreen,
                             prgImage,
                             prgCommand,
+                            crtImage,
                             expectedScreen,
                             traceCollector,
                             "ready-not-found"
@@ -140,6 +152,7 @@ public final class C64RomProbeLauncher {
                     typeAfterScreen,
                     prgImage,
                     prgCommand,
+                    crtImage,
                     expectedScreen,
                     traceCollector,
                     frameResult
@@ -160,6 +173,7 @@ public final class C64RomProbeLauncher {
                         typeAfterScreen,
                         prgImage,
                         prgCommand,
+                        crtImage,
                         expectedScreen,
                         traceCollector,
                         renderFrame(machine, config.dumpFramePath(), config.expectedFrameCrc32())
@@ -182,6 +196,7 @@ public final class C64RomProbeLauncher {
         String typeAfterScreen = null;
         Path prgPath = null;
         Integer prgSysAddress = null;
+        Path crtPath = null;
         String expectedScreen = null;
         Path dumpFramePath = null;
         Long expectedFrameCrc32 = null;
@@ -200,6 +215,8 @@ public final class C64RomProbeLauncher {
                 prgPath = Path.of(arg.substring("--prg=".length())).toAbsolutePath().normalize();
             } else if (arg.startsWith("--prg-sys=")) {
                 prgSysAddress = parseAddress(arg.substring("--prg-sys=".length()));
+            } else if (arg.startsWith("--crt=")) {
+                crtPath = Path.of(arg.substring("--crt=".length())).toAbsolutePath().normalize();
             } else if (arg.startsWith("--expect-screen=")) {
                 expectedScreen = arg.substring("--expect-screen=".length());
             } else if (arg.startsWith("--dump-frame=")) {
@@ -234,7 +251,8 @@ public final class C64RomProbeLauncher {
                 || positional.size() > 2
                 || (typeAfterScreen != null && keyScript == null)
                 || (prgPath != null && (keyScript != null || typeAfterScreen != null))
-                || (prgSysAddress != null && prgPath == null)) {
+                || (prgSysAddress != null && prgPath == null)
+                || (crtPath != null && (prgPath != null || prgSysAddress != null))) {
             return null;
         }
         long maxInstructions = positional.size() == 2
@@ -247,6 +265,7 @@ public final class C64RomProbeLauncher {
                 typeAfterScreen,
                 prgPath,
                 prgSysAddress,
+                crtPath,
                 expectedScreen,
                 dumpFramePath,
                 expectedFrameCrc32,
@@ -320,6 +339,7 @@ public final class C64RomProbeLauncher {
             String typeAfterScreen,
             C64PrgImage prgImage,
             String prgCommand,
+            C64CrtImage crtImage,
             String expectedScreen,
             TraceCollector traceCollector,
             String status
@@ -340,6 +360,7 @@ public final class C64RomProbeLauncher {
                 typeAfterScreen,
                 prgImage,
                 prgCommand,
+                crtImage,
                 expectedScreen,
                 traceCollector,
                 frameResult
@@ -356,6 +377,7 @@ public final class C64RomProbeLauncher {
             String typeAfterScreen,
             C64PrgImage prgImage,
             String prgCommand,
+            C64CrtImage crtImage,
             String expectedScreen,
             TraceCollector traceCollector,
             FrameProbeResult frameResult
@@ -372,6 +394,9 @@ public final class C64RomProbeLauncher {
         System.out.println("basicBytes=" + roms.basic().length);
         System.out.println("kernalBytes=" + roms.kernal().length);
         System.out.println("chargenBytes=" + roms.chargen().length);
+        if (crtImage != null) {
+            System.out.println("cartridge=" + crtImage.name() + " banks=" + crtImage.bankCount());
+        }
         System.out.println("steps=" + state.steps);
         System.out.println("keysTyped=" + state.keysTyped + "/" + (keyScript == null ? 0 : keyScript.length()));
         if (typeAfterScreen != null) {
@@ -562,6 +587,7 @@ public final class C64RomProbeLauncher {
             String typeAfterScreen,
             Path prgPath,
             Integer prgSysAddress,
+            Path crtPath,
             String expectedScreen,
             Path dumpFramePath,
             Long expectedFrameCrc32,

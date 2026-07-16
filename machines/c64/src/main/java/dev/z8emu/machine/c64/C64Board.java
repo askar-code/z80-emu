@@ -1,6 +1,7 @@
 package dev.z8emu.machine.c64;
 
 import dev.z8emu.machine.c64.device.C64CiaDevice;
+import dev.z8emu.machine.c64.device.C64EasyFlashCartridge;
 import dev.z8emu.machine.c64.device.C64KeyboardDevice;
 import dev.z8emu.machine.c64.device.C64SidDevice;
 import dev.z8emu.machine.c64.device.C64VideoDevice;
@@ -21,11 +22,22 @@ public final class C64Board implements VideoMachineBoard {
     private final C64CiaDevice cia2;
     private final C64VideoDevice video;
     private final C64SidDevice sid;
+    private final C64EasyFlashCartridge cartridge;
     private final C64Bus bus;
 
     public C64Board(C64ModelConfig modelConfig, C64Memory memory, TStateCounter clock) {
+        this(modelConfig, memory, clock, null);
+    }
+
+    public C64Board(
+            C64ModelConfig modelConfig,
+            C64Memory memory,
+            TStateCounter clock,
+            C64EasyFlashCartridge cartridge
+    ) {
         this.modelConfig = Objects.requireNonNull(modelConfig, "modelConfig");
         this.memory = Objects.requireNonNull(memory, "memory");
+        this.cartridge = cartridge;
         TStateCounter requiredClock = Objects.requireNonNull(clock, "clock");
         this.cpuPort = new C64CpuPort();
         this.keyboard = new C64KeyboardDevice();
@@ -34,7 +46,7 @@ public final class C64Board implements VideoMachineBoard {
         this.cia1.setPortInputs(keyboard);
         this.video = new C64VideoDevice(memory);
         this.sid = new C64SidDevice(modelConfig.cpuClockHz());
-        this.bus = new C64Bus(requiredClock, memory, cpuPort, video, sid, cia1, cia2);
+        this.bus = new C64Bus(requiredClock, memory, cpuPort, video, sid, cia1, cia2, cartridge);
     }
 
     @Override
@@ -46,6 +58,9 @@ public final class C64Board implements VideoMachineBoard {
     public void reset() {
         memory.reset();
         cpuPort.reset();
+        if (cartridge != null) {
+            cartridge.reset();
+        }
         keyboard.reset();
         cia1.reset();
         cia2.reset();
