@@ -314,9 +314,22 @@ BASIC POKE tone.
   borders/DEN=0 — not modeled), MCM text with color-RAM bit-3 gate.
   Baselines: composite scene CRC 0xFF91FF85 (latches 0x09/0x04),
   MCM-off reference CRC 0x4538AE0E; boot CRCs unchanged.
+- [x] Bitmap modes + ECM text + fine scroll + CSEL/RSEL. Landed
+  2026-07-16 (`codex/c64-p6c-bitmap`, review 3 minors fixed/waived,
+  fault-injection 7/7). Standard/MC bitmap ($D018 bit 3 base), ECM
+  (64 glyphs, $D021–$D024 backgrounds), true signed fine scroll
+  (shiftX=XSCROLL, shiftY=YSCROLL−3; masks move with content, sprites
+  absolute), CSEL/RSEL as post-sprite overlay (collisions persist under
+  the strips). Frozen deviations: INVALID ECM combos render the whole
+  window black including sprite pixels (real VIC keeps sprites visible)
+  and skip the real g-address bit 9–10 masking; MC bitmap has no CRC
+  lock of its own (covered by a dedicated mutation-killing semantics
+  test). Baselines: bitmap scene CRC 0x1F2B5F4D, scroll/border scene
+  0x6E46B7FA; 6b CRCs and boot CRCs byte-identical after the
+  hardware-neutral setup migration ($D011 0x10→0x1B, CSEL=1).
 - Badline/cycle-stealing approximation (board clock skew; possibly a CPU
-  stall hook later), bitmap modes, $D016/$D011 scroll, ECM, border
-  tricks. Each lands with new frame-CRC baselines.
+  stall hook later), border tricks, per-line raster rendering. Each
+  lands with new frame-CRC baselines.
 - CIA TOD alarm, datasette (.tap), KERNAL LOAD/SAVE vector trap for fast
   host/.d64 file access; true 1541 is far-future.
 - SID filter (multimode 12dB) once something audible needs it.
