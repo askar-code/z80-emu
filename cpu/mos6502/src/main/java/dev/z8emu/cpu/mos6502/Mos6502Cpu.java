@@ -74,116 +74,261 @@ public final class Mos6502Cpu implements Cpu {
             case 0x00 -> brk();
             case 0x01 -> orAccumulatorIndirectX();
             case 0x02 -> nopImmediate65C02(opcodeAddress);
-            case 0x04 -> testAndSetBitsZeroPage65C02(opcodeAddress);
+            case 0x03 -> {
+                requireNmos(0x03, opcodeAddress);
+                yield shiftLeftOrIndirectX();
+            }
+            case 0x04 -> variant == Mos6502Variant.CMOS_65C02
+                    ? testAndSetBitsZeroPage65C02(opcodeAddress) : nopZeroPage();
             case 0x05 -> orAccumulatorZeroPage();
             case 0x06 -> shiftLeftZeroPage();
-            case 0x07 -> resetMemoryBitZeroPage65C02(opcodeAddress, 0);
+            case 0x07 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 0) : shiftLeftOrZeroPage();
             case 0x08 -> pushProcessorStatus();
             case 0x09 -> orAccumulatorImmediate();
             case 0x0A -> shiftLeftAccumulator();
-            case 0x0C -> testAndSetBitsAbsolute65C02(opcodeAddress);
+            case 0x0B -> {
+                requireNmos(0x0B, opcodeAddress);
+                yield andAccumulatorSetCarryImmediate();
+            }
+            case 0x0C -> variant == Mos6502Variant.CMOS_65C02
+                    ? testAndSetBitsAbsolute65C02(opcodeAddress) : nopAbsolute();
             case 0x0D -> orAccumulatorAbsolute();
             case 0x0E -> shiftLeftAbsolute();
+            case 0x0F -> {
+                requireNmos(0x0F, opcodeAddress);
+                yield shiftLeftOrAbsolute();
+            }
             case 0x10 -> branchIf(!registers.flagSet(Mos6502Registers.FLAG_N));
             case 0x11 -> orAccumulatorIndirectY();
-            case 0x14 -> testAndResetBitsZeroPage65C02(opcodeAddress);
+            case 0x13 -> {
+                requireNmos(0x13, opcodeAddress);
+                yield shiftLeftOrIndirectY();
+            }
+            case 0x14 -> variant == Mos6502Variant.CMOS_65C02
+                    ? testAndResetBitsZeroPage65C02(opcodeAddress) : nopZeroPageX();
             case 0x15 -> orAccumulatorZeroPageX();
             case 0x16 -> shiftLeftZeroPageX();
-            case 0x17 -> resetMemoryBitZeroPage65C02(opcodeAddress, 1);
+            case 0x17 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 1) : shiftLeftOrZeroPageX();
             case 0x18 -> clearFlag(Mos6502Registers.FLAG_C);
             case 0x19 -> orAccumulatorAbsoluteY();
-            case 0x1A -> incrementAccumulator65C02(opcodeAddress);
-            case 0x1C -> testAndResetBitsAbsolute65C02(opcodeAddress);
+            case 0x1A -> variant == Mos6502Variant.CMOS_65C02
+                    ? incrementAccumulator65C02(opcodeAddress) : nop();
+            case 0x1B -> {
+                requireNmos(0x1B, opcodeAddress);
+                yield shiftLeftOrAbsoluteY();
+            }
+            case 0x1C -> variant == Mos6502Variant.CMOS_65C02
+                    ? testAndResetBitsAbsolute65C02(opcodeAddress) : nopAbsoluteX();
             case 0x1D -> orAccumulatorAbsoluteX();
             case 0x1E -> shiftLeftAbsoluteX();
+            case 0x1F -> {
+                requireNmos(0x1F, opcodeAddress);
+                yield shiftLeftOrAbsoluteX();
+            }
             case 0x20 -> jsrAbsolute();
             case 0x21 -> andAccumulatorIndirectX();
+            case 0x23 -> {
+                requireNmos(0x23, opcodeAddress);
+                yield rotateLeftAndIndirectX();
+            }
             case 0x24 -> bitZeroPage();
             case 0x25 -> andAccumulatorZeroPage();
             case 0x26 -> rotateLeftZeroPage();
-            case 0x27 -> resetMemoryBitZeroPage65C02(opcodeAddress, 2);
+            case 0x27 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 2) : rotateLeftAndZeroPage();
             case 0x28 -> pullProcessorStatus();
             case 0x29 -> andAccumulatorImmediate();
             case 0x2A -> rotateLeftAccumulator();
+            case 0x2B -> {
+                requireNmos(0x2B, opcodeAddress);
+                yield andAccumulatorSetCarryImmediate();
+            }
             case 0x2C -> bitAbsolute();
             case 0x2D -> andAccumulatorAbsolute();
             case 0x2E -> rotateLeftAbsolute();
+            case 0x2F -> {
+                requireNmos(0x2F, opcodeAddress);
+                yield rotateLeftAndAbsolute();
+            }
             case 0x30 -> branchIf(registers.flagSet(Mos6502Registers.FLAG_N));
             case 0x31 -> andAccumulatorIndirectY();
-            case 0x34 -> bitZeroPageX65C02(opcodeAddress);
+            case 0x33 -> {
+                requireNmos(0x33, opcodeAddress);
+                yield rotateLeftAndIndirectY();
+            }
+            case 0x34 -> variant == Mos6502Variant.CMOS_65C02
+                    ? bitZeroPageX65C02(opcodeAddress) : nopZeroPageX();
             case 0x35 -> andAccumulatorZeroPageX();
             case 0x36 -> rotateLeftZeroPageX();
-            case 0x37 -> resetMemoryBitZeroPage65C02(opcodeAddress, 3);
+            case 0x37 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 3) : rotateLeftAndZeroPageX();
             case 0x38 -> setFlag(Mos6502Registers.FLAG_C);
             case 0x39 -> andAccumulatorAbsoluteY();
-            case 0x3A -> decrementAccumulator65C02(opcodeAddress);
-            case 0x3C -> bitAbsoluteX65C02(opcodeAddress);
+            case 0x3A -> variant == Mos6502Variant.CMOS_65C02
+                    ? decrementAccumulator65C02(opcodeAddress) : nop();
+            case 0x3B -> {
+                requireNmos(0x3B, opcodeAddress);
+                yield rotateLeftAndAbsoluteY();
+            }
+            case 0x3C -> variant == Mos6502Variant.CMOS_65C02
+                    ? bitAbsoluteX65C02(opcodeAddress) : nopAbsoluteX();
             case 0x3D -> andAccumulatorAbsoluteX();
             case 0x3E -> rotateLeftAbsoluteX();
+            case 0x3F -> {
+                requireNmos(0x3F, opcodeAddress);
+                yield rotateLeftAndAbsoluteX();
+            }
             case 0x40 -> rti();
             case 0x41 -> exclusiveOrIndirectX();
+            case 0x43 -> {
+                requireNmos(0x43, opcodeAddress);
+                yield shiftRightExclusiveOrIndirectX();
+            }
+            case 0x44 -> {
+                requireNmos(0x44, opcodeAddress);
+                yield nopZeroPage();
+            }
             case 0x45 -> exclusiveOrZeroPage();
+            case 0x46 -> shiftRightZeroPage();
+            case 0x47 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 4) : shiftRightExclusiveOrZeroPage();
             case 0x48 -> pushAccumulator();
             case 0x49 -> exclusiveOrImmediate();
-            case 0x46 -> shiftRightZeroPage();
-            case 0x47 -> resetMemoryBitZeroPage65C02(opcodeAddress, 4);
             case 0x4A -> shiftRightAccumulator();
+            case 0x4B -> {
+                requireNmos(0x4B, opcodeAddress);
+                yield andAccumulatorShiftRightImmediate();
+            }
             case 0x4C -> jumpAbsolute();
             case 0x4D -> exclusiveOrAbsolute();
             case 0x4E -> shiftRightAbsolute();
+            case 0x4F -> {
+                requireNmos(0x4F, opcodeAddress);
+                yield shiftRightExclusiveOrAbsolute();
+            }
             case 0x50 -> branchIf(!registers.flagSet(Mos6502Registers.FLAG_V));
             case 0x51 -> exclusiveOrIndirectY();
+            case 0x53 -> {
+                requireNmos(0x53, opcodeAddress);
+                yield shiftRightExclusiveOrIndirectY();
+            }
+            case 0x54 -> {
+                requireNmos(0x54, opcodeAddress);
+                yield nopZeroPageX();
+            }
             case 0x55 -> exclusiveOrZeroPageX();
             case 0x56 -> shiftRightZeroPageX();
-            case 0x57 -> resetMemoryBitZeroPage65C02(opcodeAddress, 5);
+            case 0x57 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 5) : shiftRightExclusiveOrZeroPageX();
             case 0x58 -> clearFlag(Mos6502Registers.FLAG_I);
             case 0x59 -> exclusiveOrAbsoluteY();
-            case 0x5A -> pushY65C02(opcodeAddress);
+            case 0x5A -> variant == Mos6502Variant.CMOS_65C02
+                    ? pushY65C02(opcodeAddress) : nop();
+            case 0x5B -> {
+                requireNmos(0x5B, opcodeAddress);
+                yield shiftRightExclusiveOrAbsoluteY();
+            }
+            case 0x5C -> {
+                requireNmos(0x5C, opcodeAddress);
+                yield nopAbsoluteX();
+            }
             case 0x5D -> exclusiveOrAbsoluteX();
             case 0x5E -> shiftRightAbsoluteX();
+            case 0x5F -> {
+                requireNmos(0x5F, opcodeAddress);
+                yield shiftRightExclusiveOrAbsoluteX();
+            }
             case 0x60 -> rts();
             case 0x61 -> adcIndirectX();
-            case 0x64 -> storeZeroZeroPage65C02(opcodeAddress);
+            case 0x63 -> {
+                requireNmos(0x63, opcodeAddress);
+                yield rotateRightAddIndirectX();
+            }
+            case 0x64 -> variant == Mos6502Variant.CMOS_65C02
+                    ? storeZeroZeroPage65C02(opcodeAddress) : nopZeroPage();
             case 0x65 -> adcZeroPage();
             case 0x66 -> rotateRightZeroPage();
-            case 0x67 -> resetMemoryBitZeroPage65C02(opcodeAddress, 6);
+            case 0x67 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 6) : rotateRightAddZeroPage();
             case 0x68 -> pullAccumulator();
             case 0x69 -> adcImmediate();
             case 0x6A -> rotateRightAccumulator();
+            case 0x6B -> {
+                requireNmos(0x6B, opcodeAddress);
+                yield andAccumulatorRotateRightImmediate();
+            }
             case 0x6C -> jumpIndirect();
             case 0x6D -> adcAbsolute();
             case 0x6E -> rotateRightAbsolute();
+            case 0x6F -> {
+                requireNmos(0x6F, opcodeAddress);
+                yield rotateRightAddAbsolute();
+            }
             case 0x70 -> branchIf(registers.flagSet(Mos6502Registers.FLAG_V));
             case 0x71 -> adcIndirectY();
-            case 0x74 -> storeZeroZeroPageX65C02(opcodeAddress);
+            case 0x73 -> {
+                requireNmos(0x73, opcodeAddress);
+                yield rotateRightAddIndirectY();
+            }
+            case 0x74 -> variant == Mos6502Variant.CMOS_65C02
+                    ? storeZeroZeroPageX65C02(opcodeAddress) : nopZeroPageX();
             case 0x75 -> adcZeroPageX();
             case 0x76 -> rotateRightZeroPageX();
-            case 0x77 -> resetMemoryBitZeroPage65C02(opcodeAddress, 7);
+            case 0x77 -> variant == Mos6502Variant.CMOS_65C02
+                    ? resetMemoryBitZeroPage65C02(opcodeAddress, 7) : rotateRightAddZeroPageX();
             case 0x78 -> setFlag(Mos6502Registers.FLAG_I);
             case 0x79 -> adcAbsoluteY();
-            case 0x7A -> pullY65C02(opcodeAddress);
-            case 0x7C -> jumpAbsoluteIndexedIndirect65C02(opcodeAddress);
+            case 0x7A -> variant == Mos6502Variant.CMOS_65C02
+                    ? pullY65C02(opcodeAddress) : nop();
+            case 0x7B -> {
+                requireNmos(0x7B, opcodeAddress);
+                yield rotateRightAddAbsoluteY();
+            }
+            case 0x7C -> variant == Mos6502Variant.CMOS_65C02
+                    ? jumpAbsoluteIndexedIndirect65C02(opcodeAddress) : nopAbsoluteX();
             case 0x7D -> adcAbsoluteX();
             case 0x7E -> rotateRightAbsoluteX();
-            case 0x80 -> branchAlways65C02(opcodeAddress);
+            case 0x7F -> {
+                requireNmos(0x7F, opcodeAddress);
+                yield rotateRightAddAbsoluteX();
+            }
+            case 0x80 -> variant == Mos6502Variant.CMOS_65C02
+                    ? branchAlways65C02(opcodeAddress) : nopImmediate();
             case 0x81 -> storeAccumulatorIndirectX();
+            case 0x82 -> {
+                requireNmos(0x82, opcodeAddress);
+                yield nopImmediate();
+            }
+            case 0x83 -> {
+                requireNmos(0x83, opcodeAddress);
+                yield storeAccumulatorAndXIndirectX();
+            }
             case 0x84 -> storeYZeroPage();
             case 0x85 -> storeAccumulatorZeroPage();
             case 0x86 -> storeXZeroPage();
-            case 0x87 -> setMemoryBitZeroPage65C02(opcodeAddress, 0);
+            case 0x87 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 0) : storeAccumulatorAndXZeroPage();
             case 0x88 -> decrementY();
-            case 0x89 -> bitImmediate65C02(opcodeAddress);
+            case 0x89 -> variant == Mos6502Variant.CMOS_65C02
+                    ? bitImmediate65C02(opcodeAddress) : nopImmediate();
             case 0x8A -> transferXToAccumulator();
             case 0x8C -> storeYAbsolute();
             case 0x8D -> storeAccumulatorAbsolute();
             case 0x8E -> storeXAbsolute();
+            case 0x8F -> {
+                requireNmos(0x8F, opcodeAddress);
+                yield storeAccumulatorAndXAbsolute();
+            }
             case 0x90 -> branchIf(!registers.flagSet(Mos6502Registers.FLAG_C));
             case 0x91 -> storeAccumulatorIndirectY();
             case 0x92 -> storeAccumulatorZeroPageIndirect65C02(opcodeAddress);
             case 0x94 -> storeYZeroPageX();
             case 0x95 -> storeAccumulatorZeroPageX();
             case 0x96 -> storeXZeroPageY();
-            case 0x97 -> setMemoryBitZeroPage65C02(opcodeAddress, 1);
+            case 0x97 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 1) : storeAccumulatorAndXZeroPageY();
             case 0x98 -> transferYToAccumulator();
             case 0x99 -> storeAccumulatorAbsoluteY();
             case 0x9A -> transferXToStackPointer();
@@ -193,72 +338,168 @@ public final class Mos6502Cpu implements Cpu {
             case 0xA0 -> loadYImmediate();
             case 0xA1 -> loadAccumulatorIndirectX();
             case 0xA2 -> loadXImmediate();
+            case 0xA3 -> {
+                requireNmos(0xA3, opcodeAddress);
+                yield loadAccumulatorAndXIndirectX();
+            }
             case 0xA4 -> loadYZeroPage();
             case 0xA5 -> loadAccumulatorZeroPage();
             case 0xA6 -> loadXZeroPage();
-            case 0xA7 -> setMemoryBitZeroPage65C02(opcodeAddress, 2);
+            case 0xA7 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 2) : loadAccumulatorAndXZeroPage();
             case 0xA8 -> transferAccumulatorToY();
             case 0xA9 -> loadAccumulatorImmediate();
             case 0xAA -> transferAccumulatorToX();
             case 0xAC -> loadYAbsolute();
             case 0xAD -> loadAccumulatorAbsolute();
             case 0xAE -> loadXAbsolute();
+            case 0xAF -> {
+                requireNmos(0xAF, opcodeAddress);
+                yield loadAccumulatorAndXAbsolute();
+            }
             case 0xB0 -> branchIf(registers.flagSet(Mos6502Registers.FLAG_C));
             case 0xB1 -> loadAccumulatorIndirectY();
+            case 0xB3 -> {
+                requireNmos(0xB3, opcodeAddress);
+                yield loadAccumulatorAndXIndirectY();
+            }
             case 0xB4 -> loadYZeroPageX();
             case 0xB5 -> loadAccumulatorZeroPageX();
             case 0xB6 -> loadXZeroPageY();
-            case 0xB7 -> setMemoryBitZeroPage65C02(opcodeAddress, 3);
+            case 0xB7 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 3) : loadAccumulatorAndXZeroPageY();
             case 0xB8 -> clearFlag(Mos6502Registers.FLAG_V);
             case 0xB9 -> loadAccumulatorAbsoluteY();
             case 0xBA -> transferStackPointerToX();
             case 0xBC -> loadYAbsoluteX();
             case 0xBD -> loadAccumulatorAbsoluteX();
             case 0xBE -> loadXAbsoluteY();
+            case 0xBF -> {
+                requireNmos(0xBF, opcodeAddress);
+                yield loadAccumulatorAndXAbsoluteY();
+            }
             case 0xC0 -> compareYImmediate();
             case 0xC1 -> compareAccumulatorIndirectX();
+            case 0xC2 -> {
+                requireNmos(0xC2, opcodeAddress);
+                yield nopImmediate();
+            }
+            case 0xC3 -> {
+                requireNmos(0xC3, opcodeAddress);
+                yield decrementCompareIndirectX();
+            }
             case 0xC4 -> compareYZeroPage();
             case 0xC5 -> compareAccumulatorZeroPage();
             case 0xC6 -> decrementZeroPage();
-            case 0xC7 -> setMemoryBitZeroPage65C02(opcodeAddress, 4);
+            case 0xC7 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 4) : decrementCompareZeroPage();
             case 0xC8 -> incrementY();
             case 0xC9 -> compareAccumulatorImmediate();
             case 0xCA -> decrementX();
+            case 0xCB -> {
+                requireNmos(0xCB, opcodeAddress);
+                yield subtractImmediateFromAccumulatorAndX();
+            }
             case 0xCC -> compareYAbsolute();
             case 0xCD -> compareAccumulatorAbsolute();
             case 0xCE -> decrementAbsolute();
+            case 0xCF -> {
+                requireNmos(0xCF, opcodeAddress);
+                yield decrementCompareAbsolute();
+            }
             case 0xD0 -> branchIf(!registers.flagSet(Mos6502Registers.FLAG_Z));
             case 0xD1 -> compareAccumulatorIndirectY();
+            case 0xD3 -> {
+                requireNmos(0xD3, opcodeAddress);
+                yield decrementCompareIndirectY();
+            }
+            case 0xD4 -> {
+                requireNmos(0xD4, opcodeAddress);
+                yield nopZeroPageX();
+            }
             case 0xD5 -> compareAccumulatorZeroPageX();
             case 0xD6 -> decrementZeroPageX();
-            case 0xD7 -> setMemoryBitZeroPage65C02(opcodeAddress, 5);
+            case 0xD7 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 5) : decrementCompareZeroPageX();
             case 0xD8 -> clearFlag(Mos6502Registers.FLAG_D);
             case 0xD9 -> compareAccumulatorAbsoluteY();
-            case 0xDA -> pushX65C02(opcodeAddress);
+            case 0xDA -> variant == Mos6502Variant.CMOS_65C02
+                    ? pushX65C02(opcodeAddress) : nop();
+            case 0xDB -> {
+                requireNmos(0xDB, opcodeAddress);
+                yield decrementCompareAbsoluteY();
+            }
+            case 0xDC -> {
+                requireNmos(0xDC, opcodeAddress);
+                yield nopAbsoluteX();
+            }
             case 0xDD -> compareAccumulatorAbsoluteX();
             case 0xDE -> decrementAbsoluteX();
+            case 0xDF -> {
+                requireNmos(0xDF, opcodeAddress);
+                yield decrementCompareAbsoluteX();
+            }
             case 0xE0 -> compareXImmediate();
             case 0xE1 -> sbcIndirectX();
+            case 0xE2 -> {
+                requireNmos(0xE2, opcodeAddress);
+                yield nopImmediate();
+            }
+            case 0xE3 -> {
+                requireNmos(0xE3, opcodeAddress);
+                yield incrementSubtractIndirectX();
+            }
             case 0xE4 -> compareXZeroPage();
             case 0xE5 -> sbcZeroPage();
             case 0xE6 -> incrementZeroPage();
-            case 0xE7 -> setMemoryBitZeroPage65C02(opcodeAddress, 6);
+            case 0xE7 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 6) : incrementSubtractZeroPage();
+            case 0xE8 -> incrementX();
             case 0xE9 -> sbcImmediate();
             case 0xEA -> 2;
-            case 0xE8 -> incrementX();
+            case 0xEB -> {
+                requireNmos(0xEB, opcodeAddress);
+                yield sbcImmediate();
+            }
             case 0xEC -> compareXAbsolute();
             case 0xED -> sbcAbsolute();
             case 0xEE -> incrementAbsolute();
-            case 0xF6 -> incrementZeroPageX();
-            case 0xF1 -> sbcIndirectY();
+            case 0xEF -> {
+                requireNmos(0xEF, opcodeAddress);
+                yield incrementSubtractAbsolute();
+            }
             case 0xF0 -> branchIf(registers.flagSet(Mos6502Registers.FLAG_Z));
+            case 0xF1 -> sbcIndirectY();
+            case 0xF3 -> {
+                requireNmos(0xF3, opcodeAddress);
+                yield incrementSubtractIndirectY();
+            }
+            case 0xF4 -> {
+                requireNmos(0xF4, opcodeAddress);
+                yield nopZeroPageX();
+            }
             case 0xF5 -> sbcZeroPageX();
+            case 0xF6 -> incrementZeroPageX();
+            case 0xF7 -> variant == Mos6502Variant.CMOS_65C02
+                    ? setMemoryBitZeroPage65C02(opcodeAddress, 7) : incrementSubtractZeroPageX();
             case 0xF8 -> setFlag(Mos6502Registers.FLAG_D);
-            case 0xF7 -> setMemoryBitZeroPage65C02(opcodeAddress, 7);
             case 0xF9 -> sbcAbsoluteY();
-            case 0xFA -> pullX65C02(opcodeAddress);
+            case 0xFA -> variant == Mos6502Variant.CMOS_65C02
+                    ? pullX65C02(opcodeAddress) : nop();
+            case 0xFB -> {
+                requireNmos(0xFB, opcodeAddress);
+                yield incrementSubtractAbsoluteY();
+            }
+            case 0xFC -> {
+                requireNmos(0xFC, opcodeAddress);
+                yield nopAbsoluteX();
+            }
             case 0xFD -> sbcAbsoluteX();
             case 0xFE -> incrementAbsoluteX();
+            case 0xFF -> {
+                requireNmos(0xFF, opcodeAddress);
+                yield incrementSubtractAbsoluteX();
+            }
             default -> illegalOpcode(opcode, opcodeAddress);
         };
     }
@@ -272,6 +513,36 @@ public final class Mos6502Cpu implements Cpu {
         require65C02(0x02, opcodeAddress);
         registers.incrementPc(1);
         return 2;
+    }
+
+    private int nop() {
+        return 2;
+    }
+
+    private int nopImmediate() {
+        fetchImmediate8();
+        return 2;
+    }
+
+    private int nopZeroPage() {
+        readZeroPageOperand();
+        return 3;
+    }
+
+    private int nopZeroPageX() {
+        bus.readMemory(fetchZeroPageXAddress());
+        return 4;
+    }
+
+    private int nopAbsolute() {
+        bus.readMemory(fetchImmediate16());
+        return 4;
+    }
+
+    private int nopAbsoluteX() {
+        int address = fetchAbsoluteXAddress();
+        bus.readMemory(indexedValue(address));
+        return 4 + (crossedPage(address) ? 1 : 0);
     }
 
     private int resetMemoryBitZeroPage65C02(int opcodeAddress, int bit) {
@@ -333,6 +604,12 @@ public final class Mos6502Cpu implements Cpu {
 
     private void require65C02(int opcode, int opcodeAddress) {
         if (variant != Mos6502Variant.CMOS_65C02) {
+            illegalOpcode(opcode, opcodeAddress);
+        }
+    }
+
+    private void requireNmos(int opcode, int opcodeAddress) {
+        if (variant != Mos6502Variant.NMOS_6502) {
             illegalOpcode(opcode, opcodeAddress);
         }
     }
@@ -440,6 +717,45 @@ public final class Mos6502Cpu implements Cpu {
     private int loadAccumulator(int value, int cycles) {
         registers.setA(value);
         registers.updateZeroAndNegative(registers.a());
+        return cycles;
+    }
+
+    private int loadAccumulatorAndXZeroPage() {
+        return loadAccumulatorAndX(readZeroPageOperand(), 3);
+    }
+
+    private int loadAccumulatorAndXZeroPageY() {
+        return loadAccumulatorAndX(bus.readMemory(fetchZeroPageYAddress()), 4);
+    }
+
+    private int loadAccumulatorAndXAbsolute() {
+        return loadAccumulatorAndX(bus.readMemory(fetchImmediate16()), 4);
+    }
+
+    private int loadAccumulatorAndXAbsoluteY() {
+        int address = fetchAbsoluteYAddress();
+        return loadAccumulatorAndX(
+                bus.readMemory(indexedValue(address)),
+                4 + (crossedPage(address) ? 1 : 0)
+        );
+    }
+
+    private int loadAccumulatorAndXIndirectX() {
+        return loadAccumulatorAndX(bus.readMemory(fetchIndirectXAddress()), 6);
+    }
+
+    private int loadAccumulatorAndXIndirectY() {
+        int address = fetchIndirectYAddress();
+        return loadAccumulatorAndX(
+                bus.readMemory(indexedValue(address)),
+                5 + (crossedPage(address) ? 1 : 0)
+        );
+    }
+
+    private int loadAccumulatorAndX(int value, int cycles) {
+        registers.setA(value);
+        registers.setX(value);
+        registers.updateZeroAndNegative(value);
         return cycles;
     }
 
@@ -566,6 +882,26 @@ public final class Mos6502Cpu implements Cpu {
     private int storeAccumulatorAbsoluteY() {
         bus.writeMemory(indexedValue(fetchAbsoluteYAddress()), registers.a());
         return 5;
+    }
+
+    private int storeAccumulatorAndXZeroPage() {
+        bus.writeMemory(fetchImmediate8(), registers.a() & registers.x());
+        return 3;
+    }
+
+    private int storeAccumulatorAndXZeroPageY() {
+        bus.writeMemory(fetchZeroPageYAddress(), registers.a() & registers.x());
+        return 4;
+    }
+
+    private int storeAccumulatorAndXAbsolute() {
+        bus.writeMemory(fetchImmediate16(), registers.a() & registers.x());
+        return 4;
+    }
+
+    private int storeAccumulatorAndXIndirectX() {
+        bus.writeMemory(fetchIndirectXAddress(), registers.a() & registers.x());
+        return 6;
     }
 
     private int storeZeroZeroPage65C02(int opcodeAddress) {
@@ -856,6 +1192,213 @@ public final class Mos6502Cpu implements Cpu {
         return result;
     }
 
+    private int shiftLeftOrZeroPage() {
+        return shiftLeftOrMemory(fetchImmediate8(), 5);
+    }
+
+    private int shiftLeftOrZeroPageX() {
+        return shiftLeftOrMemory(fetchZeroPageXAddress(), 6);
+    }
+
+    private int shiftLeftOrAbsolute() {
+        return shiftLeftOrMemory(fetchImmediate16(), 6);
+    }
+
+    private int shiftLeftOrAbsoluteX() {
+        return shiftLeftOrMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int shiftLeftOrAbsoluteY() {
+        return shiftLeftOrMemory(indexedValue(fetchAbsoluteYAddress()), 7);
+    }
+
+    private int shiftLeftOrIndirectX() {
+        return shiftLeftOrMemory(fetchIndirectXAddress(), 8);
+    }
+
+    private int shiftLeftOrIndirectY() {
+        return shiftLeftOrMemory(indexedValue(fetchIndirectYAddress()), 8);
+    }
+
+    private int shiftLeftOrMemory(int address, int cycles) {
+        int result = shiftLeft(bus.readMemory(address));
+        bus.writeMemory(address, result);
+        return orAccumulator(result, cycles);
+    }
+
+    private int rotateLeftAndZeroPage() {
+        return rotateLeftAndMemory(fetchImmediate8(), 5);
+    }
+
+    private int rotateLeftAndZeroPageX() {
+        return rotateLeftAndMemory(fetchZeroPageXAddress(), 6);
+    }
+
+    private int rotateLeftAndAbsolute() {
+        return rotateLeftAndMemory(fetchImmediate16(), 6);
+    }
+
+    private int rotateLeftAndAbsoluteX() {
+        return rotateLeftAndMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int rotateLeftAndAbsoluteY() {
+        return rotateLeftAndMemory(indexedValue(fetchAbsoluteYAddress()), 7);
+    }
+
+    private int rotateLeftAndIndirectX() {
+        return rotateLeftAndMemory(fetchIndirectXAddress(), 8);
+    }
+
+    private int rotateLeftAndIndirectY() {
+        return rotateLeftAndMemory(indexedValue(fetchIndirectYAddress()), 8);
+    }
+
+    private int rotateLeftAndMemory(int address, int cycles) {
+        int result = rotateLeft(bus.readMemory(address));
+        bus.writeMemory(address, result);
+        return andAccumulator(result, cycles);
+    }
+
+    private int shiftRightExclusiveOrZeroPage() {
+        return shiftRightExclusiveOrMemory(fetchImmediate8(), 5);
+    }
+
+    private int shiftRightExclusiveOrZeroPageX() {
+        return shiftRightExclusiveOrMemory(fetchZeroPageXAddress(), 6);
+    }
+
+    private int shiftRightExclusiveOrAbsolute() {
+        return shiftRightExclusiveOrMemory(fetchImmediate16(), 6);
+    }
+
+    private int shiftRightExclusiveOrAbsoluteX() {
+        return shiftRightExclusiveOrMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int shiftRightExclusiveOrAbsoluteY() {
+        return shiftRightExclusiveOrMemory(indexedValue(fetchAbsoluteYAddress()), 7);
+    }
+
+    private int shiftRightExclusiveOrIndirectX() {
+        return shiftRightExclusiveOrMemory(fetchIndirectXAddress(), 8);
+    }
+
+    private int shiftRightExclusiveOrIndirectY() {
+        return shiftRightExclusiveOrMemory(indexedValue(fetchIndirectYAddress()), 8);
+    }
+
+    private int shiftRightExclusiveOrMemory(int address, int cycles) {
+        int result = shiftRight(bus.readMemory(address));
+        bus.writeMemory(address, result);
+        return exclusiveOr(result, cycles);
+    }
+
+    private int rotateRightAddZeroPage() {
+        return rotateRightAddMemory(fetchImmediate8(), 5);
+    }
+
+    private int rotateRightAddZeroPageX() {
+        return rotateRightAddMemory(fetchZeroPageXAddress(), 6);
+    }
+
+    private int rotateRightAddAbsolute() {
+        return rotateRightAddMemory(fetchImmediate16(), 6);
+    }
+
+    private int rotateRightAddAbsoluteX() {
+        return rotateRightAddMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int rotateRightAddAbsoluteY() {
+        return rotateRightAddMemory(indexedValue(fetchAbsoluteYAddress()), 7);
+    }
+
+    private int rotateRightAddIndirectX() {
+        return rotateRightAddMemory(fetchIndirectXAddress(), 8);
+    }
+
+    private int rotateRightAddIndirectY() {
+        return rotateRightAddMemory(indexedValue(fetchIndirectYAddress()), 8);
+    }
+
+    private int rotateRightAddMemory(int address, int cycles) {
+        int result = rotateRight(bus.readMemory(address));
+        bus.writeMemory(address, result);
+        addWithCarry(result);
+        return cycles;
+    }
+
+    private int decrementCompareZeroPage() {
+        return decrementCompareMemory(fetchImmediate8(), 5);
+    }
+
+    private int decrementCompareZeroPageX() {
+        return decrementCompareMemory(fetchZeroPageXAddress(), 6);
+    }
+
+    private int decrementCompareAbsolute() {
+        return decrementCompareMemory(fetchImmediate16(), 6);
+    }
+
+    private int decrementCompareAbsoluteX() {
+        return decrementCompareMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int decrementCompareAbsoluteY() {
+        return decrementCompareMemory(indexedValue(fetchAbsoluteYAddress()), 7);
+    }
+
+    private int decrementCompareIndirectX() {
+        return decrementCompareMemory(fetchIndirectXAddress(), 8);
+    }
+
+    private int decrementCompareIndirectY() {
+        return decrementCompareMemory(indexedValue(fetchIndirectYAddress()), 8);
+    }
+
+    private int decrementCompareMemory(int address, int cycles) {
+        int value = (bus.readMemory(address) - 1) & 0xFF;
+        bus.writeMemory(address, value);
+        compare(registers.a(), value);
+        return cycles;
+    }
+
+    private int incrementSubtractZeroPage() {
+        return incrementSubtractMemory(fetchImmediate8(), 5);
+    }
+
+    private int incrementSubtractZeroPageX() {
+        return incrementSubtractMemory(fetchZeroPageXAddress(), 6);
+    }
+
+    private int incrementSubtractAbsolute() {
+        return incrementSubtractMemory(fetchImmediate16(), 6);
+    }
+
+    private int incrementSubtractAbsoluteX() {
+        return incrementSubtractMemory(indexedValue(fetchAbsoluteXAddress()), 7);
+    }
+
+    private int incrementSubtractAbsoluteY() {
+        return incrementSubtractMemory(indexedValue(fetchAbsoluteYAddress()), 7);
+    }
+
+    private int incrementSubtractIndirectX() {
+        return incrementSubtractMemory(fetchIndirectXAddress(), 8);
+    }
+
+    private int incrementSubtractIndirectY() {
+        return incrementSubtractMemory(indexedValue(fetchIndirectYAddress()), 8);
+    }
+
+    private int incrementSubtractMemory(int address, int cycles) {
+        int value = (bus.readMemory(address) + 1) & 0xFF;
+        bus.writeMemory(address, value);
+        subtractWithCarry(value);
+        return cycles;
+    }
+
     private int decrementZeroPage() {
         return decrementMemory(fetchImmediate8(), 5);
     }
@@ -955,6 +1498,28 @@ public final class Mos6502Cpu implements Cpu {
         registers.setA(registers.a() & value);
         registers.updateZeroAndNegative(registers.a());
         return cycles;
+    }
+
+    private int andAccumulatorSetCarryImmediate() {
+        andAccumulator(fetchImmediate8(), 2);
+        registers.setFlag(
+                Mos6502Registers.FLAG_C,
+                registers.flagSet(Mos6502Registers.FLAG_N)
+        );
+        return 2;
+    }
+
+    private int andAccumulatorShiftRightImmediate() {
+        registers.setA(registers.a() & fetchImmediate8());
+        return shiftRightAccumulator();
+    }
+
+    private int andAccumulatorRotateRightImmediate() {
+        int result = rotateRight(registers.a() & fetchImmediate8());
+        registers.setA(result);
+        registers.setFlag(Mos6502Registers.FLAG_C, (result & 0x40) != 0);
+        registers.setFlag(Mos6502Registers.FLAG_V, (((result >>> 6) ^ (result >>> 5)) & 0x01) != 0);
+        return 2;
     }
 
     private int orAccumulatorImmediate() {
@@ -1195,6 +1760,14 @@ public final class Mos6502Cpu implements Cpu {
 
     private int compareAccumulatorImmediate() {
         compare(registers.a(), fetchImmediate8());
+        return 2;
+    }
+
+    private int subtractImmediateFromAccumulatorAndX() {
+        int value = registers.a() & registers.x();
+        int operand = fetchImmediate8();
+        registers.setX(value - operand);
+        compare(value, operand);
         return 2;
     }
 
