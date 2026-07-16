@@ -3,6 +3,7 @@ package dev.z8emu.cpu.mos6502;
 import dev.z8emu.platform.bus.CpuBus;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,6 +28,41 @@ class Mos6502CpuTest {
             0xD0, 0xD1, 0xD5, 0xD6, 0xD8, 0xD9, 0xDD, 0xDE,
             0xE0, 0xE1, 0xE4, 0xE5, 0xE6, 0xE8, 0xE9, 0xEA, 0xEC, 0xED, 0xEE,
             0xF0, 0xF1, 0xF5, 0xF6, 0xF8, 0xF9, 0xFD, 0xFE
+    };
+    private static final int[] NMOS_STABLE_ILLEGAL_OPCODES = {
+            0x03, 0x04, 0x07, 0x0B, 0x0C, 0x0F,
+            0x13, 0x14, 0x17, 0x1A, 0x1B, 0x1C, 0x1F,
+            0x23, 0x27, 0x2B, 0x2F,
+            0x33, 0x34, 0x37, 0x3A, 0x3B, 0x3C, 0x3F,
+            0x43, 0x44, 0x47, 0x4B, 0x4F,
+            0x53, 0x54, 0x57, 0x5A, 0x5B, 0x5C, 0x5F,
+            0x63, 0x64, 0x67, 0x6B, 0x6F,
+            0x73, 0x74, 0x77, 0x7A, 0x7B, 0x7C, 0x7F,
+            0x80, 0x82, 0x83, 0x87, 0x89, 0x8F,
+            0x97,
+            0xA3, 0xA7, 0xAF,
+            0xB3, 0xB7, 0xBF,
+            0xC2, 0xC3, 0xC7, 0xCB, 0xCF,
+            0xD3, 0xD4, 0xD7, 0xDA, 0xDB, 0xDC, 0xDF,
+            0xE2, 0xE3, 0xE7, 0xEB, 0xEF,
+            0xF3, 0xF4, 0xF7, 0xFA, 0xFB, 0xFC, 0xFF
+    };
+    private static final int[] NMOS_ONLY_NEW_STABLE_ILLEGAL_OPCODES = {
+            0x03, 0x0B, 0x0F,
+            0x13, 0x1B, 0x1F,
+            0x23, 0x2B, 0x2F,
+            0x33, 0x3B, 0x3F,
+            0x43, 0x44, 0x4B, 0x4F,
+            0x53, 0x54, 0x5B, 0x5C, 0x5F,
+            0x63, 0x6B, 0x6F,
+            0x73, 0x7B, 0x7F,
+            0x82, 0x83, 0x8F,
+            0xA3, 0xAF,
+            0xB3, 0xBF,
+            0xC2, 0xC3, 0xCB, 0xCF,
+            0xD3, 0xD4, 0xDB, 0xDC, 0xDF,
+            0xE2, 0xE3, 0xEB, 0xEF,
+            0xF3, 0xF4, 0xFB, 0xFC, 0xFF
     };
 
     @Test
@@ -404,14 +440,8 @@ class Mos6502CpuTest {
     }
 
     @Test
-    void nmos6502TreatsBraAsIllegalOpcode() {
-        TestBus bus = new TestBus();
-        Mos6502Cpu cpu = boot(bus, 0x2000, 0x80, 0x02);
-
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-        assertEquals("Illegal MOS 6502 opcode 0x80 at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+    void nmos6502TreatsBraAsImmediateNop() {
+        assertNmosNop(2, 0x80, 0x02);
     }
 
     @Test
@@ -439,14 +469,19 @@ class Mos6502CpuTest {
     }
 
     @Test
-    void nmos6502TreatsSmbAsIllegalOpcode() {
+    void nmos6502TreatsSmbZeroPageSlotAsSax() {
         TestBus bus = new TestBus();
         Mos6502Cpu cpu = boot(bus, 0x2000, 0x87, 0x44);
+        cpu.registers().setA(0xF3);
+        cpu.registers().setX(0x3F);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_N, true);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_Z, true);
+        int flags = cpu.registers().p();
 
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-        assertEquals("Illegal MOS 6502 opcode 0x87 at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+        assertEquals(3, cpu.runInstruction());
+        assertEquals(0x33, bus.readMemory(0x0044));
+        assertEquals(flags, cpu.registers().p());
+        assertEquals(0x2002, cpu.registers().pc());
     }
 
     @Test
@@ -504,14 +539,9 @@ class Mos6502CpuTest {
     }
 
     @Test
-    void nmos6502TreatsStzAsIllegalOpcode() {
-        TestBus bus = new TestBus();
-        Mos6502Cpu cpu = boot(bus, 0x2000, 0x64, 0x10);
-
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
-
-        assertEquals("Illegal MOS 6502 opcode 0x64 at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+    void nmos6502TreatsStzZeroPageSlotsAsNops() {
+        assertNmosNop(3, 0x64, 0x10);
+        assertNmosNop(4, 0x74, 0x10);
     }
 
     @Test
@@ -581,8 +611,11 @@ class Mos6502CpuTest {
     }
 
     @Test
-    void nmos6502TreatsIndexStackOpcodesAsIllegal() {
-        assertIllegalOnNmos(0x5A, 0x7A, 0xDA, 0xFA);
+    void nmos6502TreatsIndexStackOpcodesAsNops() {
+        assertNmosNop(2, 0x5A);
+        assertNmosNop(2, 0x7A);
+        assertNmosNop(2, 0xDA);
+        assertNmosNop(2, 0xFA);
     }
 
     @Test
@@ -627,23 +660,28 @@ class Mos6502CpuTest {
     }
 
     @Test
-    void nmos6502TreatsTsbAndTrbOpcodesAsIllegal() {
-        assertIllegalOnNmos(0x04, 0x0C, 0x14, 0x1C);
+    void nmos6502TreatsTsbAndTrbSlotsAsNops() {
+        assertNmosNop(3, 0x04, 0x44);
+        assertNmosNop(4, 0x0C, 0x44, 0x20);
+        assertNmosNop(4, 0x14, 0x44);
+        assertNmosNop(4, 0x1C, 0x44, 0x20);
     }
 
     @Test
-    void nmos6502TreatsBitImmediateAsIllegal() {
-        assertIllegalOnNmos(0x89);
+    void nmos6502TreatsBitImmediateSlotAsNop() {
+        assertNmosNop(2, 0x89, 0x80);
     }
 
     @Test
-    void nmos6502TreatsBitIndexedOpcodesAsIllegal() {
-        assertIllegalOnNmos(0x34, 0x3C);
+    void nmos6502TreatsBitIndexedSlotsAsNops() {
+        assertNmosNop(4, 0x34, 0x44);
+        assertNmosNop(4, 0x3C, 0x44, 0x20);
     }
 
     @Test
-    void nmos6502TreatsIncAccumulatorAsIllegalOpcode() {
-        assertIllegalOnNmos(0x1A);
+    void nmos6502TreatsAccumulatorIncrementAndDecrementSlotsAsNops() {
+        assertNmosNop(2, 0x1A);
+        assertNmosNop(2, 0x3A);
     }
 
     @Test
@@ -713,14 +751,300 @@ class Mos6502CpuTest {
     }
 
     @Test
-    void nmos6502TreatsJumpAbsoluteIndexedIndirectAsIllegalOpcode() {
+    void nmos6502TreatsJumpAbsoluteIndexedIndirectSlotAsNop() {
+        assertNmosNop(4, 0x7C, 0x00, 0x30);
+    }
+
+    @Test
+    void nmosLaxZeroPageLoadsAccumulatorAndXWithZeroAndNegativeFlags() {
         TestBus bus = new TestBus();
-        Mos6502Cpu cpu = boot(bus, 0x2000, 0x7C, 0x00, 0x30);
+        bus.writeMemory(0x0040, 0x80);
+        bus.writeMemory(0x0041, 0x00);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xA7, 0x40, 0xA7, 0x41);
 
-        IllegalStateException failure = assertThrows(IllegalStateException.class, cpu::runInstruction);
+        assertEquals(3, cpu.runInstruction());
+        assertEquals(0x80, cpu.registers().a());
+        assertEquals(0x80, cpu.registers().x());
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
 
-        assertEquals("Illegal MOS 6502 opcode 0x7C at 0x2000", failure.getMessage());
-        assertEquals(0x2000, cpu.registers().pc());
+        assertEquals(3, cpu.runInstruction());
+        assertEquals(0x00, cpu.registers().a());
+        assertEquals(0x00, cpu.registers().x());
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosLaxIndirectYAddsPageCrossCycle() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0020, 0xFF);
+        bus.writeMemory(0x0021, 0x40);
+        bus.writeMemory(0x4100, 0x7E);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xB3, 0x20);
+        cpu.registers().setY(0x01);
+
+        assertEquals(6, cpu.runInstruction());
+        assertEquals(0x7E, cpu.registers().a());
+        assertEquals(0x7E, cpu.registers().x());
+    }
+
+    @Test
+    void nmosSaxStoresAccumulatorAndXWithoutChangingFlags() {
+        TestBus bus = new TestBus();
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x87, 0x40, 0x8F, 0x00, 0x40);
+        cpu.registers().setA(0xF3);
+        cpu.registers().setX(0x3F);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_N, true);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_Z, true);
+        int flags = cpu.registers().p();
+
+        assertEquals(3, cpu.runInstruction());
+        assertEquals(0x33, bus.readMemory(0x0040));
+        assertEquals(flags, cpu.registers().p());
+
+        assertEquals(4, cpu.runInstruction());
+        assertEquals(0x33, bus.readMemory(0x4000));
+        assertEquals(flags, cpu.registers().p());
+    }
+
+    @Test
+    void nmosDcpZeroPageDecrementsThenComparesAgainstAccumulator() {
+        int[] accumulators = {0x20, 0x10, 0x0F};
+        boolean[] carry = {true, true, false};
+        boolean[] zero = {false, true, false};
+        boolean[] negative = {false, false, true};
+        for (int i = 0; i < accumulators.length; i++) {
+            TestBus bus = new TestBus();
+            bus.writeMemory(0x0040, 0x11);
+            Mos6502Cpu cpu = boot(bus, 0x2000, 0xC7, 0x40);
+            cpu.registers().setA(accumulators[i]);
+
+            assertEquals(5, cpu.runInstruction());
+            assertEquals(0x10, bus.readMemory(0x0040));
+            assertEquals(carry[i], cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+            assertEquals(zero[i], cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+            assertEquals(negative[i], cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        }
+    }
+
+    @Test
+    void nmosDcpAbsoluteYUsesFixedSevenCycles() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x4100, 0x22);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xDB, 0xFF, 0x40);
+        cpu.registers().setA(0x30);
+        cpu.registers().setY(0x01);
+
+        assertEquals(7, cpu.runInstruction());
+        assertEquals(0x21, bus.readMemory(0x4100));
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+    }
+
+    @Test
+    void nmosIscZeroPageIncrementsThenSubtractsWithBorrow() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0040, 0x10);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xE7, 0x40);
+        cpu.registers().setA(0x10);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_C, true);
+
+        assertEquals(5, cpu.runInstruction());
+        assertEquals(0x11, bus.readMemory(0x0040));
+        assertEquals(0xFF, cpu.registers().a());
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosSloZeroPageShiftsMemoryThenOrsAccumulator() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0040, 0x80);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x07, 0x40);
+        cpu.registers().setA(0x01);
+
+        assertEquals(5, cpu.runInstruction());
+        assertEquals(0x00, bus.readMemory(0x0040));
+        assertEquals(0x01, cpu.registers().a());
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosSloIndirectYUsesFixedEightCyclesAcrossPage() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0020, 0xFF);
+        bus.writeMemory(0x0021, 0x40);
+        bus.writeMemory(0x4100, 0x01);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x13, 0x20);
+        cpu.registers().setY(0x01);
+
+        assertEquals(8, cpu.runInstruction());
+        assertEquals(0x02, bus.readMemory(0x4100));
+        assertEquals(0x02, cpu.registers().a());
+    }
+
+    @Test
+    void nmosRlaZeroPageRotatesMemoryThenAndsAccumulator() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0040, 0x40);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x27, 0x40);
+        cpu.registers().setA(0xF0);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_C, true);
+
+        assertEquals(5, cpu.runInstruction());
+        assertEquals(0x81, bus.readMemory(0x0040));
+        assertEquals(0x80, cpu.registers().a());
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosSreZeroPageShiftsMemoryThenExclusiveOrsAccumulator() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0040, 0x03);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x47, 0x40);
+        cpu.registers().setA(0x80);
+
+        assertEquals(5, cpu.runInstruction());
+        assertEquals(0x01, bus.readMemory(0x0040));
+        assertEquals(0x81, cpu.registers().a());
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosRraFeedsRotateCarryOutIntoAddition() {
+        TestBus bus = new TestBus();
+        bus.writeMemory(0x0040, 0x03);
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x67, 0x40);
+        cpu.registers().setA(0x00);
+        cpu.registers().setFlag(Mos6502Registers.FLAG_C, false);
+
+        assertEquals(5, cpu.runInstruction());
+        assertEquals(0x01, bus.readMemory(0x0040));
+        assertEquals(0x02, cpu.registers().a());
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+    }
+
+    @Test
+    void nmosAncSetsCarryFromNegativeResult() {
+        TestBus highBus = new TestBus();
+        Mos6502Cpu highCpu = boot(highBus, 0x2000, 0x0B, 0x80);
+        highCpu.registers().setA(0xF0);
+
+        assertEquals(2, highCpu.runInstruction());
+        assertEquals(0x80, highCpu.registers().a());
+        assertTrue(highCpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertTrue(highCpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(highCpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+
+        TestBus zeroBus = new TestBus();
+        Mos6502Cpu zeroCpu = boot(zeroBus, 0x2000, 0x2B, 0x0F);
+        zeroCpu.registers().setA(0xF0);
+
+        assertEquals(2, zeroCpu.runInstruction());
+        assertEquals(0x00, zeroCpu.registers().a());
+        assertFalse(zeroCpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertFalse(zeroCpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertTrue(zeroCpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosAlrAndsThenShiftsAccumulatorRight() {
+        TestBus bus = new TestBus();
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x4B, 0x03);
+        cpu.registers().setA(0x03);
+
+        assertEquals(2, cpu.runInstruction());
+        assertEquals(0x01, cpu.registers().a());
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosArrUsesFrozenBinaryFlagsEvenInDecimalMode() {
+        TestBus firstBus = new TestBus();
+        Mos6502Cpu firstCpu = boot(firstBus, 0x2000, 0x6B, 0xC0);
+        firstCpu.registers().setA(0xFF);
+        firstCpu.registers().setFlag(Mos6502Registers.FLAG_C, true);
+        firstCpu.registers().setFlag(Mos6502Registers.FLAG_D, true);
+
+        assertEquals(2, firstCpu.runInstruction());
+        assertEquals(0xE0, firstCpu.registers().a());
+        assertTrue(firstCpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertFalse(firstCpu.registers().flagSet(Mos6502Registers.FLAG_V));
+        assertTrue(firstCpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(firstCpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+
+        TestBus secondBus = new TestBus();
+        Mos6502Cpu secondCpu = boot(secondBus, 0x2000, 0x6B, 0x80);
+        secondCpu.registers().setA(0x80);
+        secondCpu.registers().setFlag(Mos6502Registers.FLAG_C, false);
+
+        assertEquals(2, secondCpu.runInstruction());
+        assertEquals(0x40, secondCpu.registers().a());
+        assertTrue(secondCpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertTrue(secondCpu.registers().flagSet(Mos6502Registers.FLAG_V));
+        assertFalse(secondCpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(secondCpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosSbxSubtractsImmediateFromAccumulatorAndXWithoutChangingAccumulator() {
+        TestBus bus = new TestBus();
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0xCB, 0x05);
+        cpu.registers().setA(0xF0);
+        cpu.registers().setX(0x0F);
+
+        assertEquals(2, cpu.runInstruction());
+        assertEquals(0xF0, cpu.registers().a());
+        assertEquals(0xFB, cpu.registers().x());
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_C));
+        assertTrue(cpu.registers().flagSet(Mos6502Registers.FLAG_N));
+        assertFalse(cpu.registers().flagSet(Mos6502Registers.FLAG_Z));
+    }
+
+    @Test
+    void nmosUsbcBehavesIdenticallyToSbcImmediate() {
+        TestBus aliasBus = new TestBus();
+        TestBus documentedBus = new TestBus();
+        Mos6502Cpu alias = boot(aliasBus, 0x2000, 0xEB, 0x01);
+        Mos6502Cpu documented = boot(documentedBus, 0x2000, 0xE9, 0x01);
+        for (Mos6502Cpu cpu : new Mos6502Cpu[]{alias, documented}) {
+            cpu.registers().setA(0x50);
+            cpu.registers().setX(0x12);
+            cpu.registers().setY(0x34);
+            cpu.registers().setSp(0xF0);
+            cpu.registers().setP(Mos6502Registers.FLAG_C | Mos6502Registers.FLAG_D);
+        }
+
+        assertEquals(2, alias.runInstruction());
+        assertEquals(2, documented.runInstruction());
+        assertEquals(documented.registers().a(), alias.registers().a());
+        assertEquals(documented.registers().x(), alias.registers().x());
+        assertEquals(documented.registers().y(), alias.registers().y());
+        assertEquals(documented.registers().sp(), alias.registers().sp());
+        assertEquals(documented.registers().pc(), alias.registers().pc());
+        assertEquals(documented.registers().p(), alias.registers().p());
+    }
+
+    @Test
+    void nmosNopsUseFrozenAddressingTimingsAndAdvanceProgramCounter() {
+        assertNmosNop(2, 0x1A);
+        assertNmosNop(2, 0x82, 0x44);
+        assertNmosNop(3, 0x44, 0x40);
+        assertNmosNop(4, 0x54, 0x40);
+        assertNmosNop(4, 0x0C, 0x00, 0x40);
+        assertNmosNop(4, 0x5C, 0x00, 0x40);
+        assertNmosNop(5, 0x1C, 0xFF, 0x40);
     }
 
     @Test
@@ -1472,8 +1796,78 @@ class Mos6502CpuTest {
     }
 
     @Test
+    void nmosStableIllegalOpcodesAreAllExecutableEntryPoints() {
+        for (int opcode : NMOS_STABLE_ILLEGAL_OPCODES) {
+            TestBus bus = singleInstructionBus(opcode);
+            Mos6502Cpu cpu = new Mos6502Cpu(bus);
+            primeStackForSingleInstruction(opcode, bus, cpu);
+
+            assertDoesNotThrow(cpu::runInstruction, "opcode 0x%02X".formatted(opcode));
+        }
+    }
+
+    @Test
+    void cmos65c02RejectsOnlyNewNmosStableIllegalOpcodeSlots() {
+        for (int opcode : NMOS_ONLY_NEW_STABLE_ILLEGAL_OPCODES) {
+            TestBus bus = singleInstructionBus(opcode);
+            Mos6502Cpu cpu = new Mos6502Cpu(bus, Mos6502Variant.CMOS_65C02);
+
+            IllegalStateException failure = assertThrows(
+                    IllegalStateException.class,
+                    cpu::runInstruction,
+                    "opcode 0x%02X".formatted(opcode)
+            );
+            assertEquals(
+                    "Illegal MOS 6502 opcode 0x%02X at 0x2000".formatted(opcode),
+                    failure.getMessage()
+            );
+            assertEquals(0x2000, cpu.registers().pc());
+        }
+    }
+
+    @Test
+    void nmos6502StillRejectsJamAndUnstableOpcodes() {
+        assertIllegalOnNmos(
+                0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0xB2, 0xD2, 0xF2,
+                0x8B, 0xAB, 0x93, 0x9B, 0x9C, 0x9E, 0x9F
+        );
+    }
+
+    @Test
+    void nmos6502KeepsPlanExcludedStableLasOutOfScope() {
+        assertIllegalOnNmos(0xBB);
+    }
+
+    @Test
     void illegalOpcodeRestoresProgramCounterForDebugging() {
         assertIllegalOnNmos(0x02);
+    }
+
+    private static void assertNmosNop(int expectedCycles, int... instruction) {
+        TestBus bus = new TestBus();
+        Mos6502Cpu cpu = boot(bus, 0x2000, instruction);
+        cpu.registers().setA(0x81);
+        cpu.registers().setX(0x02);
+        cpu.registers().setY(0x03);
+        cpu.registers().setSp(0xF0);
+        cpu.registers().setP(
+                Mos6502Registers.FLAG_C
+                        | Mos6502Registers.FLAG_Z
+                        | Mos6502Registers.FLAG_I
+                        | Mos6502Registers.FLAG_N
+        );
+        byte[] memory = bus.memory.clone();
+        int flags = cpu.registers().p();
+
+        assertEquals(expectedCycles, cpu.runInstruction());
+
+        assertEquals(0x2000 + instruction.length, cpu.registers().pc());
+        assertEquals(0x81, cpu.registers().a());
+        assertEquals(0x02, cpu.registers().x());
+        assertEquals(0x03, cpu.registers().y());
+        assertEquals(0xF0, cpu.registers().sp());
+        assertEquals(flags, cpu.registers().p());
+        assertArrayEquals(memory, bus.memory);
     }
 
     private static void assertIllegalOnNmos(int... opcodes) {
