@@ -61,6 +61,34 @@ tasks.register<JavaExec>("c64RomProbe") {
         .associateWith { System.getProperty(it) })
 }
 
+val c64PrgFile = rootProject.layout.projectDirectory.file("build/c64/hello.prg")
+tasks.register<JavaExec>("c64PrgSmoke") {
+    group = "verification"
+    description = "Loads a tokenized BASIC PRG and checks its screen output."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+    val targetFile = c64PrgFile.asFile
+    doFirst {
+        val target = targetFile
+        target.parentFile.mkdirs()
+        target.writeBytes(byteArrayOf(
+            0x01, 0x08, 0x0E, 0x08, 0x0A, 0x00, 0x99.toByte(), 0x22,
+            0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x22, 0x00, 0x00, 0x00
+        ))
+    }
+    args(
+        providers.gradleProperty("c64.roms").orElse("media").get(),
+        "10000000",
+        "--prg=build/c64/hello.prg",
+        "--expect-screen=HELLO",
+        "--dump-frame=build/c64/prg-hello.png"
+    )
+}
+
 tasks.register<JavaExec>("c64ReadySmoke") {
     group = "verification"
     description = "Boots the C64 KERNAL/BASIC ROMs to the READY. prompt."

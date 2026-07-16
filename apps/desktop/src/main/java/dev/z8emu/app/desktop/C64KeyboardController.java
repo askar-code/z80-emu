@@ -9,14 +9,21 @@ import javax.swing.JComponent;
 
 final class C64KeyboardController extends AbstractMappedHostKeyboardController<C64KeyboardController.MatrixKey> {
     private final C64KeyboardDevice keyboard;
+    private final Runnable keyActivityListener;
 
-    private C64KeyboardController(Window window, C64KeyboardDevice keyboard) {
+    private C64KeyboardController(Window window, C64KeyboardDevice keyboard, Runnable keyActivityListener) {
         super(window);
         this.keyboard = keyboard;
+        this.keyActivityListener = keyActivityListener;
     }
 
-    static C64KeyboardController bind(Window window, JComponent component, C64KeyboardDevice keyboard) {
-        C64KeyboardController controller = new C64KeyboardController(window, keyboard);
+    static C64KeyboardController bind(
+            Window window,
+            JComponent component,
+            C64KeyboardDevice keyboard,
+            Runnable keyActivityListener
+    ) {
+        C64KeyboardController controller = new C64KeyboardController(window, keyboard, keyActivityListener);
         controller.bindToComponent(component);
         return controller;
     }
@@ -28,6 +35,7 @@ final class C64KeyboardController extends AbstractMappedHostKeyboardController<C
         }
         if (event.getID() == KeyEvent.KEY_PRESSED) {
             keyboard.setRestorePressed(true);
+            notifyKeyActivity();
         } else if (event.getID() == KeyEvent.KEY_RELEASED) {
             keyboard.setRestorePressed(false);
         }
@@ -117,6 +125,15 @@ final class C64KeyboardController extends AbstractMappedHostKeyboardController<C
     @Override
     protected void updateKey(MatrixKey key, boolean pressed) {
         keyboard.setKeyPressed(key.portABit(), key.portBBit(), pressed);
+        if (pressed) {
+            notifyKeyActivity();
+        }
+    }
+
+    private void notifyKeyActivity() {
+        if (keyActivityListener != null) {
+            keyActivityListener.run();
+        }
     }
 
     private static MatrixKey key(int portABit, int portBBit) {

@@ -15,6 +15,7 @@ final class C64DesktopRunner {
     private static final class Session extends AbstractFrameDesktopSession {
         private final C64Machine machine;
         private final DesktopLaunchConfig config;
+        private final C64StartupPrgAutostart startupPrgAutostart;
         private C64KeyboardController keyboardController;
 
         private Session(C64Machine machine, DesktopLaunchConfig config) {
@@ -27,14 +28,17 @@ final class C64DesktopRunner {
             );
             this.machine = machine;
             this.config = config;
+            this.startupPrgAutostart = new C64StartupPrgAutostart(machine, config);
         }
 
         @Override
         protected void attachMachine(JFrame frame) {
+            startupPrgAutostart.armIfNeeded();
             keyboardController = C64KeyboardController.bind(
                     frame,
                     displayComponent(),
-                    machine.board().keyboard()
+                    machine.board().keyboard(),
+                    startupPrgAutostart::cancel
             );
             bindKeyboardController(keyboardController);
         }
@@ -43,11 +47,15 @@ final class C64DesktopRunner {
         protected String statusTitle() {
             return "z8-emu " + machine.board().modelConfig().modelName()
                     + "  source=" + config.sourceLabel()
-                    + "  cpu=6510";
+                    + "  cpu=6510"
+                    + "  prg=" + config.loadedMedia(DesktopLaunchConfig.LoadedC64Prg.class)
+                            .map(DesktopLaunchConfig.LoadedC64Prg::sourceLabel)
+                            .orElse("none");
         }
 
         @Override
         public void runSlice() {
+            startupPrgAutostart.tick();
             long targetTState = machine.currentTState() + machine.frameTStates();
             runUntilTState(machine, targetTState);
         }
