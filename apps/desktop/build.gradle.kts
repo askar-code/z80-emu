@@ -126,7 +126,7 @@ tasks.register<JavaExec>("c64BoulderDashSmoke") {
         "--prg=" + providers.gradleProperty("c64.boulderdash").orElse("media/boulderdash.prg").get(),
         "--joy=.300,F4,.200,R30,.60",
         "--joy-port=1",
-        "--expect-frame-crc=D3C962E1",
+        "--expect-frame-crc=B96BF819",
         "--dump-frame=build/c64/boulderdash-smoke.png"
     )
 }

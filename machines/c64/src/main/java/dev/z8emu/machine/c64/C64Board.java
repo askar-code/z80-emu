@@ -44,7 +44,7 @@ public final class C64Board implements VideoMachineBoard {
         this.cia1 = new C64CiaDevice();
         this.cia2 = new C64CiaDevice();
         this.cia1.setPortInputs(keyboard);
-        this.video = new C64VideoDevice(memory);
+        this.video = new C64VideoDevice(memory, cia2);
         this.sid = new C64SidDevice(modelConfig.cpuClockHz());
         this.bus = new C64Bus(requiredClock, memory, cpuPort, video, sid, cia1, cia2, cartridge);
     }
