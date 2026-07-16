@@ -186,6 +186,21 @@ testable.
 
 ## Progress Log
 
+- 2026-07-17: Phase 10a (`codex/cpc-p10a-anchor`): fixed the flickering
+  red stripes on Prince room transitions (user-reported). The
+  display-phase anchor is now debounced (adopt after 2 consecutive
+  equal candidates) and sticky (holds through candidate-free/transient
+  frames) instead of re-derived per frame; displayEventTop() deleted.
+  Root-cause evidence: PoP uses firmware-default CRTC values and never
+  resets the R52 counter, so no machine-state formula can replace the
+  event-pattern detection — stabilization was the correct minimal fix.
+  New oracle CpcPrinceTransitionTest replays the transition route
+  (f=102 red samples 754→46, locked CRC 0x35DEF6C2; f=147 is the game's
+  own fall-damage flash, byte-identical 0x4A61AEDD). Probe gained
+  --hold-key with cursor-key names. Both smoke CRCs byte-identical;
+  fault injection 5/5 (A-none-A gap closed at review). Deferred to a
+  possible Phase 10b: true VSYNC-anchored display timing + R52/VSYNC
+  re-sync.
 - 2026-07-16: Campaign audit (2 agents, checkbox claims verified against
   code) found the machine already plays Prince end-to-end; Phase 8
   landed as `codex/cpc-p8-tooling` (spec critiqued: 15 findings incl.
