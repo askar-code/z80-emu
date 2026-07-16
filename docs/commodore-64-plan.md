@@ -298,9 +298,14 @@ BASIC POKE tone.
 
 ### Phase 6: accuracy & games backlog (unordered, pull as needed)
 
-- Stable NMOS illegals in `:cpu-mos6502` (LAX SAX DCP ISC SLO RLA SRE RRA
-  ANC ALR ARR SBX + multi-byte NOPs) behind the NMOS variant, per-opcode
-  tests; re-run Klaus extended/illegal suites if adopted.
+- [x] Stable NMOS illegals in `:cpu-mos6502` (LAX SAX DCP ISC SLO RLA SRE
+  RRA ANC ALR ARR SBX + USBC + multi-byte NOPs — 85 opcodes) behind the
+  NMOS variant, per-opcode tests. Landed 2026-07-16 (`codex/c64-p6a-
+  illegals`, review 0 findings, fault-injection 7/7). 33 decoder slots
+  shared with 65C02 opcodes became variant dispatchers (CMOS byte-
+  identical); KIL/JAM, unstable ANE/LXA/SHA/TAS/SHX/SHY and out-of-scope-
+  stable LAS still throw. ARR uses frozen binary-mode flags in decimal
+  (fixups deferred).
 - Badline/cycle-stealing approximation (board clock skew; possibly a CPU
   stall hook later), sprites + collision registers, multicolor text,
   bitmap modes, $D016/$D011 scroll, border tricks. Each lands with new
