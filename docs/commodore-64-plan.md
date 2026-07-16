@@ -327,6 +327,31 @@ BASIC POKE tone.
   test). Baselines: bitmap scene CRC 0x1F2B5F4D, scroll/border scene
   0x6E46B7FA; 6b CRCs and boot CRCs byte-identical after the
   hardware-neutral setup migration ($D011 0x10→0x1B, CSEL=1).
+- [x] EasyFlash cartridge + .crt loader + full PLA (Phase 6d). Landed
+  2026-07-16 (`codex/c64-p6d-easyflash`, spec critique 19 findings
+  pre-applied, review 1 minor + 2 notes fixed, fault-injection 8/8 —
+  bank-mask gap closed at review). Full EXROM/GAME decode: 8K/16K/
+  Ultimax rows incl. the no-LORAM ROMH term and the HIRAM-only 16K char
+  ROM term; Ultimax I/O always visible, open bus 0xFF, non-RAM writes
+  dropped. C64EasyFlashCartridge (64 banks, $DE00/$DE02 write-only,
+  $DF00 RAM, boot state = Ultimax at construction time); C64CrtImage
+  (.crt type 32, BE headers, VICE-style 0x10+size packet advance);
+  probe --crt + desktop autodetection. Frozen deviations: read-only
+  flash (no EAPI saves), 0xFF floating bus, exact $DE00/$DE02 decode,
+  no VIC Ultimax fetches. Baseline: c64CrtSmoke frameCrc32=0x81533B92.
+- Joystick support (Phase 6f candidate, small): control-port overlays at
+  the two seams already marked "deferred" in C64KeyboardDevice — port 2
+  on CIA1 PA0-PA4 (readPortA), port 1 on PB0-PB4 (readPortB), active-low
+  AND with the keyboard matrix; desktop mapping in C64KeyboardController:
+  arrow keys = directions, LEFT CTRL = fire (user-confirmed 2026-07-16);
+  probe `--joy=<script>` for deterministic input.
+- **Game target: Boulder Dash** (native 1984 onefiler; user picks the
+  .prg into media/). Needs only joystick support on top of what's
+  landed — char-mode graphics + $D016 fine scroll (6c) + SID (5); no
+  EasyFlash, no badlines expected. Bring-up gate: autostart via
+  c64PrgSmoke-style task, title-screen locked CRC, then a scripted-input
+  play probe. Prince of Persia (EasyFlash .crt) stays the stretch target
+  behind 6d+6e.
 - Badline/cycle-stealing approximation (board clock skew; possibly a CPU
   stall hook later), border tricks, per-line raster rendering. Each
   lands with new frame-CRC baselines.
