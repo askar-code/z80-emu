@@ -91,6 +91,26 @@ tasks.register<JavaExec>("c64PrgSmoke") {
     )
 }
 
+tasks.register<JavaExec>("c64JoySmoke") {
+    group = "verification"
+    description = "Types a delayed CIA port read and checks joystick input through the C64 probe."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+    args(
+        providers.gradleProperty("c64.roms").orElse("media").get(),
+        "10000000",
+        "--type-after-screen=READY.",
+        "--keys=POKE<SP>53280,PEEK(56320)AND15:FOR<SP>I=1TO2000:NEXT:POKE<SP>53280,PEEK(56320)AND15<CR>",
+        "--joy=R400",
+        "--expect-frame-crc=C793420B",
+        "--dump-frame=build/c64/joy-smoke.png"
+    )
+}
+
 val c64CrtFile = rootProject.layout.projectDirectory.file("build/c64/easyflash-smoke.crt")
 tasks.register<JavaExec>("c64CrtSmoke") {
     group = "verification"
