@@ -123,7 +123,13 @@ lands, so the next debugging pass can resume from the current state.
   a firmware RET and fires early.
 - [x] Document the CPC run/debug workflow (this plan + the probe usage
   line; CpcKeyboardTyper cadence frozen at PRESS=2/GAP=2, BASIC settle
-  = 300 frames, proven by the POKE &4000,42 firmware round-trip test)
+  = 300 frames, proven by the POKE &4000,42 firmware round-trip test).
+  Canonical manual probe run (NOTE: gradle's --args parser rejects a
+  literal double quote — use the script escape \x22):
+  `./gradlew -q :app-desktop:cpcRomProbe --args='media/cpc6128.rom
+  30000000 --disk=media/prinpere.dsk --keys=RUN\x22PRINCE<CR>
+  --keys-after-frames=300 --press-key-after-frames=1500:<SP>
+  --dump-frame=build/cpc/prince.png'`
 
 ## Phase 9: Prince Of Persia Bring-Up
 
