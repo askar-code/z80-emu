@@ -306,10 +306,17 @@ BASIC POKE tone.
   identical); KIL/JAM, unstable ANE/LXA/SHA/TAS/SHX/SHY and out-of-scope-
   stable LAS still throw. ARR uses frozen binary-mode flags in decimal
   (fixups deferred).
+- [x] Sprites + collision registers + multicolor text. Landed 2026-07-16
+  (`codex/c64-p6b-sprites`, review 0 findings, fault-injection 7/7).
+  Eight sprites (9-bit X, expansion, hires/multicolor, data priority,
+  lower-index-on-top), $D01E/$D01F read-clear latches computed once per
+  rendered frame (frozen; real VIC also latches sprite-sprite under
+  borders/DEN=0 — not modeled), MCM text with color-RAM bit-3 gate.
+  Baselines: composite scene CRC 0xFF91FF85 (latches 0x09/0x04),
+  MCM-off reference CRC 0x4538AE0E; boot CRCs unchanged.
 - Badline/cycle-stealing approximation (board clock skew; possibly a CPU
-  stall hook later), sprites + collision registers, multicolor text,
-  bitmap modes, $D016/$D011 scroll, border tricks. Each lands with new
-  frame-CRC baselines.
+  stall hook later), bitmap modes, $D016/$D011 scroll, ECM, border
+  tricks. Each lands with new frame-CRC baselines.
 - CIA TOD alarm, datasette (.tap), KERNAL LOAD/SAVE vector trap for fast
   host/.d64 file access; true 1541 is far-future.
 - SID filter (multimode 12dB) once something audible needs it.
