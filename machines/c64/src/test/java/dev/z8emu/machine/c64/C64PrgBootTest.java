@@ -11,9 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class C64PrgBootTest {
     @Test
     void tokenizedBasicPrgPrintsHello() throws Exception {
-        Path basicPath = C64RomLocator.locate("c64.basicRom", C64RomLocator.BASIC_ROM);
-        Path kernalPath = C64RomLocator.locate("c64.kernalRom", C64RomLocator.KERNAL_ROM);
-        Path chargenPath = C64RomLocator.locate("c64.chargenRom", C64RomLocator.CHARGEN_ROM);
+        Path basicPath = C64RomLocator.locate(C64RomLocator.BASIC_ROM_PROPERTY, C64RomLocator.BASIC_ROM);
+        Path kernalPath = C64RomLocator.locate(C64RomLocator.KERNAL_ROM_PROPERTY, C64RomLocator.KERNAL_ROM);
+        Path chargenPath = C64RomLocator.locate(C64RomLocator.CHARGEN_ROM_PROPERTY, C64RomLocator.CHARGEN_ROM);
         Assumptions.assumeTrue(
                 basicPath != null && kernalPath != null && chargenPath != null,
                 () -> "Skipping: C64 ROM set not found"
