@@ -143,8 +143,25 @@ public final class C64VideoDevice implements TimedDevice {
         int bankBase = ((~cia2PortA) & 0x03) * 0x4000;
         int matrixBase = ((registers[0x18] >> 4) & 0x0F) * 0x400;
         int charsetBase = ((registers[0x18] >> 1) & 0x07) * 0x800;
-        renderText(bankBase, matrixBase, charsetBase);
+        int shiftX = registers[0x16] & 0x07;
+        int shiftY = (registers[0x11] & 0x07) - 3;
+        boolean extendedColorMode = (registers[0x11] & 0x40) != 0;
+        boolean bitmapMode = (registers[0x11] & 0x20) != 0;
+        boolean multicolorMode = (registers[0x16] & 0x10) != 0;
+        boolean invalidMode = extendedColorMode && (bitmapMode || multicolorMode);
+        fillWindow(invalidMode ? PALETTE[0] : PALETTE[registers[0x21] & 0x0F]);
+        if (bitmapMode) {
+            int bitmapBase = (registers[0x18] & 0x08) != 0 ? 0x2000 : 0x0000;
+            renderBitmap(bankBase, matrixBase, bitmapBase, shiftX, shiftY, multicolorMode);
+        } else {
+            renderText(bankBase, matrixBase, charsetBase, shiftX, shiftY,
+                    extendedColorMode && !invalidMode, multicolorMode);
+        }
         renderSprites(bankBase, matrixBase);
+        if (invalidMode) {
+            fillWindow(PALETTE[0]);
+        }
+        renderWindowBorder();
         return frame;
     }
 
@@ -152,29 +169,29 @@ public final class C64VideoDevice implements TimedDevice {
         return PALETTE[index & 0x0F];
     }
 
-    private void renderText(int bankBase, int matrixBase, int charsetBase) {
-        int background = PALETTE[registers[0x21] & 0x0F];
-        boolean multicolorMode = (registers[0x16] & 0x10) != 0;
+    private void renderText(int bankBase, int matrixBase, int charsetBase, int shiftX, int shiftY,
+            boolean extendedColorMode, boolean multicolorMode) {
         for (int row = 0; row < TEXT_ROWS; row++) {
             for (int column = 0; column < TEXT_COLUMNS; column++) {
                 int cellOffset = row * TEXT_COLUMNS + column;
                 int screenCode = vicRead(matrixBase + cellOffset, bankBase);
                 int colorRam = memory.readColorRam(cellOffset);
-                int targetX = BORDER_LEFT + column * CELL_SIZE;
-                int targetY = BORDER_TOP + row * CELL_SIZE;
+                int targetX = column * CELL_SIZE + shiftX;
+                int targetY = row * CELL_SIZE + shiftY;
+                int glyphCode = extendedColorMode ? screenCode & 0x3F : screenCode;
+                int backgroundRegister = extendedColorMode ? 0x21 + (screenCode >>> 6) : 0x21;
+                int background = PALETTE[registers[backgroundRegister] & 0x0F];
                 for (int y = 0; y < CELL_SIZE; y++) {
-                    int glyphBits = vicRead(charsetBase + screenCode * CELL_SIZE + y, bankBase);
-                    int maskOffset = (row * CELL_SIZE + y) * WINDOW_WIDTH + column * CELL_SIZE;
+                    int glyphBits = vicRead(charsetBase + glyphCode * CELL_SIZE + y, bankBase);
                     if (multicolorMode && (colorRam & 0x08) != 0) {
-                        renderMulticolorTextRow(glyphBits, colorRam, targetX, targetY + y, maskOffset);
+                        renderMulticolorTextRow(glyphBits, colorRam, targetX, targetY + y);
                     } else {
                         int foregroundIndex = multicolorMode ? colorRam & 0x07 : colorRam;
                         int foreground = PALETTE[foregroundIndex];
                         for (int x = 0; x < CELL_SIZE; x++) {
                             boolean foregroundPixel = ((glyphBits >>> (7 - x)) & 1) != 0;
-                            frame.setPixel(targetX + x, targetY + y,
-                                    foregroundPixel ? foreground : background);
-                            foregroundMask[maskOffset + x] = foregroundPixel;
+                            drawGraphicsPixel(targetX + x, targetY + y,
+                                    foregroundPixel ? foreground : background, foregroundPixel);
                         }
                     }
                 }
@@ -182,8 +199,7 @@ public final class C64VideoDevice implements TimedDevice {
         }
     }
 
-    private void renderMulticolorTextRow(int glyphBits, int colorRam, int targetX, int targetY,
-            int maskOffset) {
+    private void renderMulticolorTextRow(int glyphBits, int colorRam, int targetX, int targetY) {
         for (int pair = 0; pair < 4; pair++) {
             int pairValue = (glyphBits >>> (6 - pair * 2)) & 0x03;
             int colorIndex = switch (pairValue) {
@@ -194,10 +210,97 @@ public final class C64VideoDevice implements TimedDevice {
             };
             boolean foregroundPixel = pairValue >= 2;
             int pixelX = pair * 2;
-            frame.setPixel(targetX + pixelX, targetY, PALETTE[colorIndex & 0x0F]);
-            frame.setPixel(targetX + pixelX + 1, targetY, PALETTE[colorIndex & 0x0F]);
-            foregroundMask[maskOffset + pixelX] = foregroundPixel;
-            foregroundMask[maskOffset + pixelX + 1] = foregroundPixel;
+            int color = PALETTE[colorIndex & 0x0F];
+            drawGraphicsPixel(targetX + pixelX, targetY, color, foregroundPixel);
+            drawGraphicsPixel(targetX + pixelX + 1, targetY, color, foregroundPixel);
+        }
+    }
+
+    private void renderBitmap(int bankBase, int matrixBase, int bitmapBase, int shiftX, int shiftY,
+            boolean multicolorMode) {
+        for (int row = 0; row < TEXT_ROWS; row++) {
+            for (int column = 0; column < TEXT_COLUMNS; column++) {
+                int cellOffset = row * TEXT_COLUMNS + column;
+                int matrixByte = vicRead(matrixBase + cellOffset, bankBase);
+                int colorRam = memory.readColorRam(cellOffset);
+                int targetX = column * CELL_SIZE + shiftX;
+                int targetY = row * CELL_SIZE + shiftY;
+                for (int y = 0; y < CELL_SIZE; y++) {
+                    int bitmapByte = vicRead(bitmapBase + cellOffset * CELL_SIZE + y, bankBase);
+                    if (multicolorMode) {
+                        renderMulticolorBitmapRow(bitmapByte, matrixByte, colorRam, targetX,
+                                targetY + y);
+                    } else {
+                        int foreground = PALETTE[(matrixByte >>> 4) & 0x0F];
+                        int background = PALETTE[matrixByte & 0x0F];
+                        for (int x = 0; x < CELL_SIZE; x++) {
+                            boolean foregroundPixel = ((bitmapByte >>> (7 - x)) & 1) != 0;
+                            drawGraphicsPixel(targetX + x, targetY + y,
+                                    foregroundPixel ? foreground : background, foregroundPixel);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void renderMulticolorBitmapRow(int bitmapByte, int matrixByte, int colorRam,
+            int targetX, int targetY) {
+        for (int pair = 0; pair < 4; pair++) {
+            int pairValue = (bitmapByte >>> (6 - pair * 2)) & 0x03;
+            int colorIndex = switch (pairValue) {
+                case 0 -> registers[0x21];
+                case 1 -> matrixByte >>> 4;
+                case 2 -> matrixByte;
+                default -> colorRam;
+            };
+            boolean foregroundPixel = pairValue >= 2;
+            int pixelX = pair * 2;
+            int color = PALETTE[colorIndex & 0x0F];
+            drawGraphicsPixel(targetX + pixelX, targetY, color, foregroundPixel);
+            drawGraphicsPixel(targetX + pixelX + 1, targetY, color, foregroundPixel);
+        }
+    }
+
+    private void drawGraphicsPixel(int x, int y, int color, boolean foregroundPixel) {
+        if (x < 0 || x >= WINDOW_WIDTH || y < 0 || y >= WINDOW_HEIGHT) {
+            return;
+        }
+        frame.setPixel(BORDER_LEFT + x, BORDER_TOP + y, color);
+        foregroundMask[y * WINDOW_WIDTH + x] = foregroundPixel;
+    }
+
+    private void fillWindow(int color) {
+        for (int y = 0; y < WINDOW_HEIGHT; y++) {
+            for (int x = 0; x < WINDOW_WIDTH; x++) {
+                frame.setPixel(BORDER_LEFT + x, BORDER_TOP + y, color);
+            }
+        }
+    }
+
+    private void renderWindowBorder() {
+        int border = PALETTE[registers[0x20] & 0x0F];
+        if ((registers[0x16] & 0x08) == 0) {
+            for (int y = 0; y < WINDOW_HEIGHT; y++) {
+                for (int x = 0; x < 7; x++) {
+                    frame.setPixel(BORDER_LEFT + x, BORDER_TOP + y, border);
+                }
+                for (int x = 311; x < WINDOW_WIDTH; x++) {
+                    frame.setPixel(BORDER_LEFT + x, BORDER_TOP + y, border);
+                }
+            }
+        }
+        if ((registers[0x11] & 0x08) == 0) {
+            for (int y = 0; y < 4; y++) {
+                for (int x = 0; x < WINDOW_WIDTH; x++) {
+                    frame.setPixel(BORDER_LEFT + x, BORDER_TOP + y, border);
+                }
+            }
+            for (int y = 196; y < WINDOW_HEIGHT; y++) {
+                for (int x = 0; x < WINDOW_WIDTH; x++) {
+                    frame.setPixel(BORDER_LEFT + x, BORDER_TOP + y, border);
+                }
+            }
         }
     }
 
