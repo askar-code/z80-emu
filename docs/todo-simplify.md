@@ -29,6 +29,28 @@ bit-identical everywhere (zex, frame CRCs, pixel baselines, byte gates).**
 
 ## Tranche log
 
+### Tranche 10: `machine-c64` (machines/c64 + C64 desktop files) — 2026-07-16
+
+- New area added to the workflow after the C64 machine landed (phases 0–6c
+  post-date the original sweep). Review: 24 confirmed / 0 rejected → 8
+  unique after dedup (all four angles converged on the SID accessor
+  boilerplate, the probe-launcher copies, and the video row renderers).
+- Applied: 8/8 via Codex (gpt-5.6-sol xhigh) in a worktree, merged as
+  4947a35. Net −424 lines. Headliners: probe helpers deduped into
+  ProbeOutput (launchers −334); C64SidDevice per-voice scalars → int[3]
+  arrays (−249); C64 probe step loop/report collapsed; keyboard matrix
+  single-sourced in C64KeyMap; raster-IRQ check precomputed out of the
+  per-cycle path; C64ModelConfig derives from VIC constants.
+- Equivalence gates: locked CRCs byte-identical (SID PCM ×3, video frames
+  ×4, three C64 smokes, Apple PoP smoke), klaus exact, and a full probe
+  stdout byte-diff (both launchers, report-heavy args) clean modulo the
+  worktree path.
+- 3-reviewer adversarial pass found 1 BLOCKER, fixed at review: the
+  keyboard delegation default made unmapped host keys (numpad, F1–F11,
+  PageDown) type C64 letters; delegation restricted to the exact
+  pre-existing key set. Accepted note: unreachable invalidVoice guard
+  dropped with the SID accessors.
+
 ### Tranche 9: `cross-reuse` + `cross-altitude` (whole repo) — 2026-07-14
 
 - Review: 7 confirmed / 2 rejected → 6 unique. Applied BY HAND in the main
