@@ -9,6 +9,7 @@ import dev.z8emu.machine.apple2.disk.Apple2ProDosBlockImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.machine.apple2.disk.Apple2WozDiskImageLoader;
 import dev.z8emu.machine.c64.C64Machine;
+import dev.z8emu.machine.c64.media.C64PrgImage;
 import dev.z8emu.machine.cpc.CpcMachine;
 import dev.z8emu.machine.cpc.disk.CpcDskImage;
 import dev.z8emu.machine.cpc.disk.CpcDskLoader;
@@ -294,6 +295,15 @@ final class DesktopMachineDefinitions {
         }
 
         @Override
+        public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath) throws IOException {
+            Path prgPath = Path.of(rawPath).toAbsolutePath().normalize();
+            return new DesktopLaunchConfig.LoadedC64Prg(
+                    prgPath.toString(),
+                    C64PrgImage.load(prgPath)
+            );
+        }
+
+        @Override
         public void open(DesktopLaunchConfig config) {
             C64RomImageLoader.C64RomSet roms = C64RomImageLoader.splitBundleImage(config.romImage());
             C64Machine machine = new C64Machine(roms.basic(), roms.kernal(), roms.chargen());
@@ -302,7 +312,7 @@ final class DesktopMachineDefinitions {
 
         @Override
         public String usage() {
-            return "--machine=c64 <rom-directory-or-rom-file>";
+            return "--machine=c64 <rom-directory-or-rom-file> [program.prg]";
         }
     }
 

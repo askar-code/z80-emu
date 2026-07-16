@@ -125,6 +125,29 @@ class DesktopMachineDefinitionsTest {
     }
 
     @Test
+    void loadsC64PrgMediaAndRejectsMalformedInput(@TempDir Path tempDir) throws Exception {
+        Path prgPath = tempDir.resolve("hello.prg");
+        Files.write(prgPath, new byte[]{
+                0x01, 0x08, 0x0E, 0x08, 0x0A, 0x00, (byte) 0x99, 0x22,
+                0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x22, 0x00, 0x00, 0x00
+        });
+        DesktopLaunchConfig.LoadedC64Prg loaded = (DesktopLaunchConfig.LoadedC64Prg)
+                DesktopMachineDefinitions.forKind(DesktopMachineKind.C64).loadMedia(prgPath.toString());
+
+        assertEquals(prgPath.toAbsolutePath().normalize().toString(), loaded.sourceLabel());
+        assertEquals(0x0801, loaded.image().loadAddress());
+        assertEquals(15, loaded.image().payload().length);
+
+        Path malformedPath = tempDir.resolve("malformed.prg");
+        Files.write(malformedPath, new byte[2]);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.C64)
+                        .loadMedia(malformedPath.toString())
+        );
+    }
+
+    @Test
     void loadsEnhancedAppleIIeRomBundleFromStandardLocalParts(@TempDir Path tempDir) throws Exception {
         Path cdRom = tempDir.resolve("342-0304-a.e10");
         Path efRom = tempDir.resolve("342-0303-a.e8");
