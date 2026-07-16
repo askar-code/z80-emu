@@ -63,6 +63,54 @@ tasks.register<JavaExec>("c64RomProbe") {
         .associateWith { System.getProperty(it) })
 }
 
+tasks.register<JavaExec>("cpcRomProbe") {
+    group = "application"
+    description = "Runs the headless Amstrad CPC ROM bring-up probe."
+    mainClass.set("dev.z8emu.app.desktop.CpcRomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("cpc.") }
+        .associateWith { System.getProperty(it) })
+}
+
+tasks.register<JavaExec>("cpcBasicSmoke") {
+    group = "verification"
+    description = "Boots the CPC 6128 firmware to the settled BASIC banner and checks the frame CRC."
+    mainClass.set("dev.z8emu.app.desktop.CpcRomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("cpc.") }
+        .associateWith { System.getProperty(it) })
+    args(
+        providers.gradleProperty("cpc.rom").orElse("media/cpc6128.rom").get(),
+        "3000000",
+        "--expect-frame-crc=2A1A5DBE",
+        "--dump-frame=build/cpc/basic.png"
+    )
+}
+
+tasks.register<JavaExec>("cpcPrinceSmoke") {
+    group = "verification"
+    description = "Loads Prince of Persia from CPC disk, enters gameplay, and checks the frame CRC."
+    mainClass.set("dev.z8emu.app.desktop.CpcRomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("cpc.") }
+        .associateWith { System.getProperty(it) })
+    args(
+        providers.gradleProperty("cpc.rom").orElse("media/cpc6128.rom").get(),
+        "30000000",
+        "--disk=" + providers.gradleProperty("cpc.prince").orElse("media/prinpere.dsk").get(),
+        "--keys=RUN\"PRINCE<CR>",
+        "--press-key-after-frames=1500:<SP>",
+        "--expect-frame-crc=658B018F",
+        "--dump-frame=build/cpc/prince.png"
+    )
+}
+
 val c64PrgFile = rootProject.layout.projectDirectory.file("build/c64/hello.prg")
 tasks.register<JavaExec>("c64PrgSmoke") {
     group = "verification"

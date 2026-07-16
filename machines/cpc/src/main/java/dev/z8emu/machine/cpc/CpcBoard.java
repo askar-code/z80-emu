@@ -11,6 +11,7 @@ import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.machine.cpc.model.CpcModelConfig;
 import dev.z8emu.platform.audio.PcmMonoSource;
 import dev.z8emu.platform.bus.CpuBus;
+import dev.z8emu.platform.bus.io.IoTraceSink;
 import dev.z8emu.platform.machine.VideoMachineBoard;
 import dev.z8emu.platform.time.TStateCounter;
 import dev.z8emu.platform.video.FrameBuffer;
@@ -129,6 +130,10 @@ public final class CpcBoard implements VideoMachineBoard {
 
     public PcmMonoSource audio() {
         return ay;
+    }
+
+    public void setIoTraceSink(IoTraceSink traceSink) {
+        bus.setIoTraceSink(traceSink);
     }
 
     private static int portBInput(long currentTState, int frameTStates) {
