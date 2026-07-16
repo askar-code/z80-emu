@@ -339,19 +339,25 @@ BASIC POKE tone.
   probe --crt + desktop autodetection. Frozen deviations: read-only
   flash (no EAPI saves), 0xFF floating bus, exact $DE00/$DE02 decode,
   no VIC Ultimax fetches. Baseline: c64CrtSmoke frameCrc32=0x81533B92.
-- Joystick support (Phase 6f candidate, small): control-port overlays at
-  the two seams already marked "deferred" in C64KeyboardDevice — port 2
-  on CIA1 PA0-PA4 (readPortA), port 1 on PB0-PB4 (readPortB), active-low
-  AND with the keyboard matrix; desktop mapping in C64KeyboardController:
-  arrow keys = directions, LEFT CTRL = fire (user-confirmed 2026-07-16);
-  probe `--joy=<script>` for deterministic input.
-- **Game target: Boulder Dash** (native 1984 onefiler; user picks the
-  .prg into media/). Needs only joystick support on top of what's
-  landed — char-mode graphics + $D016 fine scroll (6c) + SID (5); no
-  EasyFlash, no badlines expected. Bring-up gate: autostart via
-  c64PrgSmoke-style task, title-screen locked CRC, then a scripted-input
-  play probe. Prince of Persia (EasyFlash .crt) stays the stretch target
-  behind 6d+6e.
+- [x] Joystick emulation (Phase 6f). Landed 2026-07-16
+  (`codex/c64-p6f-joystick`, critique 9 findings pre-applied incl. the
+  fire-vs-AND15 vacuous-smoke blocker, review 1 accepted note,
+  fault-injection 6/6 — LEFT/RIGHT line-order gap closed at review with
+  a per-line device test). Overlays at the Phase-1 deferred seams (port
+  2 = CIA1 PA0-PA4/$DC00, port 1 = PB0-PB4/$DC01, active-low,
+  unconditional AND); desktop F9 cycles off→port2→port1 (arrows +
+  LEFT CTRL = fire, всё released on mode change); probe
+  `--joy=<holds>,<frames>` + `--joy-port`. Baseline: c64JoySmoke
+  frameCrc32=0xC793420B (differential vs no-joy 0x8CEE2E09 proven).
+- [x] **Game target: Boulder Dash — PLAYABLE.** Bring-up 2026-07-16:
+  onefiler PRG (load $0801, stub SYS 2064) autostarts via the standard
+  RUN path; the game polls control port 1 (early First Star convention).
+  c64BoulderDashSmoke: fire on port 1 starts cave A, scripted RIGHT
+  moves Rockford, locked frameCrc32=0xD3C962E1 (stable ×3; PRG path
+  overridable via -Pc64.boulderdash, default media/boulderdash.prg —
+  gitignored, user-supplied). Desktop play: F9 twice (port 1), arrows +
+  left Ctrl. Prince of Persia (EasyFlash .crt) stays the stretch target
+  behind 6e.
 - Badline/cycle-stealing approximation (board clock skew; possibly a CPU
   stall hook later), border tricks, per-line raster rendering. Each
   lands with new frame-CRC baselines.

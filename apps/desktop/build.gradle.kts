@@ -111,6 +111,26 @@ tasks.register<JavaExec>("c64JoySmoke") {
     )
 }
 
+tasks.register<JavaExec>("c64BoulderDashSmoke") {
+    group = "verification"
+    description = "Autostarts Boulder Dash, presses fire on port 1, moves right, and checks the cave frame."
+    mainClass.set("dev.z8emu.app.desktop.C64RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    systemProperties(System.getProperties().stringPropertyNames()
+        .filter { it.startsWith("z8emu.") || it.startsWith("c64.") }
+        .associateWith { System.getProperty(it) })
+    args(
+        providers.gradleProperty("c64.roms").orElse("media").get(),
+        "20000000",
+        "--prg=" + providers.gradleProperty("c64.boulderdash").orElse("media/boulderdash.prg").get(),
+        "--joy=.300,F4,.200,R30,.60",
+        "--joy-port=1",
+        "--expect-frame-crc=D3C962E1",
+        "--dump-frame=build/c64/boulderdash-smoke.png"
+    )
+}
+
 val c64CrtFile = rootProject.layout.projectDirectory.file("build/c64/easyflash-smoke.crt")
 tasks.register<JavaExec>("c64CrtSmoke") {
     group = "verification"
