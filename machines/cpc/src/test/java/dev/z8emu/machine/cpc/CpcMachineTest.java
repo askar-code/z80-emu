@@ -162,7 +162,7 @@ class CpcMachineTest {
     void gateArrayCapturesRasterModeAndPaletteChangesPerFrameLine() {
         CpcMachine machine = CpcMachine.withBlankRom();
         int splitDisplayLine = 4;
-        int splitFrameLine = CpcGateArrayDevice.BORDER_TOP + splitDisplayLine;
+        int splitFrameLine = 72 + splitDisplayLine;
         int hudOnTState = (splitFrameLine * 256) + 16;
         int hudOffTState = (splitFrameLine * 256) + 200;
 
@@ -194,7 +194,7 @@ class CpcMachineTest {
     void gateArraySamplesHudTextAfterLatePaletteWrites() {
         CpcMachine machine = CpcMachine.withBlankRom();
         int hudDisplayLine = 193;
-        int hudFrameLine = CpcGateArrayDevice.BORDER_TOP + hudDisplayLine;
+        int hudFrameLine = 72 + hudDisplayLine;
         int hudByteColumn = 30;
 
         machine.board().cpuBus().writeMemory(
@@ -218,113 +218,153 @@ class CpcMachineTest {
     }
 
     @Test
-    void gateArrayAdoptsShiftedHudPhaseAfterTwoFramesAndHoldsThroughTransients() {
+    void gateArraySamplesDisplayEventsFromSteadyCrtcDisplayTop() {
+        CpcMachine upperSideMachine = CpcMachine.withBlankRom();
+        upperSideMachine.board().cpuBus().writeMemory(
+                upperSideMachine.board().crtc().displayMemoryAddress(0, 0),
+                0x80
+        );
+        setPen(upperSideMachine, 0, 20);
+        setPen(upperSideMachine, 1, 20);
+        setMode(upperSideMachine, 1);
+        long rowZeroFirstSample = (72 * 256L) + 112;
+        upperSideMachine.board().gateArray().writeRegister(0x01, upperSideMachine.board().memory(), rowZeroFirstSample);
+        upperSideMachine.board().gateArray().writeRegister(0x4B, upperSideMachine.board().memory(), rowZeroFirstSample);
+        advanceGateArray(upperSideMachine, rowZeroFirstSample, upperSideMachine.frameTStates());
+
+        assertEquals(
+                CpcGateArrayDevice.argbForHardwareColor(11),
+                displayPixel(upperSideMachine.board().renderVideoFrame(), 0, 0)
+        );
+
+        CpcMachine nextLineMachine = CpcMachine.withBlankRom();
+        nextLineMachine.board().cpuBus().writeMemory(nextLineMachine.board().crtc().displayMemoryAddress(0, 0), 0x80);
+        nextLineMachine.board().cpuBus().writeMemory(nextLineMachine.board().crtc().displayMemoryAddress(1, 0), 0x80);
+        setPen(nextLineMachine, 0, 20);
+        setPen(nextLineMachine, 1, 20);
+        setMode(nextLineMachine, 1);
+        long rowOneBoundary = 73 * 256L;
+        nextLineMachine.board().gateArray().writeRegister(0x01, nextLineMachine.board().memory(), rowOneBoundary);
+        nextLineMachine.board().gateArray().writeRegister(0x4B, nextLineMachine.board().memory(), rowOneBoundary);
+        advanceGateArray(nextLineMachine, rowOneBoundary, nextLineMachine.frameTStates());
+
+        FrameBuffer nextLineFrame = nextLineMachine.board().renderVideoFrame();
+        assertEquals(CpcGateArrayDevice.argbForHardwareColor(20), displayPixel(nextLineFrame, 0, 0));
+        assertEquals(CpcGateArrayDevice.argbForHardwareColor(11), displayPixel(nextLineFrame, 0, 1));
+    }
+
+    @Test
+    void gateArrayLatchesShiftedCrtcDisplayTopAfterSecondVsyncSwap() {
         CpcMachine machine = CpcMachine.withBlankRom();
-        int hudDisplayLine = 193;
-        int shiftedHudFrameLine = CpcGateArrayDevice.BORDER_TOP + 8 + hudDisplayLine;
-        int hudByteColumn = 30;
-
-        machine.board().cpuBus().writeMemory(
-                machine.board().crtc().displayMemoryAddress(hudDisplayLine, hudByteColumn),
-                0x88
-        );
+        machine.board().crtc().selectRegister(7);
+        machine.board().crtc().writeSelectedRegister(28);
+        machine.board().cpuBus().writeMemory(machine.board().crtc().displayMemoryAddress(0, 0), 0x80);
         setPen(machine, 0, 20);
-        setPen(machine, 1, 23);
-        setPen(machine, 2, 19);
-        setPen(machine, 3, 27);
-        setMode(machine, 0);
+        setPen(machine, 1, 20);
+        setMode(machine, 1);
 
-        writeHudPaletteSequence(machine, shiftedHudFrameLine, 0, 0);
+        long transitionalProbe = (72 * 256L) + 112;
+        advanceGateArray(machine, 0, transitionalProbe);
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), transitionalProbe);
+        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), transitionalProbe);
 
-        FrameBuffer firstCandidateFrame = machine.board().renderVideoFrame();
-        assertEquals(
-                CpcGateArrayDevice.argbForHardwareColor(27),
-                displayPixel(firstCandidateFrame, hudByteColumn * 8, hudDisplayLine)
-        );
+        long transitionalDecoy = 80 * 256L;
+        advanceGateArray(machine, transitionalProbe, transitionalDecoy);
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), transitionalDecoy);
+        machine.board().gateArray().writeRegister(0x46, machine.board().memory(), transitionalDecoy);
 
-        long secondFrameBase = machine.frameTStates();
-        prepareHudFrame(machine, secondFrameBase);
-        writeHudPaletteSequence(machine, shiftedHudFrameLine, secondFrameBase, secondFrameBase);
+        long transitionalPassEnd = 75_776;
+        advanceGateArray(machine, transitionalDecoy, transitionalPassEnd);
 
-        FrameBuffer secondCandidateFrame = machine.board().renderVideoFrame();
-        assertEquals(
-                CpcGateArrayDevice.argbForHardwareColor(11),
-                displayPixel(secondCandidateFrame, hudByteColumn * 8, hudDisplayLine)
-        );
-
-        long transientFrameBase = secondFrameBase + machine.frameTStates();
-        prepareHudFrame(machine, transientFrameBase);
-        writeHudPaletteSequence(
-                machine,
-                shiftedHudFrameLine,
-                transientFrameBase,
-                transientFrameBase,
-                250
-        );
-
-        FrameBuffer transientFrame = machine.board().renderVideoFrame();
+        assertEquals(transitionalPassEnd, machine.board().gateArray().completedPassLengthTStates());
         assertEquals(
                 CpcGateArrayDevice.argbForHardwareColor(11),
-                displayPixel(transientFrame, hudByteColumn * 8, hudDisplayLine)
+                displayPixel(machine.board().renderVideoFrame(), 0, 0)
         );
 
-        long candidateFreeFrameBase = transientFrameBase + machine.frameTStates();
-        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), candidateFreeFrameBase);
-        long earlyInkTState = candidateFreeFrameBase + (190 * 256L) + 100;
-        advanceGateArray(machine, candidateFreeFrameBase, earlyInkTState);
-        writePenInk(machine, 3, 11, earlyInkTState);
-        long boundaryTState = candidateFreeFrameBase + (233 * 256L) + 100;
-        advanceGateArray(machine, earlyInkTState, boundaryTState);
-        writePenInk(machine, 3, 27, boundaryTState);
-        long candidateFreeFrameEnd = candidateFreeFrameBase + machine.frameTStates();
-        advanceGateArray(machine, boundaryTState, candidateFreeFrameEnd);
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), transitionalPassEnd);
+        machine.board().gateArray().writeRegister(0x54, machine.board().memory(), transitionalPassEnd);
 
-        FrameBuffer candidateFreeFrame = machine.board().renderVideoFrame();
-        assertEquals(
-                CpcGateArrayDevice.argbForHardwareColor(27),
-                displayPixel(candidateFreeFrame, hudByteColumn * 8, hudDisplayLine)
-        );
+        long secondPassProbe = transitionalPassEnd + (88 * 256L) + 112;
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), secondPassProbe);
+        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), secondPassProbe);
+        long secondPassEnd = transitionalPassEnd + machine.frameTStates();
+        advanceGateArray(machine, secondPassProbe, secondPassEnd);
 
-        long gapDecoyFrameBase = candidateFreeFrameBase + machine.frameTStates();
-        prepareHudFrame(machine, gapDecoyFrameBase);
-        writeHudPaletteSequence(machine, shiftedHudFrameLine, gapDecoyFrameBase, gapDecoyFrameBase, 250);
-        machine.board().renderVideoFrame();
-
-        long gapFrameBase = gapDecoyFrameBase + machine.frameTStates();
-        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), gapFrameBase);
-        long gapInkTState = gapFrameBase + (190 * 256L) + 100;
-        advanceGateArray(machine, gapFrameBase, gapInkTState);
-        writePenInk(machine, 3, 11, gapInkTState);
-        long gapFrameEnd = gapFrameBase + machine.frameTStates();
-        advanceGateArray(machine, gapInkTState, gapFrameEnd);
-        machine.board().renderVideoFrame();
-
-        long repeatDecoyFrameBase = gapFrameBase + machine.frameTStates();
-        prepareHudFrame(machine, repeatDecoyFrameBase);
-        writeHudPaletteSequence(machine, shiftedHudFrameLine, repeatDecoyFrameBase, repeatDecoyFrameBase, 250);
-
-        FrameBuffer repeatDecoyFrame = machine.board().renderVideoFrame();
+        assertEquals(machine.frameTStates(), machine.board().gateArray().completedPassLengthTStates());
         assertEquals(
                 CpcGateArrayDevice.argbForHardwareColor(11),
-                displayPixel(repeatDecoyFrame, hudByteColumn * 8, hudDisplayLine)
+                displayPixel(machine.board().renderVideoFrame(), 0, 0)
         );
     }
 
-    private static void prepareHudFrame(CpcMachine machine, long frameBase) {
-        machine.board().gateArray().writeRegister(0x80, machine.board().memory(), frameBase);
-        writePenInk(machine, 0, 20, frameBase);
-        writePenInk(machine, 1, 23, frameBase);
-        writePenInk(machine, 2, 19, frameBase);
-        writePenInk(machine, 3, 27, frameBase);
+    @Test
+    void midPassCrtcStartAddressChangeDoesNotMoveDisplayTop() {
+        CpcMachine machine = CpcMachine.withBlankRom();
+        setPen(machine, 0, 20);
+        setPen(machine, 1, 20);
+        setMode(machine, 1);
+        advanceGateArray(machine, 0, 10_000);
+        machine.board().crtc().selectRegister(12);
+        machine.board().crtc().writeSelectedRegister(0x31);
+        machine.board().cpuBus().writeMemory(machine.board().crtc().displayMemoryAddress(0, 0), 0x80);
+        machine.board().cpuBus().writeMemory(machine.board().crtc().displayMemoryAddress(1, 0), 0x80);
+
+        long rowOneBoundary = 73 * 256L;
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), rowOneBoundary);
+        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), rowOneBoundary);
+        advanceGateArray(machine, rowOneBoundary, machine.frameTStates());
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+        assertEquals(CpcGateArrayDevice.argbForHardwareColor(20), displayPixel(frame, 0, 0));
+        assertEquals(CpcGateArrayDevice.argbForHardwareColor(11), displayPixel(frame, 0, 1));
     }
 
-    private static void writePenInk(CpcMachine machine, int pen, int hardwareColor, long eventTState) {
-        machine.board().gateArray().writeRegister(pen & 0x0F, machine.board().memory(), eventTState);
-        machine.board().gateArray().writeRegister(
-                0x40 | (hardwareColor & 0x1F),
-                machine.board().memory(),
-                eventTState
+    @Test
+    void gateArrayMapsBorderRowsToFixedPassLines() {
+        CpcMachine machine = CpcMachine.withBlankRom();
+        setBorder(machine, 20);
+        int changedFrameBufferRow = 10;
+        long borderInkTState = ((36 + changedFrameBufferRow) * 256L) + 80;
+        machine.board().gateArray().writeRegister(0x10, machine.board().memory(), borderInkTState);
+        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), borderInkTState);
+        advanceGateArray(machine, borderInkTState, machine.frameTStates());
+
+        FrameBuffer frame = machine.board().renderVideoFrame();
+        assertEquals(CpcGateArrayDevice.argbForHardwareColor(20), pixel(frame, 0, changedFrameBufferRow - 1));
+        assertEquals(CpcGateArrayDevice.argbForHardwareColor(11), pixel(frame, 0, changedFrameBufferRow));
+    }
+
+    @Test
+    void gateArrayFallsBackToFixedPassesWhenVsyncNeverStarts() {
+        CpcMachine machine = CpcMachine.withBlankRom();
+        machine.board().crtc().selectRegister(7);
+        machine.board().crtc().writeSelectedRegister(100);
+        machine.board().cpuBus().writeMemory(machine.board().crtc().displayMemoryAddress(0, 0), 0x80);
+        setPen(machine, 0, 20);
+        setPen(machine, 1, 20);
+        setMode(machine, 1);
+
+        long firstWrapProbe = (72 * 256L) + 112;
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), firstWrapProbe);
+        machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), firstWrapProbe);
+        long secondWrapProbe = (384 * 256L) + 112;
+        machine.board().gateArray().writeRegister(0x01, machine.board().memory(), secondWrapProbe);
+        machine.board().gateArray().writeRegister(0x4C, machine.board().memory(), secondWrapProbe);
+
+        long firstForcedSwap = 2L * machine.frameTStates();
+        advanceGateArray(machine, secondWrapProbe, firstForcedSwap);
+
+        assertEquals(firstForcedSwap, machine.board().gateArray().completedPassLengthTStates());
+        assertEquals(
+                CpcGateArrayDevice.argbForHardwareColor(11),
+                displayPixel(machine.board().renderVideoFrame(), 0, 0)
         );
+
+        long secondForcedSwap = firstForcedSwap + machine.frameTStates();
+        advanceGateArray(machine, firstForcedSwap, secondForcedSwap);
+
+        assertEquals(machine.frameTStates(), machine.board().gateArray().completedPassLengthTStates());
     }
 
     private static void advanceGateArray(CpcMachine machine, long fromTState, long targetTState) {
@@ -354,41 +394,136 @@ class CpcMachineTest {
     }
 
     @Test
-    void gateArrayRaisesInterruptEvery52HsyncsUntilAcknowledged() {
+    void gateArrayFreeRunsFromThePostVsyncSyncPhaseUntilAcknowledged() {
         CpcMachine machine = CpcMachine.withBlankRom();
+        long[] interruptTStates = {
+                13_824, 27_136, 40_448, 53_760, 67_072, 80_384, 93_696, 107_008
+        };
+        long cursor = 0;
+        int firstFrameInterrupts = 0;
 
-        machine.board().onTStatesElapsed((52 * 256) - 1, (52 * 256) - 1);
+        for (long interruptTState : interruptTStates) {
+            advanceGateArray(machine, cursor, interruptTState - 1);
+            assertFalse(machine.board().gateArray().maskableInterruptLineActive(), "before t=" + interruptTState);
 
-        assertFalse(machine.board().maskableInterruptLineActive(machine.currentTState()));
+            advanceGateArray(machine, interruptTState - 1, interruptTState);
+            assertTrue(machine.board().gateArray().maskableInterruptLineActive(), "at t=" + interruptTState);
+            if (interruptTState < machine.frameTStates()) {
+                firstFrameInterrupts++;
+            }
+            machine.board().gateArray().acknowledgeInterrupt();
+            cursor = interruptTState;
+        }
 
-        machine.board().onTStatesElapsed(1, 52 * 256);
+        assertEquals(5, firstFrameInterrupts);
+    }
 
-        assertTrue(machine.board().maskableInterruptLineActive(machine.currentTState()));
+    @Test
+    void gateArrayResyncsInterruptCounterTwoHsyncsAfterVsync() {
+        CpcMachine belowThreshold = CpcMachine.withBlankRom();
+        advanceGateArray(belowThreshold, 0, 67_072);
+        assertTrue(belowThreshold.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(belowThreshold, 67_072, 77_312);
+        belowThreshold.board().gateArray().acknowledgeInterrupt();
+        advanceGateArray(belowThreshold, 77_312, 80_384);
+        assertFalse(belowThreshold.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(belowThreshold, 80_384, 93_695);
+        assertFalse(belowThreshold.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(belowThreshold, 93_695, 93_696);
+        assertTrue(belowThreshold.board().gateArray().maskableInterruptLineActive());
 
-        machine.board().cpuBus().acknowledgeInterrupt();
+        CpcMachine aboveThreshold = CpcMachine.withBlankRom();
+        advanceGateArray(aboveThreshold, 0, 68_096);
+        aboveThreshold.board().gateArray().writeRegister(0x90, aboveThreshold.board().memory(), 68_096);
+        assertFalse(aboveThreshold.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(aboveThreshold, 68_096, 80_383);
+        assertFalse(aboveThreshold.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(aboveThreshold, 80_383, 80_384);
+        assertTrue(aboveThreshold.board().gateArray().maskableInterruptLineActive());
+        aboveThreshold.board().gateArray().acknowledgeInterrupt();
+        advanceGateArray(aboveThreshold, 80_384, 93_695);
+        assertFalse(aboveThreshold.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(aboveThreshold, 93_695, 93_696);
+        assertTrue(aboveThreshold.board().gateArray().maskableInterruptLineActive());
 
-        assertFalse(machine.board().maskableInterruptLineActive(machine.currentTState()));
+        CpcMachine coincidentWrap = CpcMachine.withBlankRom();
+        long cursor = 0;
+        for (long interruptTState : new long[] {13_824, 27_136, 40_448, 53_760, 67_072}) {
+            advanceGateArray(coincidentWrap, cursor, interruptTState);
+            assertTrue(coincidentWrap.board().gateArray().maskableInterruptLineActive());
+            coincidentWrap.board().gateArray().acknowledgeInterrupt();
+            cursor = interruptTState;
+        }
+        advanceGateArray(coincidentWrap, cursor, 80_383);
+        assertFalse(coincidentWrap.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(coincidentWrap, 80_383, 80_384);
+        assertTrue(coincidentWrap.board().gateArray().maskableInterruptLineActive());
+        coincidentWrap.board().gateArray().acknowledgeInterrupt();
+        assertFalse(coincidentWrap.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(coincidentWrap, 80_384, 93_696);
+        assertTrue(coincidentWrap.board().gateArray().maskableInterruptLineActive());
+    }
+
+    @Test
+    void gateArrayAcknowledgeClearsCounterBitFive() {
+        CpcMachine machine = CpcMachine.withBlankRom();
+        long counterFortyTState = 42 * 256L;
+        advanceGateArray(machine, 0, counterFortyTState);
+        assertFalse(machine.board().gateArray().maskableInterruptLineActive());
+
+        machine.board().gateArray().acknowledgeInterrupt();
+
+        long nextInterruptTState = counterFortyTState + (44 * 256L);
+        advanceGateArray(machine, counterFortyTState, nextInterruptTState - 1);
+        assertFalse(machine.board().gateArray().maskableInterruptLineActive());
+        advanceGateArray(machine, nextInterruptTState - 1, nextInterruptTState);
+        assertTrue(machine.board().gateArray().maskableInterruptLineActive());
+    }
+
+    @Test
+    void gateArrayVsyncToVsyncSpans79872TStates() {
+        CpcMachine machine = CpcMachine.withBlankRom();
+        long firstVsyncTState = -1;
+        long secondVsyncTState = -1;
+        long previousTState = 0;
+
+        for (int line = 1; line <= 624; line++) {
+            long lineEndTState = line * 256L;
+            advanceGateArray(machine, previousTState, lineEndTState);
+            if (machine.board().crtc().vsyncStartedThisTick()) {
+                if (firstVsyncTState < 0) {
+                    firstVsyncTState = lineEndTState;
+                } else {
+                    secondVsyncTState = lineEndTState;
+                    break;
+                }
+            }
+            previousTState = lineEndTState;
+        }
+
+        assertEquals(79_872, firstVsyncTState);
+        assertEquals(79_872, secondVsyncTState - firstVsyncTState);
     }
 
     @Test
     void gateArrayModeControlBit4ClearsInterruptRequestAndCounter() {
         CpcMachine machine = CpcMachine.withBlankRom();
 
-        machine.board().onTStatesElapsed(52 * 256, 52 * 256);
+        machine.board().onTStatesElapsed(13_824, 13_824);
 
-        assertTrue(machine.board().maskableInterruptLineActive(machine.currentTState()));
+        assertTrue(machine.board().maskableInterruptLineActive(13_824));
 
         machine.board().cpuBus().writePort(0x7F00, 0x90);
 
-        assertFalse(machine.board().maskableInterruptLineActive(machine.currentTState()));
+        assertFalse(machine.board().maskableInterruptLineActive(13_824));
 
-        machine.board().onTStatesElapsed((52 * 256) - 1, (104 * 256) - 1);
+        machine.board().onTStatesElapsed(27_135 - 13_824, 27_135);
 
-        assertFalse(machine.board().maskableInterruptLineActive(machine.currentTState()));
+        assertFalse(machine.board().maskableInterruptLineActive(27_135));
 
-        machine.board().onTStatesElapsed(1, 104 * 256);
+        machine.board().onTStatesElapsed(1, 27_136);
 
-        assertTrue(machine.board().maskableInterruptLineActive(machine.currentTState()));
+        assertTrue(machine.board().maskableInterruptLineActive(27_136));
     }
 
     @Test
@@ -430,13 +565,20 @@ class CpcMachineTest {
 
         assertEquals(0xFF, machine.board().cpuBus().readPort(0xF500));
 
-        runUntilTState(machine, (16 * 256) + 4);
+        advanceGateArray(machine, 0, 15 * 256L);
+        assertEquals(0xFF, machine.board().cpuBus().readPort(0xF500));
 
+        advanceGateArray(machine, 15 * 256L, 16 * 256L);
         assertEquals(0xFE, machine.board().cpuBus().readPort(0xF500));
 
-        runUntilTState(machine, machine.frameTStates());
-
+        advanceGateArray(machine, 16 * 256L, 312 * 256L);
         assertEquals(0xFF, machine.board().cpuBus().readPort(0xF500));
+
+        advanceGateArray(machine, 312 * 256L, (328 * 256L) - 1);
+        assertEquals(0xFF, machine.board().cpuBus().readPort(0xF500));
+
+        advanceGateArray(machine, (328 * 256L) - 1, 328 * 256L);
+        assertEquals(0xFE, machine.board().cpuBus().readPort(0xF500));
     }
 
     @Test
@@ -514,16 +656,6 @@ class CpcMachineTest {
             long frameBase,
             long alreadyElapsedTStates
     ) {
-        writeHudPaletteSequence(machine, hudFrameLine, frameBase, alreadyElapsedTStates, -1);
-    }
-
-    private static void writeHudPaletteSequence(
-            CpcMachine machine,
-            int hudFrameLine,
-            long frameBase,
-            long alreadyElapsedTStates,
-            int decoyModeOneLine
-    ) {
         long hudModeTState = frameBase + (hudFrameLine * 256L) + 70;
         long pen1TState = frameBase + (hudFrameLine * 256L) + 101;
         long pen2TState = frameBase + (hudFrameLine * 256L) + 136;
@@ -539,15 +671,8 @@ class CpcMachineTest {
         machine.board().gateArray().writeRegister(0x55, machine.board().memory(), pen2TState);
         machine.board().gateArray().writeRegister(0x03, machine.board().memory(), pen3TState);
         machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), pen3TState);
-        long lastEventTState = pen3TState;
-        if (decoyModeOneLine >= 0) {
-            long decoyTState = frameBase + (decoyModeOneLine * 256L) + 100;
-            advanceGateArray(machine, pen3TState, decoyTState);
-            writePenInk(machine, 3, 12, decoyTState);
-            lastEventTState = decoyTState;
-        }
         long frameEnd = frameBase + machine.frameTStates();
-        advanceGateArray(machine, lastEventTState, frameEnd);
+        advanceGateArray(machine, pen3TState, frameEnd);
     }
 
     private static int readKeyboardLine(CpcMachine machine, int line) {
@@ -567,11 +692,6 @@ class CpcMachineTest {
         machine.board().cpuBus().writePort(0xF600, 0x80);
     }
 
-    private static void runUntilTState(CpcMachine machine, long targetTState) {
-        while (machine.currentTState() < targetTState) {
-            machine.runInstruction();
-        }
-    }
 
     private static boolean hasNonZeroSample(byte[] pcm, int length) {
         for (int i = 0; i + 1 < length; i += 2) {
