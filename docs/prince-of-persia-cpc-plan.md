@@ -186,6 +186,24 @@ testable.
 
 ## Progress Log
 
+- 2026-07-17: Phase 10d HYPOTHESIS FALSIFIED by prototypes (no batch):
+  bumping ALL −4t instruction classes in a scratch core (ED OUT/IN 16t,
+  PUSH/RST 16t, IM1 16t, block I/O and LDI/LDD +4) moves the seam's
+  LEFT edge only from x=268 to x=332 and then stops; the RIGHT edge
+  x=661 is invariant to CPU timing AND to the horizontal event-mapping
+  constant (DISPLAY_START_TSTATES swept 80..176 moves only the left
+  edge). Conclusion: the residual seam is an EVENT-TO-ROW ATTRIBUTION
+  question (the tail of display row 191 renders with a palette the
+  hardware applies from row 192), NOT an instruction-timing deficit —
+  cpu-z80 per-opcode surgery is OFF the table for this bug. Next
+  investigation (cheap, render-side): dump the completed-frame event
+  list around pass lines 262-264 for the canonical frame, identify the
+  event painting the row-191 tail, and determine the hardware-correct
+  attribution (likely an off-by-one in the event-line vs pixel-row
+  convention interacting with the game's mid-line write). Also for the
+  record: the canonical scene's seam history — Phase 8/10a: 0 red
+  (heuristic hid it by construction), 10b: 190, 10c: 172, prototypes:
+  166 floor.
 - 2026-07-17: Phase 10c (`codex/cpc-p10c-waitstates`): gate-array wait
   states — every Z80 bus access aligns to the 4t 1 MHz grid via the
   CpuBus *WaitStates hooks (Spectrum-contention pattern; port stamps
