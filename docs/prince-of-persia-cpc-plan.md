@@ -186,6 +186,24 @@ testable.
 
 ## Progress Log
 
+- 2026-07-17: Phase 10c (`codex/cpc-p10c-waitstates`): gate-array wait
+  states — every Z80 bus access aligns to the 4t 1 MHz grid via the
+  CpuBus *WaitStates hooks (Spectrum-contention pattern; port stamps
+  wait-adjusted). Root-caused from the user-reported red seam at
+  display line 191: reference (CPC-Power) shows none; a −16t INT-phase
+  prototype changed zero pixels (falsified); the machine ran ~10-25%
+  fast without wait states. Seam narrowed 60→42 red samples (left
+  third cleared); committed oracle rowRedSamples(227) < 50. Residual =
+  frozen deviations that accumulate (grid-invisible −4t: OUT (C),r
+  12t vs hw 16t — Prince's split burst; PUSH/internal-cycle class; IM1
+  accept 14-17t vs ~16t). Rebaseline #3: Prince smoke 0x1A1D7BE5,
+  transition 0xD8C9A44B, flash 0x6DA07FC9; BASIC smoke unchanged;
+  settle/cadence/press-key constants all survive; frame counts +13-15%
+  (BASIC 384→433). Fault injection 5/5. PHASE 10d CANDIDATE (the
+  complete fix): cpu-z80 internal-cycle phase advancement + exact
+  per-opcode CPC tables, coordinated with a Spectrum contention
+  re-verification — the deepest-core change in the repo; take it only
+  with the full pipeline and both machines' suites as gates.
 - 2026-07-17: Phase 10b (`codex/cpc-p10b-vsync`): CPC timing anchored to
   real CRTC state. CpcCrtcDevice gained vertical counters + R7-derived
   VSYNC (frozen 16-line width, type-1 behavior); the gate array applies
