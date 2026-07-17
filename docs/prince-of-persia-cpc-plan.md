@@ -186,6 +186,24 @@ testable.
 
 ## Progress Log
 
+- 2026-07-17: Phase 10b (`codex/cpc-p10b-vsync`): CPC timing anchored to
+  real CRTC state. CpcCrtcDevice gained vertical counters + R7-derived
+  VSYNC (frozen 16-line width, type-1 behavior); the gate array applies
+  the hardware R52/VSYNC re-sync (2 HSYNCs after VSYNC start, interrupt
+  iff counter >= 32 — NOTE: cpctech/grimware document this rule
+  INVERTED; CRTC Compendium 27.3.2 + Caprice32 are authoritative); PPI
+  port B reads the real VSYNC; render passes are VSYNC-anchored with a
+  CRTC-latched display top (the 10a debounced anchor deleted); the
+  border framebuffer mapping got its missing +36. Frozen reset
+  convention (reset == VSYNC start) kept the PPI window and frame
+  length identical to the old stubs; interrupt phase shifted +512 t
+  (sanctioned). Rebaseline #2: cpcPrinceSmoke 0x658B018F→0x83FBECD8
+  (exactly one raster-split line moved), oracle CRCs
+  0x47960CBC/0xF080DDB7 (route numbers unchanged); cpcBasicSmoke
+  0x2A1A5DBE UNCHANGED (proven mapping-invariant). Spec critiqued twice
+  (22+12 findings), fault injection 8/8, review minors fixed with
+  re-proven kills. Both Phase-4/8 'Known Risk Areas' approximations
+  (event-phase heuristic, time-derived VSYNC) are now closed.
 - 2026-07-17: Phase 10a (`codex/cpc-p10a-anchor`): fixed the flickering
   red stripes on Prince room transitions (user-reported). The
   display-phase anchor is now debounced (adopt after 2 consecutive
