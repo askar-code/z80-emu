@@ -56,8 +56,18 @@ public final class CpcBus extends ClockedCpuBus {
     }
 
     @Override
+    public int fetchOpcodeWaitStates(int address, int phaseTStates) {
+        return gridAlignWaits(phaseTStates);
+    }
+
+    @Override
     public int readMemory(int address) {
         return memory.read(address);
+    }
+
+    @Override
+    public int readMemoryWaitStates(int address, int phaseTStates) {
+        return gridAlignWaits(phaseTStates);
     }
 
     @Override
@@ -66,8 +76,18 @@ public final class CpcBus extends ClockedCpuBus {
     }
 
     @Override
+    public int writeMemoryWaitStates(int address, int value, int phaseTStates) {
+        return gridAlignWaits(phaseTStates);
+    }
+
+    @Override
     public int readPort(int port) {
         return ports.read(port, clockValue(), 0);
+    }
+
+    @Override
+    public int readPort(int port, int phaseTStates) {
+        return ports.read(port, clockValue() + readPortWaitStates(port, phaseTStates), phaseTStates);
     }
 
     @Override
@@ -77,7 +97,17 @@ public final class CpcBus extends ClockedCpuBus {
 
     @Override
     public void writePort(int port, int value, int phaseTStates) {
-        ports.write(port, value, clockValue(), phaseTStates);
+        ports.write(port, value, clockValue() + writePortWaitStates(port, value, phaseTStates), phaseTStates);
+    }
+
+    @Override
+    public int readPortWaitStates(int port, int phaseTStates) {
+        return gridAlignWaits(phaseTStates);
+    }
+
+    @Override
+    public int writePortWaitStates(int port, int value, int phaseTStates) {
+        return gridAlignWaits(phaseTStates);
     }
 
     @Override
@@ -88,6 +118,10 @@ public final class CpcBus extends ClockedCpuBus {
 
     public void setIoTraceSink(IoTraceSink traceSink) {
         ports.setTraceSink(traceSink);
+    }
+
+    private int gridAlignWaits(int phaseTStates) {
+        return (4 - (int) ((clockValue() + phaseTStates) & 3)) & 3;
     }
 
     private IoAddressSpace buildPortMap() {

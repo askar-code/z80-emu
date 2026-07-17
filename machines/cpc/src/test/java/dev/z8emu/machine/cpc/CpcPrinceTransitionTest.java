@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CpcPrinceTransitionTest {
-    private static final long LOCKED_TRANSITION_CRC = 0x47960CBCL;
-    private static final long LOCKED_RED_FLASH_CRC = 0xF080DDB7L;
+    private static final long LOCKED_TRANSITION_CRC = 0xD8C9A44BL;
+    private static final long LOCKED_RED_FLASH_CRC = 0x6DA07FC9L;
 
     @Test
     void roomTransitionKeepsDisplayPhaseStableWhilePreservingRedFlash() throws Exception {
@@ -47,34 +47,38 @@ class CpcPrinceTransitionTest {
         int transitionRedSamples = -1;
         int redFlashSamples = -1;
         int settledRedSamples = -1;
+        int settledRowRedSamples = -1;
         long transitionCrc = -1;
         long redFlashCrc = -1;
         for (int frameIndex = 0; frameIndex <= 160; frameIndex++) {
             CpcKeyboardTyper.runFrames(machine, 1);
             FrameBuffer frame = machine.board().renderVideoFrame();
-            if (frameIndex == 102 || frameIndex == 147 || frameIndex == 160) {
+            if (frameIndex == 125 || frameIndex == 148 || frameIndex == 160) {
                 int samples = redSamples(frame);
-                if (frameIndex == 102) {
+                if (frameIndex == 125) {
                     transitionRedSamples = samples;
                     transitionCrc = frameCrc32(frame);
-                } else if (frameIndex == 147) {
+                } else if (frameIndex == 148) {
                     redFlashSamples = samples;
                     redFlashCrc = frameCrc32(frame);
                 } else {
                     settledRedSamples = samples;
+                    settledRowRedSamples = rowRedSamples(frame, 227);
                 }
             }
         }
 
-        String metrics = "f102 redSamples=" + transitionRedSamples
+        String metrics = "f125 redSamples=" + transitionRedSamples
                 + " crc=0x" + Long.toHexString(transitionCrc).toUpperCase()
-                + ", f147 redSamples=" + redFlashSamples
+                + ", f148 redSamples=" + redFlashSamples
                 + " crc=0x" + Long.toHexString(redFlashCrc).toUpperCase()
-                + ", f160 redSamples=" + settledRedSamples;
+                + ", f160 redSamples=" + settledRedSamples
+                + " row227RedSamples=" + settledRowRedSamples;
         assertTrue(transitionRedSamples < 300, metrics);
         assertEquals(LOCKED_TRANSITION_CRC, transitionCrc, metrics);
         assertEquals(LOCKED_RED_FLASH_CRC, redFlashCrc, metrics);
         assertTrue(settledRedSamples < 300, metrics);
+        assertTrue(settledRowRedSamples < 50, metrics);
     }
 
     private static void holdKey(CpcMachine machine, int line, int bit, int frames) {
@@ -99,6 +103,21 @@ class CpcPrinceTransitionTest {
                 if (red > 180 && green < 80 && blue < 80) {
                     count++;
                 }
+            }
+        }
+        return count;
+    }
+
+    private static int rowRedSamples(FrameBuffer frame, int row) {
+        int count = 0;
+        int rowOffset = row * frame.width();
+        for (int x = 0; x < frame.width(); x++) {
+            int pixel = frame.pixels()[rowOffset + x];
+            int red = (pixel >>> 16) & 0xFF;
+            int green = (pixel >>> 8) & 0xFF;
+            int blue = pixel & 0xFF;
+            if (red > 180 && green < 80 && blue < 80) {
+                count++;
             }
         }
         return count;
