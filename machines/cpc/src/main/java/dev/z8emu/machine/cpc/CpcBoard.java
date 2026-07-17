@@ -18,8 +18,6 @@ import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Objects;
 
 public final class CpcBoard implements VideoMachineBoard {
-    private static final int VSYNC_SCANLINES = 16;
-
     private final CpcModelConfig modelConfig;
     private final CpcMemory memory;
     private final CpcGateArrayDevice gateArray;
@@ -46,8 +44,8 @@ public final class CpcBoard implements VideoMachineBoard {
         Objects.requireNonNull(clock, "clock");
         this.modelConfig = Objects.requireNonNull(modelConfig, "modelConfig");
         this.memory = Objects.requireNonNull(memory, "memory");
-        this.gateArray = new CpcGateArrayDevice();
         this.crtc = new CpcCrtcDevice();
+        this.gateArray = new CpcGateArrayDevice(crtc);
         this.keyboard = new CpcKeyboardDevice();
         this.ay = new Ay38912Device(modelConfig.cpuClockHz(), modelConfig.psgClockHz());
         this.ppi = new CpcPpiDevice(ay);
@@ -56,7 +54,7 @@ public final class CpcBoard implements VideoMachineBoard {
             this.fdc.insertDisk(disk);
         }
         this.ay.setPortAReadProvider(() -> keyboard.readLine(ppi.selectedKeyboardLine()));
-        this.ppi.setPortBInputProvider(() -> portBInput(clock.value(), modelConfig.frameTStates()));
+        this.ppi.setPortBInputProvider(() -> crtc.vsyncActive() ? 0xFF : 0xFE);
         this.bus = new CpcBus(clock, memory, gateArray, crtc, ppi, fdc);
     }
 
@@ -68,8 +66,8 @@ public final class CpcBoard implements VideoMachineBoard {
     @Override
     public void reset() {
         memory.reset();
-        gateArray.reset();
         crtc.reset();
+        gateArray.reset();
         keyboard.reset();
         ay.reset();
         ppi.reset();
@@ -136,9 +134,4 @@ public final class CpcBoard implements VideoMachineBoard {
         bus.setIoTraceSink(traceSink);
     }
 
-    private static int portBInput(long currentTState, int frameTStates) {
-        int frameOffset = Math.floorMod(currentTState, frameTStates);
-        boolean vsyncActive = frameOffset < VSYNC_SCANLINES * CpcGateArrayDevice.T_STATES_PER_HSYNC;
-        return vsyncActive ? 0xFF : 0xFE;
-    }
 }

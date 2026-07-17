@@ -3,6 +3,7 @@ package dev.z8emu.machine.cpc.device;
 import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.platform.video.FrameBuffer;
 import java.util.Arrays;
+import java.util.Objects;
 
 public final class CpcGateArrayDevice {
     public static final int DISPLAY_WIDTH = 640;
@@ -20,12 +21,13 @@ public final class CpcGateArrayDevice {
     public static final int FRAME_TSTATES = T_STATES_PER_HSYNC * INTERRUPT_HSYNC_PERIOD * 6;
     private static final int DISPLAY_START_TSTATES = 112;
     private static final int DISPLAY_BYTE_TSTATES = 2;
-    private static final int LOWER_RASTER_SPLIT_REFERENCE_DISPLAY_LINE = DISPLAY_HEIGHT - 7;
     private static final int INTERRUPT_COUNTER_MASK = 0x3F;
     private static final int INTERRUPT_ACK_CLEAR_MASK = 0x1F;
     private static final int BORDER_PEN_INDEX = 16;
     private static final int DEFAULT_BLACK_HARDWARE_COLOR = 20;
     private static final int INITIAL_EVENT_CAPACITY = 256;
+    private static final int VSYNC_SYNC_DELAY_HSYNCS = 2;
+    private static final int FALLBACK_INITIAL_DELAY_TSTATES = FRAME_TSTATES * 2;
     private static final int[] HARDWARE_PALETTE = {
             rgb(0x80, 0x80, 0x80), rgb(0x80, 0x80, 0x80), rgb(0x00, 0xFF, 0x80), rgb(0xFF, 0xFF, 0x80),
             rgb(0x00, 0x00, 0x80), rgb(0x80, 0x00, 0x80), rgb(0x00, 0x80, 0x80), rgb(0xFF, 0x80, 0x80),
@@ -37,6 +39,7 @@ public final class CpcGateArrayDevice {
             rgb(0x80, 0x00, 0x00), rgb(0x80, 0x00, 0xFF), rgb(0x80, 0x80, 0x00), rgb(0x80, 0x80, 0xFF)
     };
 
+    private final CpcCrtcDevice crtc;
     private final int[] hardwareInkByPen = new int[17];
     private final FrameBuffer frameBuffer = new FrameBuffer(FRAME_WIDTH, FRAME_HEIGHT);
     private int[] currentFrameEventTimes = new int[INITIAL_EVENT_CAPACITY];
@@ -51,26 +54,36 @@ public final class CpcGateArrayDevice {
     private int selectedPen;
     private int screenMode;
     private int interruptCounter;
-    private int hsyncTStateRemainder;
+    private int vsyncSyncDelay;
     private boolean interruptRequestActive;
     private long elapsedTStates;
+    private long passOriginTState;
+    private long completedPassLengthTStates;
+    private boolean fallbackSwapActive;
     private boolean completedFrameStateAvailable;
-    private int displayPhaseAnchor = BORDER_TOP;
-    private int pendingAnchorCandidate = Integer.MIN_VALUE;
-    private int completedFrameDisplayPhaseAnchor = BORDER_TOP;
+    private int currentDisplayStartLine;
+    private boolean currentDisplayStartLineLatched;
+    private int completedDisplayStartLine = 72;
+
+    public CpcGateArrayDevice(CpcCrtcDevice crtc) {
+        this.crtc = Objects.requireNonNull(crtc, "crtc");
+    }
 
     public void reset() {
         Arrays.fill(hardwareInkByPen, DEFAULT_BLACK_HARDWARE_COLOR);
         selectedPen = 0;
         screenMode = 1;
         interruptCounter = 0;
-        hsyncTStateRemainder = 0;
+        vsyncSyncDelay = 0;
         interruptRequestActive = false;
         elapsedTStates = 0;
+        passOriginTState = 0;
+        completedPassLengthTStates = 0;
+        fallbackSwapActive = false;
         completedFrameStateAvailable = false;
-        displayPhaseAnchor = BORDER_TOP;
-        pendingAnchorCandidate = Integer.MIN_VALUE;
-        completedFrameDisplayPhaseAnchor = BORDER_TOP;
+        currentDisplayStartLine = 72;
+        currentDisplayStartLineLatched = false;
+        completedDisplayStartLine = 72;
         currentFrameEventCount = 0;
         completedFrameEventCount = 0;
         appendCurrentFrameEvent(0);
@@ -106,16 +119,6 @@ public final class CpcGateArrayDevice {
     }
 
     public void onTStatesElapsed(int tStates, long currentTState) {
-        if (tStates <= 0) {
-            return;
-        }
-
-        int elapsed = hsyncTStateRemainder + tStates;
-        int hsyncs = elapsed / T_STATES_PER_HSYNC;
-        hsyncTStateRemainder = elapsed % T_STATES_PER_HSYNC;
-        for (int i = 0; i < hsyncs; i++) {
-            onHsync();
-        }
         syncRasterState(currentTState);
     }
 
@@ -126,6 +129,10 @@ public final class CpcGateArrayDevice {
     public void acknowledgeInterrupt() {
         interruptRequestActive = false;
         interruptCounter &= INTERRUPT_ACK_CLEAR_MASK;
+    }
+
+    public long completedPassLengthTStates() {
+        return completedPassLengthTStates;
     }
 
     public FrameBuffer renderFrame(CpcMemory memory, CpcCrtcDevice crtc) {
@@ -171,7 +178,7 @@ public final class CpcGateArrayDevice {
         int horizChars = crtc.horizontalDisplayedChars();
         int startAddr = crtc.startAddress();
         for (int y = 0; y < visibleLines; y++) {
-            int frameLine = completedFrameDisplayPhaseAnchor + y;
+            int frameLine = completedDisplayStartLine + y;
             int eventIndex = eventIndexAt(
                     completedFrameEventTimes,
                     completedFrameEventCount,
@@ -259,11 +266,40 @@ public final class CpcGateArrayDevice {
         return screenMode == 3 ? 1 : screenMode;
     }
 
-    private void onHsync() {
+    private void lineEnd() {
+        crtc.onHsync();
+
         interruptCounter = (interruptCounter + 1) & INTERRUPT_COUNTER_MASK;
         if (interruptCounter == INTERRUPT_HSYNC_PERIOD) {
             interruptCounter = 0;
             interruptRequestActive = true;
+        }
+
+        if (crtc.vsyncJustStarted()) {
+            vsyncSyncDelay = VSYNC_SYNC_DELAY_HSYNCS;
+        }
+        if (vsyncSyncDelay > 0) {
+            vsyncSyncDelay--;
+            if (vsyncSyncDelay == 0) {
+                if (interruptCounter >= 32) {
+                    interruptRequestActive = true;
+                }
+                interruptCounter = 0;
+            }
+        }
+
+        boolean swapAtVsync = crtc.vsyncStartedThisTick();
+        long passLength = elapsedTStates - passOriginTState;
+        boolean swapAtFallback = !swapAtVsync
+                && passLength >= (fallbackSwapActive ? FRAME_TSTATES : FALLBACK_INITIAL_DELAY_TSTATES);
+        if (swapAtVsync || swapAtFallback) {
+            completeCurrentRasterState(elapsedTStates);
+            fallbackSwapActive = swapAtFallback;
+        }
+
+        if (crtc.displayWrappedToRowZeroThisTick() && !currentDisplayStartLineLatched) {
+            currentDisplayStartLine = (int) ((elapsedTStates - passOriginTState) / T_STATES_PER_HSYNC);
+            currentDisplayStartLineLatched = true;
         }
     }
 
@@ -277,34 +313,18 @@ public final class CpcGateArrayDevice {
             return;
         }
 
-        while (elapsedTStates < targetTState) {
-            int frameOffset = (int) (elapsedTStates % FRAME_TSTATES);
-            int remainingInFrame = FRAME_TSTATES - frameOffset;
-            int chunk = (int) Math.min(targetTState - elapsedTStates, remainingInFrame);
-            elapsedTStates += chunk;
-
-            if ((elapsedTStates % FRAME_TSTATES) == 0) {
-                completeCurrentRasterState();
-            }
+        long nextLineEnd = ((elapsedTStates / T_STATES_PER_HSYNC) + 1) * T_STATES_PER_HSYNC;
+        while (nextLineEnd <= targetTState) {
+            elapsedTStates = nextLineEnd;
+            lineEnd();
+            nextLineEnd += T_STATES_PER_HSYNC;
         }
+        elapsedTStates = targetTState;
     }
 
-    private void completeCurrentRasterState() {
-        int candidate = Integer.MIN_VALUE;
-        for (int i = 0; i < currentFrameEventCount; i++) {
-            int line = currentFrameEventTimes[i] / T_STATES_PER_HSYNC;
-            if (line >= 200 && line < 280 && currentFrameEventModes[i] == 1) {
-                candidate = line - LOWER_RASTER_SPLIT_REFERENCE_DISPLAY_LINE;
-            }
-        }
-        if (candidate == Integer.MIN_VALUE) {
-            pendingAnchorCandidate = Integer.MIN_VALUE;
-        } else if (candidate == pendingAnchorCandidate) {
-            displayPhaseAnchor = candidate;
-        } else {
-            pendingAnchorCandidate = candidate;
-        }
-        completedFrameDisplayPhaseAnchor = displayPhaseAnchor;
+    private void completeCurrentRasterState(long newPassOriginTState) {
+        completedDisplayStartLine = currentDisplayStartLine;
+        completedPassLengthTStates = newPassOriginTState - passOriginTState;
 
         int[] times = completedFrameEventTimes;
         completedFrameEventTimes = currentFrameEventTimes;
@@ -320,6 +340,9 @@ public final class CpcGateArrayDevice {
 
         completedFrameEventCount = currentFrameEventCount;
         currentFrameEventCount = 0;
+        passOriginTState = newPassOriginTState;
+        currentDisplayStartLine = 72;
+        currentDisplayStartLineLatched = false;
         appendCurrentFrameEvent(0);
         completedFrameStateAvailable = true;
     }
@@ -362,7 +385,7 @@ public final class CpcGateArrayDevice {
     ) {
         int[] pixels = frameBuffer.pixels();
         int rowBase = y * FRAME_WIDTH;
-        int lineFrameOffset = (y * T_STATES_PER_HSYNC) + DISPLAY_START_TSTATES;
+        int lineFrameOffset = ((y + BORDER_TOP) * T_STATES_PER_HSYNC) + DISPLAY_START_TSTATES;
         int x = fromX;
         while (x < toX) {
             int frameOffset = lineFrameOffset + (x / 4);
@@ -383,11 +406,10 @@ public final class CpcGateArrayDevice {
     }
 
     private void appendCurrentFrameEvent(int frameOffset) {
-        int normalizedFrameOffset = Math.floorMod(frameOffset, FRAME_TSTATES);
         if (currentFrameEventCount > 0) {
             int lastIndex = currentFrameEventCount - 1;
-            if (currentFrameEventTimes[lastIndex] == normalizedFrameOffset) {
-                storeCurrentFrameEvent(lastIndex, normalizedFrameOffset);
+            if (currentFrameEventTimes[lastIndex] == frameOffset) {
+                storeCurrentFrameEvent(lastIndex, frameOffset);
                 return;
             }
             if (currentFrameEventModes[lastIndex] == normalizedScreenMode()
@@ -396,7 +418,7 @@ public final class CpcGateArrayDevice {
             }
         }
         ensureCurrentFrameEventCapacity(currentFrameEventCount + 1);
-        storeCurrentFrameEvent(currentFrameEventCount, normalizedFrameOffset);
+        storeCurrentFrameEvent(currentFrameEventCount, frameOffset);
         currentFrameEventCount++;
     }
 
@@ -422,7 +444,7 @@ public final class CpcGateArrayDevice {
     }
 
     private int frameOffset() {
-        return (int) Math.floorMod(elapsedTStates, FRAME_TSTATES);
+        return (int) (elapsedTStates - passOriginTState);
     }
 
     private static int displayByteFrameOffset(int frameLine, int byteColumn) {
