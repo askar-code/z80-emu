@@ -42,6 +42,35 @@ All probe options are Java system properties. Pass them before `--args`.
 - `z8emu.probeAutostart=false`: skip the 128K tape-loader menu flow and just play tape.
 - `z8emu.probeMenuPressFrames`: frames to hold Enter on the 128K tape-loader menu.
 
+### Turning a probe into a gate
+
+Without expectations the launcher prints `status=unverified`, even when it
+reaches its t-state limit successfully. Add one or more positive expectations
+to make a mismatch fail the Gradle task with a non-zero exit code:
+
+- `z8emu.probeExpectPc=0x880E`
+- `z8emu.probeExpectEof=true`
+- `z8emu.probeExpectBlock=6`
+- `z8emu.probeExpectTotalBlocks=6`
+- `z8emu.probeExpectFrameCrc=89ABCDEF` (eight hexadecimal CRC32 digits)
+
+The final `result` line always reports the actual PC, EOF state, tape block and
+whole-frame CRC32. Freeze an expectation only after repeating the same scenario
+and confirming that the result is deterministic.
+
+The optional verification wall contains two such cold-start scenarios when
+their gitignored media are present:
+
+```bash
+./gradlew :app-desktop:spectrum48TapeSmoke :app-desktop:spectrum128TapeSmoke
+```
+
+The 48K task loads the original GOTHIK TZX through its preserved inter-stage
+pause and checks the real title screen. `GothikMultipassRegressionTest` also
+checks gameplay and the converted TAP's explicit rewind/replay flow. The 128K
+task loads Stormlord, defines keyboard controls, enters gameplay and checks the
+whole-frame CRC.
+
 ## Keyboard Input After Load
 
 Use `z8emu.probePostEofKeys` to press keys after tape EOF. Each entry is
@@ -99,15 +128,18 @@ focused regression test under `machines/spectrum/src/test/java`.
 Robocop side A has a regular regression test:
 
 ```bash
-./gradlew :machine-spectrum:test --tests '*RobocopSideARegressionTest'
+./gradlew :machine-spectrum:externalMediaTest --tests '*RobocopSideARegressionTest'
 ```
+
+This test is deliberately outside the hermetic unit suite because it requires
+the gitignored `media/128.rom` and `media/RobocopA.tzx` files.
 
 Use the headless probe when the test failure needs visual evidence or a
 PC/memory trace:
 
 ```bash
 ./gradlew :app-desktop:spectrumTapeProbe \
-  -Dz8emu.probeMaxTStates=1400000000 \
+  -Dz8emu.probeMaxTStates=2100000000 \
   -Dz8emu.probePostEofTStates=200000000 \
   -Dz8emu.probePostEofKeys='3:0:12' \
   --args='media/128.rom media/RobocopA.tzx /tmp/z8-emu-robocop'

@@ -14,7 +14,7 @@ public final class DesktopLauncher {
         DesktopMachineDefinitions.forKind(config.machineKind()).open(config);
     }
 
-    private static DesktopLaunchConfig createLaunchConfig(String[] args) throws IOException {
+    static DesktopLaunchConfig createLaunchConfig(String[] args) throws IOException {
         if (args.length == 0) {
             return DesktopMachineDefinitions.demoConfig();
         }

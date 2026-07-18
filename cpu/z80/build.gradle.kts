@@ -29,3 +29,29 @@ val zexTest by tasks.registering(Test::class) {
         includeTags("zex")
     }
 }
+
+val zexDocTest by tasks.registering(Test::class) {
+    description = "Runs the documented Z80 instruction reference test."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("zex")
+    }
+    filter {
+        includeTestsMatching("*ZexHarnessTest.zexdocCompletes")
+    }
+}
+
+val zexAllTest by tasks.registering(Test::class) {
+    description = "Runs the strict documented and undocumented Z80 instruction reference test."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("zex")
+    }
+    filter {
+        includeTestsMatching("*ZexHarnessTest.zexallCompletes")
+    }
+}

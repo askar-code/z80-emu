@@ -1,6 +1,7 @@
 package dev.z8emu.machine.spectrum;
 
 import dev.z8emu.machine.spectrum128k.Spectrum128Board;
+import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.Spectrum48kBoard;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.platform.time.TStateCounter;
@@ -21,7 +22,15 @@ class SpectrumBusIoTest {
         memory.write(0x4001, 0x56);
         memory.write(0x5801, 0x78);
 
-        clock.advance(14_347);
+        assertEquals(
+                board.modelConfig().contentionStartTState() + 3,
+                board.modelConfig().floatingBusDisplayStartTState()
+        );
+        // A Z80 I/O read samples the bus in its data phase, three t-states
+        // after the nominal cycle start represented by the machine clock.
+        clock.advance(SpectrumUlaDevice.FLOATING_BUS_DISPLAY_START_48K - 4);
+        assertEquals(0xFF, bus.readPort(0xFFFF));
+        clock.advance(1);
         assertEquals(0x12, bus.readPort(0xFFFF));
         clock.advance(1);
         assertEquals(0x34, bus.readPort(0xFFFF));
@@ -31,6 +40,16 @@ class SpectrumBusIoTest {
         assertEquals(0x78, bus.readPort(0xFFFF));
         clock.advance(1);
         assertEquals(0xFF, bus.readPort(0xFFFF));
+        clock.advance(3);
+        assertEquals(0xFF, bus.readPort(0xFFFF));
+
+        clock.advance(1);
+        memory.write(0x4002, 0x9A);
+        assertEquals(0x9A, bus.readPort(0xFFFF), "next eight-t-state fetch group must advance by two bytes");
+
+        memory.write(0x4100, 0xA5);
+        clock.advance(board.modelConfig().tStatesPerScanline() - 8);
+        assertEquals(0xA5, bus.readPort(0xFFFF), "next display line must use Spectrum bitmap interleave");
     }
 
     @Test
@@ -47,10 +66,24 @@ class SpectrumBusIoTest {
         memory.ramBank(5).write(0, 0x9A);
         memory.ramBank(5).write(0x1800, 0xBC);
 
-        clock.advance(14_368);
-        assertEquals(0x9A, bus.readPort(0x7FFD));
+        assertEquals(
+                board.modelConfig().contentionStartTState() + 3,
+                board.modelConfig().floatingBusDisplayStartTState()
+        );
+        // Keep this floating-bus probe independent of I/O contention: 0xFFFF
+        // is odd, unmapped and has an uncontended high byte on the 128K model.
+        clock.advance(SpectrumUlaDevice.FLOATING_BUS_DISPLAY_START_128K - 3);
+        assertEquals(0x9A, bus.readPort(0xFFFF));
         clock.advance(1);
-        assertEquals(0xBC, bus.readPort(0x7FFD));
+        assertEquals(0xBC, bus.readPort(0xFFFF));
+
+        board.cpuBus().writePort(0x7FFD, 0x08);
+        memory.ramBank(7).write(0, 0x5A);
+        memory.ramBank(7).write(0x1800, 0xC3);
+        clock.advance(board.modelConfig().frameTStates() - 1);
+        assertEquals(0x5A, bus.readPort(0xFFFF), "shadow screen bank must drive the next frame's floating bus");
+        clock.advance(1);
+        assertEquals(0xC3, bus.readPort(0xFFFF));
     }
 
     @Test

@@ -12,8 +12,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CpcPrinceTransitionTest {
-    private static final long LOCKED_TRANSITION_CRC = 0xD8C9A44BL;
-    private static final long LOCKED_RED_FLASH_CRC = 0x6DA07FC9L;
+    // Relocked after two identical runs with exact Z80 internal phases: the
+    // CPC bus still adds no internal wait, but later accesses align correctly.
+    private static final long LOCKED_TRANSITION_CRC = 0x21A46C76L;
+    private static final long LOCKED_RED_FLASH_CRC = 0x089B5833L;
 
     @Test
     void roomTransitionKeepsDisplayPhaseStableWhilePreservingRedFlash() throws Exception {

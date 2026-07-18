@@ -4,6 +4,7 @@ import dev.z8emu.cpu.z80.Z80Cpu;
 import dev.z8emu.machine.spectrum128k.Spectrum128Board;
 import dev.z8emu.machine.spectrum48k.Spectrum48kBoard;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
+import dev.z8emu.platform.bus.CpuBus.InternalCycleType;
 import dev.z8emu.platform.time.TStateCounter;
 import org.junit.jupiter.api.Test;
 
@@ -97,7 +98,33 @@ class SpectrumBusContentionTest {
         cpu.registers().setBc(0x0001);
         clock.advance(14_350);
 
-        assertEquals(22, cpu.runInstruction());
+        assertEquals(27, cpu.runInstruction());
         assertEquals(0x3C, memory.read(0x4000));
+    }
+
+    @Test
+    void spectrum48kSequentiallyContendsEveryInternalNoMreqCycle() {
+        byte[] rom = new byte[Spectrum48kMemoryMap.ROM_SIZE];
+        rom[0] = 0x09; // ADD HL,BC: seven read-no-MREQ cycles on IR.
+        TStateCounter clock = new TStateCounter();
+        Spectrum48kBoard board = new Spectrum48kBoard(rom, clock);
+        Z80Cpu cpu = new Z80Cpu(board.cpuBus());
+        cpu.registers().setI(0x40);
+        cpu.registers().setBc(1);
+        clock.advance(14_331);
+
+        assertEquals(35, cpu.runInstruction());
+        assertEquals(24, board.cpuBus().internalCycleWaitStates(
+                0x4001,
+                4,
+                7,
+                InternalCycleType.READ_NO_MREQ
+        ));
+        assertEquals(0, board.cpuBus().internalCycleWaitStates(
+                0x4001,
+                4,
+                7,
+                InternalCycleType.INTERRUPT_ACKNOWLEDGE
+        ));
     }
 }

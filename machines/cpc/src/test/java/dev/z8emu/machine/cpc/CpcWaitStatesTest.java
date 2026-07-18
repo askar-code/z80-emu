@@ -79,8 +79,9 @@ class CpcWaitStatesTest {
         // Fetch at 0, low byte at 4, high byte at 7: one wait before the high byte.
         assertEquals(11, rig(JP, 0x05, 0x00).runInstruction());
 
-        // Reads add 0+0+1 waits and the two stack pushes add 1+1: 17+3.
-        assertEquals(20, rig(CALL, 0x05, 0x00).runInstruction());
+        // The high-byte read adds one wait. CALL's restored internal t-state
+        // aligns the first push; only the second push adds another wait.
+        assertEquals(19, rig(CALL, 0x05, 0x00).runInstruction());
 
         // Fetch at 0, operand at 4, port write at 7: 11+1.
         assertEquals(12, rig(OUT_IMMEDIATE_A, 0x00).runInstruction());

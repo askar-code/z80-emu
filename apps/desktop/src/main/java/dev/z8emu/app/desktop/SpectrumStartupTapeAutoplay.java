@@ -3,58 +3,119 @@ package dev.z8emu.app.desktop;
 import dev.z8emu.machine.spectrum.SpectrumMachine;
 
 final class SpectrumStartupTapeAutoplay {
-    private final SpectrumMachine machine;
-    private final DesktopLaunchConfig config;
-    private final SpectrumDesktopRunner.HostKeyTyper hostKeyTyper;
+    private static final int[][] ENTER = {{6, 0}};
+    private static final int[][] LOAD_KEYWORD = {{6, 3}};
+    private static final int[][] DOUBLE_QUOTE = {{7, 1}, {5, 0}};
+    private static final int COMMAND_PRESS_FRAMES = 4;
+    private static final int COMMAND_GAP_FRAMES = 6;
 
-    private boolean pending;
+    private final SpectrumMachine machine;
+    private final SpectrumDesktopRunner.HostKeyTyper hostKeyTyper;
+    private final int menuPressFrames;
+    private final int menuGapFrames;
+    private final int playDelayFrames;
+
+    private Phase phase = Phase.IDLE;
 
     SpectrumStartupTapeAutoplay(
             SpectrumMachine machine,
-            DesktopLaunchConfig config,
             SpectrumDesktopRunner.HostKeyTyper hostKeyTyper
     ) {
+        this(machine, hostKeyTyper, 12, 6, 0);
+    }
+
+    SpectrumStartupTapeAutoplay(
+            SpectrumMachine machine,
+            SpectrumDesktopRunner.HostKeyTyper hostKeyTyper,
+            int menuPressFrames,
+            int menuGapFrames,
+            int playDelayFrames
+    ) {
         this.machine = machine;
-        this.config = config;
         this.hostKeyTyper = hostKeyTyper;
+        this.menuPressFrames = Math.max(1, menuPressFrames);
+        this.menuGapFrames = Math.max(0, menuGapFrames);
+        this.playDelayFrames = Math.max(0, playDelayFrames);
     }
 
     void armIfNeeded() {
-        if (!hasLoadedTape()) {
-            pending = false;
+        if (!machine.board().tape().isLoaded()) {
+            phase = Phase.IDLE;
             return;
         }
 
-        pending = true;
-        if (machine.board().modelConfig().pagingSupported()) {
-            // On 128K the boot menu highlights Tape Loader by default, so a single
-            // synthetic Enter plus an app-side wait for the ROM loader routine
-            // reproduces the common desktop flow without coupling autoplay to
-            // EAR sampling in the machine core.
-            hostKeyTyper.queueChord(new int[][]{{6, 0}}, 12, 6);
-        }
+        phase = Phase.WAITING_FOR_BOOT_PROMPT;
     }
 
     void cancel() {
-        pending = false;
+        phase = Phase.IDLE;
     }
 
     void tick() {
-        if (!pending || !hasLoadedTape()) {
+        if (phase == Phase.IDLE) {
+            return;
+        }
+        if (!machine.board().tape().isLoaded()) {
+            phase = Phase.IDLE;
             return;
         }
         if (machine.board().tape().isPlaying()) {
-            pending = false;
+            phase = Phase.IDLE;
             return;
         }
-        if (!SpectrumTapeAutostartSupport.isLoaderReadyForPlayback(machine)) {
+
+        if (phase == Phase.WAITING_FOR_BOOT_PROMPT) {
+            if (!SpectrumTapeAutostartSupport.isBootPromptReadyForAutostart(machine)) {
+                return;
+            }
+            queueBootCommand();
+            phase = Phase.WAITING_FOR_KEYS;
             return;
         }
-        machine.board().tape().play();
-        pending = false;
+
+        if (phase == Phase.WAITING_FOR_KEYS) {
+            if (!hostKeyTyper.isIdle()) {
+                return;
+            }
+            phase = Phase.WAITING_FOR_LOADER;
+        }
+
+        if (phase == Phase.WAITING_FOR_LOADER
+                && SpectrumTapeAutostartSupport.isLoaderReadyForPlayback(machine)) {
+            machine.board().tape().play();
+            phase = Phase.IDLE;
+        }
     }
 
-    private boolean hasLoadedTape() {
-        return config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class).isPresent();
+    boolean pending() {
+        return phase != Phase.IDLE;
+    }
+
+    Phase phase() {
+        return phase;
+    }
+
+    private void queueBootCommand() {
+        if (machine.board().modelConfig().pagingSupported()) {
+            hostKeyTyper.queueChord(ENTER, menuPressFrames, menuGapFrames);
+            if (playDelayFrames > 0) {
+                hostKeyTyper.queuePause(playDelayFrames);
+            }
+            return;
+        }
+
+        // In 48K keyword mode J enters the LOAD token. Symbol Shift+P types a
+        // quote, so this is the ROM-native LOAD "" command followed by Enter.
+        hostKeyTyper.queueChord(LOAD_KEYWORD, COMMAND_PRESS_FRAMES, COMMAND_GAP_FRAMES);
+        hostKeyTyper.queueChord(DOUBLE_QUOTE, COMMAND_PRESS_FRAMES, COMMAND_GAP_FRAMES);
+        hostKeyTyper.queueChord(DOUBLE_QUOTE, COMMAND_PRESS_FRAMES, COMMAND_GAP_FRAMES);
+        hostKeyTyper.queueChord(ENTER, COMMAND_PRESS_FRAMES, COMMAND_GAP_FRAMES);
+    }
+
+    enum Phase {
+        IDLE,
+        WAITING_FOR_BOOT_PROMPT,
+        WAITING_FOR_KEYS,
+        WAITING_FOR_LOADER
     }
 }

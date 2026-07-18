@@ -7,7 +7,6 @@ import java.util.Objects;
 public final class SpectrumPagingController {
     private static final int PAGING_PORT_MASK = 0x8002;
     private static final int PAGING_PORT_VALUE = 0x0000;
-    private static final int BANKM_SYSTEM_VARIABLE = 0x5B5C;
     private static final IoSelector PAGING_PORT_SELECTOR = IoSelector.mask(PAGING_PORT_MASK, PAGING_PORT_VALUE);
 
     private final SpectrumModelConfig config;
@@ -46,7 +45,6 @@ public final class SpectrumPagingController {
         }
 
         memory.applyState();
-        syncBankmSystemVariable(normalized);
         return true;
     }
 
@@ -62,10 +60,4 @@ public final class SpectrumPagingController {
         return PAGING_PORT_SELECTOR.matches(port);
     }
 
-    private void syncBankmSystemVariable(int pagingValue) {
-        if (!config.pagingSupported()) {
-            return;
-        }
-        memory.write(BANKM_SYSTEM_VARIABLE, pagingValue);
-    }
 }

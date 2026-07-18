@@ -4,6 +4,7 @@ import dev.z8emu.machine.spectrum.SpectrumBusBase;
 import dev.z8emu.machine.spectrum.model.SpectrumModelConfig;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
+import dev.z8emu.machine.spectrum48k.device.KempstonJoystickDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
@@ -15,6 +16,7 @@ public final class Spectrum48kBus extends SpectrumBusBase {
             Spectrum48kMemoryMap memory,
             SpectrumUlaDevice ula,
             KeyboardMatrixDevice keyboard,
+            KempstonJoystickDevice kempstonJoystick,
             BeeperDevice beeper,
             TapeDevice tape,
             SpectrumModelConfig modelConfig
@@ -24,6 +26,7 @@ public final class Spectrum48kBus extends SpectrumBusBase {
                 memory,
                 ula,
                 keyboard,
+                kempstonJoystick,
                 beeper,
                 tape,
                 modelConfig.frameTStates(),

@@ -23,6 +23,7 @@ tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir
     listOf(
         "z8emu.tapeTurboFrames",
+        "z8emu.spectrum.joystick",
     ).forEach { name ->
         providers.systemProperty(name).orNull?.let { value ->
             systemProperty(name, value)
@@ -39,6 +40,127 @@ tasks.register<JavaExec>("spectrumTapeProbe") {
     systemProperties(System.getProperties().stringPropertyNames()
         .filter { it.startsWith("z8emu.") }
         .associateWith { System.getProperty(it) })
+}
+
+tasks.register<JavaExec>("spectrumRomProbe") {
+    group = "application"
+    description = "Runs the headless Spectrum 48K/128K ROM probe launcher."
+    mainClass.set("dev.z8emu.app.desktop.RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+}
+
+tasks.register<JavaExec>("spectrum48RomSmoke") {
+    group = "verification"
+    description = "Boots an optional external 48K ROM to its BASIC input loop and checks the frame CRC."
+    mainClass.set("dev.z8emu.app.desktop.RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    val romPath = providers.gradleProperty("spectrum.48.rom").orElse("media/48.rom").get()
+    val romFile = rootProject.file(romPath)
+    onlyIf {
+        val available = romFile.isFile
+        if (!available) {
+            logger.lifecycle("Skipping spectrum48RomSmoke: optional ROM not found at $romPath")
+        }
+        available
+    }
+    args(
+        romPath,
+        "2000000",
+        "--stop-pc=0x15DE",
+        "--expect-frame-crc=A6E9608F",
+        "--dump-frame=build/spectrum/48k-rom.png",
+    )
+}
+
+tasks.register<JavaExec>("spectrum128RomSmoke") {
+    group = "verification"
+    description = "Boots an optional external 128K ROM to its Tape Loader menu and checks the frame CRC."
+    mainClass.set("dev.z8emu.app.desktop.RomProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    val romPath = providers.gradleProperty("spectrum.128.rom").orElse("media/128.rom").get()
+    val romFile = rootProject.file(romPath)
+    onlyIf {
+        val available = romFile.isFile
+        if (!available) {
+            logger.lifecycle("Skipping spectrum128RomSmoke: optional ROM not found at $romPath")
+        }
+        available
+    }
+    args(
+        romPath,
+        "2000000",
+        "--stop-pc=0x3685",
+        "--expect-frame-crc=A3BE0D95",
+        "--dump-frame=build/spectrum/128k-rom.png",
+    )
+}
+
+tasks.register<JavaExec>("spectrum48TapeSmoke") {
+    group = "verification"
+    description = "Cold-starts the optional original GOTHIK TZX and checks its real title screen."
+    mainClass.set("dev.z8emu.app.desktop.SpectrumTapeProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    val romPath = providers.gradleProperty("spectrum.48.rom").orElse("media/48.rom").get()
+    val tapePath = providers.gradleProperty("spectrum.48.tape").orElse("media/GOTHIK.TZX").get()
+    val romFile = rootProject.file(romPath)
+    val tapeFile = rootProject.file(tapePath)
+    onlyIf {
+        val available = romFile.isFile && tapeFile.isFile
+        if (!available) {
+            logger.lifecycle("Skipping spectrum48TapeSmoke: optional ROM/tape not found at $romPath and $tapePath")
+        }
+        available
+    }
+    systemProperties(
+        mapOf(
+            "z8emu.probeMaxTStates" to "1400000000",
+            "z8emu.probePostEofTStates" to "8386560",
+            "z8emu.probeMilestones" to "1400000001",
+            "z8emu.probeExpectPc" to "0xB436",
+            "z8emu.probeExpectEof" to "true",
+            "z8emu.probeExpectBlock" to "162",
+            "z8emu.probeExpectTotalBlocks" to "162",
+            "z8emu.probeExpectFrameCrc" to "97CEB405",
+        )
+    )
+    args(romPath, tapePath, "build/spectrum/gothik-48k-tzx")
+}
+
+tasks.register<JavaExec>("spectrum128TapeSmoke") {
+    group = "verification"
+    description = "Cold-starts optional Stormlord 128K media, enters gameplay, and checks the whole-frame CRC."
+    mainClass.set("dev.z8emu.app.desktop.SpectrumTapeProbeLauncher")
+    classpath = sourceSets.main.get().runtimeClasspath
+    workingDir = rootProject.projectDir
+    val romPath = providers.gradleProperty("spectrum.128.rom").orElse("media/128.rom").get()
+    val tapePath = providers.gradleProperty("spectrum.128.tape").orElse("media/STRML128.TAP").get()
+    val romFile = rootProject.file(romPath)
+    val tapeFile = rootProject.file(tapePath)
+    onlyIf {
+        val available = romFile.isFile && tapeFile.isFile
+        if (!available) {
+            logger.lifecycle("Skipping spectrum128TapeSmoke: optional ROM/tape not found at $romPath and $tapePath")
+        }
+        available
+    }
+    systemProperties(
+        mapOf(
+            "z8emu.probeMaxTStates" to "1500000000",
+            "z8emu.probePostEofTStates" to "200000000",
+            "z8emu.probeMilestones" to "1500000001",
+            "z8emu.probePostEofKeys" to "3:0:10,5:1:10,5:0:10,2:0:10,1:0:10,7:0:10,7:0:30",
+            "z8emu.probeExpectPc" to "0x8F46",
+            "z8emu.probeExpectEof" to "true",
+            "z8emu.probeExpectBlock" to "6",
+            "z8emu.probeExpectTotalBlocks" to "6",
+            "z8emu.probeExpectFrameCrc" to "310D3A7E",
+        )
+    )
+    args(romPath, tapePath, "build/spectrum/stormlord-128k")
 }
 
 tasks.register<JavaExec>("apple2RomProbe") {

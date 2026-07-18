@@ -43,6 +43,7 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
         for (int i = 0; i < ramBanks.length; i++) {
             ramBanks[i] = new RamMemoryBank(RAM_BANK_SIZE);
         }
+        initializePowerOnRam();
         applyState();
     }
 
@@ -74,7 +75,9 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
 
     @Override
     public void reset() {
-        addressSpace.reset();
+        // The Spectrum RESET line does not clear DRAM. Paging state is reset by
+        // the board before this method is called; remap that state while keeping
+        // every physical RAM bank intact, including banks not visible to the CPU.
         applyState();
     }
 
@@ -134,6 +137,31 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
         };
     }
 
+    /**
+     * Returns whether a CPU-visible address currently maps the RAM bank and
+     * offset from which the ULA is fetching display data.
+     */
+    public boolean isActiveDisplayAddress(int address) {
+        int normalized = address & 0xFFFF;
+        if (normalized < ROM_SIZE) {
+            return false;
+        }
+
+        int offsetInBank = normalized & (RAM_BANK_SIZE - 1);
+        if (offsetInBank >= 0x1B00) {
+            return false;
+        }
+
+        int slot = normalized / ROM_SIZE;
+        int mappedBank = switch (slot) {
+            case 1 -> config.fixedLowerRamBankIndex();
+            case 2 -> config.fixedMiddleRamBankIndex();
+            case 3 -> state.topRamBankIndex();
+            default -> -1;
+        };
+        return mappedBank == state.activeScreenBankIndex();
+    }
+
     @Override
     public int readDisplayMemory(int address) {
         int normalized = address & 0xFFFF;
@@ -147,6 +175,14 @@ public final class Spectrum48kMemoryMap implements AddressSpace, SpectrumDisplay
 
     private boolean isContendedBank(int bankIndex) {
         return (bankIndex & 0x01) != 0;
+    }
+
+    private void initializePowerOnRam() {
+        // Real power-on DRAM contents are undefined. Use an explicit zero-fill
+        // policy so a newly constructed emulated machine is reproducible.
+        for (RamMemoryBank ramBank : ramBanks) {
+            ramBank.reset();
+        }
     }
 
     @FunctionalInterface

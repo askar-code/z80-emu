@@ -6,13 +6,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+@Tag("external-media")
 class RobocopSideARegressionTest {
     private static final int BROKEN_SYSTEM_MENU_FRAME_HASH = 1_214_964_145;
+    private static final int CONTROL_SELECTION_FRAME_HASH = 1_281_281_213;
+    private static final int KEYBOARD_GAME_FRAME_HASH = -1_004_593_151;
     private static final int TAPE_LOADER_MENU_PC = 0x3685;
     private static final long MENU_TIMEOUT_TSTATES = 20_000_000L;
     private static final long POST_EOF_TSTATES = 100_000_000L;
@@ -20,13 +26,21 @@ class RobocopSideARegressionTest {
     private static final int ENTER_COLUMN = 0;
     private static final int KEY_1_ROW = 3;
     private static final int KEY_1_COLUMN = 0;
+    private static final int CONTROL_KEY_PRESS_FRAMES = 12;
+    private static final int GAME_SCENE_TIMEOUT_FRAMES = 120;
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
     void choosingKeyboardControlsAfterRobocopSideALoadDoesNotDropToSystemMenu() throws Exception {
         Path projectRoot = findProjectRoot();
-        Spectrum128Machine machine = new Spectrum128Machine(Files.readAllBytes(projectRoot.resolve("media/128.rom")));
-        machine.board().tape().load(TapeLoaders.load(projectRoot.resolve("media/RobocopA.tzx")));
+        Path romPath = projectRoot.resolve("media/128.rom");
+        Path tapePath = projectRoot.resolve("media/RobocopA.tzx");
+        assumeTrue(
+                Files.isRegularFile(romPath) && Files.isRegularFile(tapePath),
+                "Optional Spectrum external-media test requires media/128.rom and media/RobocopA.tzx"
+        );
+        Spectrum128Machine machine = new Spectrum128Machine(Files.readAllBytes(romPath));
+        machine.board().tape().load(TapeLoaders.load(tapePath));
 
         waitForPc(machine, TAPE_LOADER_MENU_PC, MENU_TIMEOUT_TSTATES);
         pressKey(machine, ENTER_ROW, ENTER_COLUMN, 12);
@@ -41,8 +55,21 @@ class RobocopSideARegressionTest {
                 beforeSelectionHash,
                 "Scenario never reached the post-load control-selection screen"
         );
+        assertEquals(
+                CONTROL_SELECTION_FRAME_HASH,
+                beforeSelectionHash,
+                "Robocop side A no longer reaches the expected control-selection scene"
+        );
 
-        pressKey(machine, KEY_1_ROW, KEY_1_COLUMN, 3);
+        pressKeyAndWaitForFrameHash(
+                machine,
+                KEY_1_ROW,
+                KEY_1_COLUMN,
+                CONTROL_KEY_PRESS_FRAMES,
+                GAME_SCENE_TIMEOUT_FRAMES,
+                KEYBOARD_GAME_FRAME_HASH,
+                BROKEN_SYSTEM_MENU_FRAME_HASH
+        );
 
         int afterSelectionHash = frameHash(machine);
         assertNotEquals(
@@ -53,18 +80,24 @@ class RobocopSideARegressionTest {
                         + " t=" + machine.currentTState()
                         + " frameHash=" + afterSelectionHash
         );
+        assertEquals(
+                KEYBOARD_GAME_FRAME_HASH,
+                afterSelectionHash,
+                "Robocop side A no longer enters the expected keyboard-controlled game scene; "
+                        + "pc=0x" + hex16(machine.cpu().registers().pc())
+                        + " t=" + machine.currentTState()
+        );
     }
 
     private static Path findProjectRoot() throws IOException {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null) {
-            if (Files.isRegularFile(current.resolve("media/128.rom"))
-                    && Files.isRegularFile(current.resolve("media/RobocopA.tzx"))) {
+            if (Files.isRegularFile(current.resolve("settings.gradle.kts"))) {
                 return current;
             }
             current = current.getParent();
         }
-        throw new IOException("Could not locate project root with media/128.rom and media/RobocopA.tzx");
+        throw new IOException("Could not locate project root containing settings.gradle.kts");
     }
 
     private static void waitForPc(Spectrum128Machine machine, int targetPc, long maxTStates) {
@@ -94,6 +127,52 @@ class RobocopSideARegressionTest {
         runFrames(machine, frames);
         machine.board().keyboard().setKeyPressed(row, column, false);
         runFrames(machine, frames);
+    }
+
+    private static void pressKeyAndWaitForFrameHash(
+            Spectrum128Machine machine,
+            int row,
+            int column,
+            int pressFrames,
+            int maxFrames,
+            int expectedFrameHash,
+            int forbiddenFrameHash
+    ) {
+        machine.board().keyboard().setKeyPressed(row, column, true);
+        boolean released = false;
+        int lastFrameHash = frameHash(machine);
+        try {
+            for (int frame = 1; frame <= maxFrames; frame++) {
+                if (!released && frame > pressFrames) {
+                    machine.board().keyboard().setKeyPressed(row, column, false);
+                    released = true;
+                }
+
+                runFrames(machine, 1);
+                lastFrameHash = frameHash(machine);
+                if (lastFrameHash == forbiddenFrameHash) {
+                    throw new AssertionError(
+                            "Robocop entered the forbidden system-menu scene before gameplay; "
+                                    + "frame=" + frame
+                                    + " pc=0x" + hex16(machine.cpu().registers().pc())
+                                    + " t=" + machine.currentTState()
+                    );
+                }
+                if (lastFrameHash == expectedFrameHash) {
+                    return;
+                }
+            }
+        } finally {
+            machine.board().keyboard().setKeyPressed(row, column, false);
+        }
+
+        throw new AssertionError(
+                "Timed out waiting for Robocop keyboard-game scene; "
+                        + "frames=" + maxFrames
+                        + " pc=0x" + hex16(machine.cpu().registers().pc())
+                        + " t=" + machine.currentTState()
+                        + " frameHash=" + lastFrameHash
+        );
     }
 
     private static void runFrames(Spectrum128Machine machine, int frames) {

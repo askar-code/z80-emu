@@ -1,6 +1,7 @@
 package dev.z8emu.machine.spectrum128k;
 
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
+import dev.z8emu.machine.spectrum48k.device.KempstonJoystickDevice;
 import dev.z8emu.platform.time.TStateCounter;
 import dev.z8emu.platform.video.FrameBuffer;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,25 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Spectrum128MachineTest {
+    @Test
+    void kempstonAndAyReadsUseWiredAndAcrossPartialDecoderOverlap() {
+        Spectrum128Machine machine = new Spectrum128Machine(
+                new byte[Spectrum128Machine.ROM_BANK_SIZE],
+                new byte[Spectrum128Machine.ROM_BANK_SIZE]
+        );
+        writeAy(machine, 8, 0x1D);
+
+        KempstonJoystickDevice joystick = machine.board().kempstonJoystick();
+        joystick.setEnabled(true);
+        joystick.setInputState(KempstonJoystickDevice.LEFT | KempstonJoystickDevice.FIRE);
+
+        assertEquals(0x10, machine.board().cpuBus().readPort(0xC01D));
+        assertEquals(0x10, machine.board().cpuBus().readPort(0xC01C));
+
+        joystick.setEnabled(false);
+        assertEquals(0x1D, machine.board().cpuBus().readPort(0xC01D));
+    }
+
     @Test
     void defaultsToRom0Bank0AndScreenBank5() {
         byte[] rom0 = new byte[Spectrum128Machine.ROM_BANK_SIZE];

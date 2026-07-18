@@ -11,6 +11,7 @@ import javax.swing.JPanel;
 
 final class FrameDisplayPanel extends JPanel {
     private final BufferedImage image;
+    private final Object imageLock = new Object();
 
     FrameDisplayPanel(int width, int height, int scale) {
         this(width, height, scale, scale);
@@ -22,8 +23,10 @@ final class FrameDisplayPanel extends JPanel {
     }
 
     void present(FrameBuffer frameBuffer) {
-        int[] target = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-        System.arraycopy(frameBuffer.pixels(), 0, target, 0, target.length);
+        synchronized (imageLock) {
+            int[] target = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+            System.arraycopy(frameBuffer.pixels(), 0, target, 0, target.length);
+        }
     }
 
     @Override
@@ -33,7 +36,12 @@ final class FrameDisplayPanel extends JPanel {
         Graphics2D g2 = (Graphics2D) graphics.create();
         try {
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-            g2.drawImage(image, 0, 0, getWidth(), getHeight(), null);
+            // Turbo runners publish the next frame concurrently with Swing's EDT.
+            // Keep each paint tied to one complete published image instead of
+            // exposing a partially copied raster.
+            synchronized (imageLock) {
+                g2.drawImage(image, 0, 0, getWidth(), getHeight(), null);
+            }
         } finally {
             g2.dispose();
         }

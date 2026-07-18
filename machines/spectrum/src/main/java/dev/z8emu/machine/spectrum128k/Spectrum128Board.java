@@ -7,6 +7,7 @@ import dev.z8emu.machine.spectrum.model.SpectrumModelConfig;
 import dev.z8emu.machine.spectrum.model.SpectrumPagingController;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
+import dev.z8emu.machine.spectrum48k.device.KempstonJoystickDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
@@ -22,6 +23,7 @@ public final class Spectrum128Board implements SpectrumBoard {
     private final SpectrumMachineState machineState;
     private final Spectrum48kMemoryMap memory;
     private final KeyboardMatrixDevice keyboard;
+    private final KempstonJoystickDevice kempstonJoystick;
     private final BeeperDevice beeper;
     private final Ay38912Device ay;
     private final PcmMonoSource audio;
@@ -36,6 +38,7 @@ public final class Spectrum128Board implements SpectrumBoard {
         this.memory = new Spectrum48kMemoryMap(modelConfig, machineState, rom0Image, rom1Image);
         SpectrumPagingController pagingController = new SpectrumPagingController(modelConfig, machineState, memory);
         this.keyboard = new KeyboardMatrixDevice();
+        this.kempstonJoystick = new KempstonJoystickDevice();
         this.beeper = new BeeperDevice(modelConfig.cpuClockHz());
         this.ay = new Ay38912Device(modelConfig.cpuClockHz());
         this.audio = new MixedPcmMonoSource(beeper, ay);
@@ -43,9 +46,21 @@ public final class Spectrum128Board implements SpectrumBoard {
         this.ula = new SpectrumUlaDevice(
                 modelConfig.frameTStates(),
                 modelConfig.scanlinesPerFrame(),
-                modelConfig.floatingBusDisplayStartTState()
+                modelConfig.floatingBusDisplayStartTState(),
+                modelConfig.firstDisplayPixelTState()
         );
-        this.bus = new Spectrum128Bus(clock, memory, pagingController, ula, keyboard, beeper, tape, ay, modelConfig);
+        this.bus = new Spectrum128Bus(
+                clock,
+                memory,
+                pagingController,
+                ula,
+                keyboard,
+                kempstonJoystick,
+                beeper,
+                tape,
+                ay,
+                modelConfig
+        );
     }
 
     @Override
@@ -58,19 +73,20 @@ public final class Spectrum128Board implements SpectrumBoard {
         machineState.reset();
         memory.reset();
         keyboard.reset();
+        kempstonJoystick.reset();
         beeper.reset();
         ay.reset();
         tape.reset();
         ula.reset();
+        bus.resetAudioTiming();
     }
 
     @Override
     public void onTStatesElapsed(int tStates, long currentTState) {
         keyboard.onTStatesElapsed(tStates);
-        beeper.onTStatesElapsed(tStates);
-        ay.onTStatesElapsed(tStates);
+        bus.syncAudioTo(currentTState);
         beeper.setTapeInputLevel(tape.syncAndReadEarLevel(currentTState));
-        ula.onTStatesElapsed(tStates, memory);
+        ula.syncToTState(currentTState, memory);
     }
 
     @Override
@@ -81,6 +97,11 @@ public final class Spectrum128Board implements SpectrumBoard {
     @Override
     public KeyboardMatrixDevice keyboard() {
         return keyboard;
+    }
+
+    @Override
+    public KempstonJoystickDevice kempstonJoystick() {
+        return kempstonJoystick;
     }
 
     @Override

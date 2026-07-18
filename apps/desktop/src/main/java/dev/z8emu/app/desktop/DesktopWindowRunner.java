@@ -38,6 +38,7 @@ final class DesktopWindowRunner {
         Throwable failure = null;
         long nextFrameDeadline = System.nanoTime();
         long frameDurationNanos = session.frameDurationNanos();
+        UiUpdateCoalescer turboUiUpdates = new UiUpdateCoalescer(javax.swing.SwingUtilities::invokeLater);
 
         while (running.get()) {
             try {
@@ -51,16 +52,16 @@ final class DesktopWindowRunner {
 
             session.presentFrame();
             Throwable currentFailure = failure;
-            if (!session.turboActive()) {
+            if (currentFailure != null || !session.turboActive()) {
                 DesktopRunnerSupport.invokeUiUpdate(
                         session.component(),
                         frame,
                         () -> frame.setTitle(session.title(currentFailure))
                 );
             } else {
-                javax.swing.SwingUtilities.invokeLater(() -> {
+                turboUiUpdates.request(() -> {
                     session.component().repaint();
-                    frame.setTitle(session.title(currentFailure));
+                    frame.setTitle(session.title(null));
                 });
             }
 

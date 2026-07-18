@@ -3,20 +3,23 @@ package dev.z8emu.cpu.z80;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZexHarnessTest {
+    private static final Pattern FAILURE_MARKER = Pattern.compile(
+            "\\b(?:ERROR|FAIL(?:ED|URE)?)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+
     @Test
     void prelimCompletesAsFastSmokeTest() throws Exception {
         ZexHarness.ZexResult result = ZexHarness.runResource("prelim.com", 200_000L);
 
-        assertTrue(result.finished(), "prelim.com should terminate via CP/M trap");
-        assertNull(result.failure(), () -> "prelim.com failed with output:\n" + result.output());
-        assertTrue(
-                result.output().contains("Preliminary tests complete"),
-                () -> "Unexpected prelim output:\n" + result.output()
-        );
+        assertSuccessful("prelim", result, "Preliminary tests complete");
     }
 
     @Test
@@ -24,9 +27,7 @@ class ZexHarnessTest {
     void zexdocCompletes() throws Exception {
         ZexHarness.ZexResult result = ZexHarness.runResource("zexdoc.cim", 8_000_000_000L);
 
-        assertTrue(result.finished(), () -> formatFailure("zexdoc", result));
-        assertNull(result.failure(), () -> formatFailure("zexdoc", result));
-        assertTrue(result.output().contains("Tests complete"), () -> "Unexpected zexdoc output:\n" + result.output());
+        assertSuccessful("zexdoc", result, "Tests complete");
     }
 
     @Test
@@ -34,9 +35,24 @@ class ZexHarnessTest {
     void zexallCompletes() throws Exception {
         ZexHarness.ZexResult result = ZexHarness.runResource("zexall.cim", 8_000_000_000L);
 
-        assertTrue(result.finished(), () -> formatFailure("zexall", result));
-        assertNull(result.failure(), () -> formatFailure("zexall", result));
-        assertTrue(result.output().contains("Tests complete"), () -> "Unexpected zexall output:\n" + result.output());
+        assertSuccessful("zexall", result, "Tests complete");
+    }
+
+    private static void assertSuccessful(
+            String name,
+            ZexHarness.ZexResult result,
+            String expectedCompletionText
+    ) {
+        assertTrue(result.finished(), () -> formatFailure(name, result));
+        assertNull(result.failure(), () -> formatFailure(name, result));
+        assertTrue(
+                result.output().contains(expectedCompletionText),
+                () -> formatFailure(name, result)
+        );
+        assertFalse(
+                FAILURE_MARKER.matcher(result.output()).find(),
+                () -> formatFailure(name, result)
+        );
     }
 
     private static String formatFailure(String name, ZexHarness.ZexResult result) {

@@ -13,6 +13,7 @@ abstract class AbstractFrameDesktopSession implements DesktopMachineSession {
     private final String audioThreadName;
     private final long frameDurationNanos;
     private PcmMonoAudioEngine audioEngine;
+    private boolean audioMuted;
     private AbstractHostKeyboardController keyboardController;
 
     protected AbstractFrameDesktopSession(
@@ -32,6 +33,9 @@ abstract class AbstractFrameDesktopSession implements DesktopMachineSession {
     public final void attachToFrame(JFrame frame) {
         attachMachine(frame);
         audioEngine = tryStartAudio(audioSource, audioThreadName);
+        if (audioEngine != null) {
+            audioEngine.setMuted(audioMuted);
+        }
     }
 
     @Override
@@ -97,6 +101,13 @@ abstract class AbstractFrameDesktopSession implements DesktopMachineSession {
 
     protected final void bindKeyboardController(AbstractHostKeyboardController controller) {
         this.keyboardController = controller;
+    }
+
+    protected final void setAudioMuted(boolean muted) {
+        audioMuted = muted;
+        if (audioEngine != null) {
+            audioEngine.setMuted(muted);
+        }
     }
 
     protected void attachMachine(JFrame frame) {

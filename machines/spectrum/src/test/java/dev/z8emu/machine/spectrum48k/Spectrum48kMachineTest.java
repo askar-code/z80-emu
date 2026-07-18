@@ -1,6 +1,7 @@
 package dev.z8emu.machine.spectrum48k;
 
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
+import dev.z8emu.machine.spectrum48k.device.KempstonJoystickDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import dev.z8emu.machine.spectrum48k.tape.TapeBlock;
 import dev.z8emu.machine.spectrum48k.tape.TapeFile;
@@ -14,6 +15,36 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Spectrum48kMachineTest {
+    @Test
+    void kempstonUsesStrictAliasesAndWiredAndOnEvenUlaOverlap() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+        KempstonJoystickDevice joystick = machine.board().kempstonJoystick();
+        joystick.setEnabled(true);
+        joystick.setInputState(
+                KempstonJoystickDevice.RIGHT
+                        | KempstonJoystickDevice.UP
+                        | KempstonJoystickDevice.FIRE
+        );
+
+        assertEquals(0x19, machine.board().cpuBus().readPort(0x001F));
+        assertEquals(0x19, machine.board().cpuBus().readPort(0xA51D));
+        assertEquals(0x19, machine.board().cpuBus().readPort(0x0000));
+
+        machine.board().keyboard().setKeyPressed(0, 0, true);
+        assertEquals(
+                0x18,
+                machine.board().cpuBus().readPort(0x0000),
+                "ULA and Kempston must both drive an even alias, combined by wired AND"
+        );
+    }
+
+    @Test
+    void disabledKempstonDoesNotReplaceFloatingBus() {
+        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
+
+        assertEquals(0xFF, machine.board().cpuBus().readPort(0x001F));
+    }
+
     @Test
     void outToPortFeUpdatesBorderAndBeeper() {
         byte[] rom = new byte[Spectrum48kMemoryMap.ROM_SIZE];
@@ -264,39 +295,21 @@ class Spectrum48kMachineTest {
     }
 
     @Test
-    void standardHeaderPauseKeepsCurrentLevelForPauseLeadIn() {
+    void pauseAfterPulseTrainFinishesHighThenSettlesEarLow() {
         Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
         machine.board().tape().load(new TapeFile(List.of(
-                TapeBlock.dataBlock(TapLoader.buildStandardDataPulses(8_063), 855, 1_710, 8, 100, new byte[19])
+                TapeBlock.dataBlock(new int[]{4, 4}, 0, 0, 0, 2, new byte[0])
         )));
 
         machine.board().tape().play();
-        machine.board().onTStatesElapsed(18_000_000, 18_000_000);
+        machine.board().onTStatesElapsed(8, 8);
 
         int pauseLeadIn = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
-        machine.board().onTStatesElapsed(3_500, 3_500);
+        machine.board().onTStatesElapsed(3_500, 3_508);
         int pauseSettled = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
 
-        assertEquals(pauseLeadIn, pauseSettled);
-    }
-
-    @Test
-    void standardDataPauseDoesNotInsertCustomLeadInEdge() {
-        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
-        byte[] data = new byte[64];
-        data[0] = (byte) 0xFF;
-        machine.board().tape().load(new TapeFile(List.of(
-                TapeBlock.dataBlock(TapLoader.buildStandardDataPulses(3_223), 855, 1_710, 8, 100, data)
-        )));
-
-        machine.board().tape().play();
-        machine.board().onTStatesElapsed(18_000_000, 18_000_000);
-
-        int pauseLeadIn = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
-        machine.board().onTStatesElapsed(3_500, 3_500);
-        int pauseSettled = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
-
-        assertEquals(pauseLeadIn, pauseSettled);
+        assertEquals(0xBF, pauseLeadIn);
+        assertEquals(0xFF, pauseSettled);
     }
 
     @Test
@@ -313,25 +326,6 @@ class Spectrum48kMachineTest {
         machine.board().onTStatesElapsed(3_500, 3_500);
 
         assertEquals(0xFF, machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape()));
-    }
-
-    @Test
-    void customTimedDataPauseKeepsCurrentLevelUntilBlockBoundary() {
-        Spectrum48kMachine machine = Spectrum48kMachine.withBlankRom();
-        machine.board().tape().load(new TapeFile(List.of(
-                TapeBlock.dataBlock(new int[0], 4, 8, 1, 100, new byte[]{(byte) 0x80})
-        )));
-
-        machine.board().tape().play();
-        machine.board().onTStatesElapsed(16, 16);
-
-        int pauseLeadIn = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
-
-        machine.board().onTStatesElapsed(3_500, 3_500);
-
-        int pauseSettled = machine.board().ula().readPortFe(0xFFFF, machine.board().keyboard(), machine.board().tape());
-
-        assertEquals(pauseLeadIn, pauseSettled);
     }
 
     @Test

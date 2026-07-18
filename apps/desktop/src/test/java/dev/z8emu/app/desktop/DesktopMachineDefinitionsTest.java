@@ -7,6 +7,9 @@ import dev.z8emu.machine.apple2.disk.Apple2WozTestImages;
 import dev.z8emu.machine.c64.C64Memory;
 import dev.z8emu.machine.cpc.memory.CpcMemory;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
+import dev.z8emu.machine.spectrum.snapshot.Spectrum128Snapshot;
+import dev.z8emu.machine.spectrum.snapshot.Spectrum48Snapshot;
+import dev.z8emu.machine.spectrum.snapshot.Z80SnapshotState;
 import dev.z8emu.machine.spectrum128k.Spectrum128Machine;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
 import java.nio.file.Files;
@@ -47,6 +50,54 @@ class DesktopMachineDefinitionsTest {
         assertTrue(config.demoMode());
         assertEquals(Spectrum48kMemoryMap.ROM_SIZE, config.romImage().length);
         assertFalse(config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class).isPresent());
+    }
+
+    @Test
+    void loadsMatching48kAnd128kSnapshotsAndRejectsModelMismatchPrecisely(@TempDir Path tempDir)
+            throws Exception {
+        Path snapshot48Path = tempDir.resolve("launch-48.z80");
+        Path snapshot128Path = tempDir.resolve("launch-128.z80");
+        SpectrumSnapshotFiles.save(snapshot48Path, desktopSnapshot(0x4567));
+        SpectrumSnapshotFiles.save(snapshot128Path, desktop128Snapshot());
+
+        DesktopLaunchConfig.LoadedSpectrumSnapshot loaded48 = (DesktopLaunchConfig.LoadedSpectrumSnapshot)
+                DesktopMachineDefinitions
+                .forKind(DesktopMachineKind.SPECTRUM48)
+                .loadMedia(snapshot48Path.toString());
+        DesktopLaunchConfig.LoadedSpectrumSnapshot loaded128 = (DesktopLaunchConfig.LoadedSpectrumSnapshot)
+                DesktopMachineDefinitions
+                        .forKind(DesktopMachineKind.SPECTRUM128)
+                        .loadMedia(snapshot128Path.toString());
+
+        assertEquals(snapshot48Path.toAbsolutePath().normalize().toString(), loaded48.sourceLabel());
+        assertEquals(SpectrumSnapshotFiles.Format.Z80, loaded48.format());
+        assertEquals(0x4567, loaded48.snapshot().cpu().pc());
+        assertEquals(snapshot128Path.toAbsolutePath().normalize().toString(), loaded128.sourceLabel());
+        assertEquals(0x5678, loaded128.snapshot().cpu().pc());
+
+        SpectrumSnapshotModelMismatchException mismatch = assertThrows(
+                SpectrumSnapshotModelMismatchException.class,
+                () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.SPECTRUM128)
+                        .loadMedia(snapshot48Path.toString())
+        );
+        assertEquals(SpectrumSnapshotFiles.Model.SPECTRUM_128K, mismatch.expectedModel());
+        assertEquals(SpectrumSnapshotFiles.Model.SPECTRUM_48K, mismatch.actualModel());
+        assertTrue(mismatch.getMessage().contains(snapshot48Path.toAbsolutePath().normalize().toString()));
+    }
+
+    @Test
+    void reportsMalformed48kSnapshotWithoutFallingBackToTape(@TempDir Path tempDir) throws Exception {
+        Path malformed = tempDir.resolve("broken.sna");
+        Files.write(malformed, new byte[10]);
+
+        IllegalArgumentException failure = assertThrows(
+                IllegalArgumentException.class,
+                () -> DesktopMachineDefinitions.forKind(DesktopMachineKind.SPECTRUM48)
+                        .loadMedia(malformed.toString())
+        );
+
+        assertTrue(failure.getMessage().startsWith("Cannot load Spectrum 48K snapshot"));
+        assertTrue(failure.getMessage().contains("Spectrum SNA image"));
     }
 
     @Test
@@ -298,6 +349,52 @@ class DesktopMachineDefinitionsTest {
             bytes[i] = (byte) value;
         }
         return bytes;
+    }
+
+    private static Spectrum48Snapshot desktopSnapshot(int pc) {
+        return new Spectrum48Snapshot(
+                new Z80SnapshotState(
+                        0x1234,
+                        0x2345,
+                        0x3456,
+                        0x4567,
+                        0x5678,
+                        0x6789,
+                        0x789A,
+                        0x89AB,
+                        0x9ABC,
+                        0xABCD,
+                        0x8002,
+                        pc,
+                        0xBC,
+                        0xCD,
+                        true,
+                        false,
+                        2
+                ),
+                5,
+                new byte[Spectrum48Snapshot.RAM_SIZE]
+        );
+    }
+
+    private static Spectrum128Snapshot desktop128Snapshot() {
+        byte[][] banks = new byte[8][Spectrum128Snapshot.RAM_BANK_SIZE];
+        for (int bank = 0; bank < banks.length; bank++) {
+            Arrays.fill(banks[bank], (byte) (bank + 1));
+        }
+        return new Spectrum128Snapshot(
+                new Z80SnapshotState(
+                        0x1234, 0x2345, 0x3456, 0x4567,
+                        0x5678, 0x6789, 0x789A, 0x89AB,
+                        0x9ABC, 0xABCD, 0x8002, 0x5678,
+                        0xBC, 0xCD, true, true, 2
+                ),
+                6,
+                0x1B,
+                3,
+                new byte[16],
+                banks
+        );
     }
 
 }

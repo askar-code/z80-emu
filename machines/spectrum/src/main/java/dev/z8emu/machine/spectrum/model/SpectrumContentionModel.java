@@ -23,19 +23,48 @@ public final class SpectrumContentionModel {
     }
 
     public int ioPortDelay(long currentTState, int phaseTStates, int port) {
-        int lowBitReset = (port & 0x0001) == 0 ? 1 : 0;
-        int highByteContended = (((port >>> 8) & 0xFF) >= 0x40 && ((port >>> 8) & 0xFF) <= 0x7F) ? 1 : 0;
+        int highByte = (port >>> 8) & 0xFF;
+        boolean highByteContended = highByte >= 0x40 && highByte <= 0x7F;
+        return ioPortDelay(currentTState, phaseTStates, port, highByteContended);
+    }
 
-        if (lowBitReset == 0 && highByteContended == 0) {
+    public int ioPortDelay(
+            long currentTState,
+            int phaseTStates,
+            int port,
+            boolean highByteContended
+    ) {
+        boolean lowBitReset = (port & 0x0001) == 0;
+        if (!lowBitReset && !highByteContended) {
             return 0;
         }
 
-        long cycle = currentTState + Math.max(0, phaseTStates);
-        if (lowBitReset != 0 && highByteContended == 0) {
-            return contentionDelayAt(cycle + 1) + contentionDelayAt(cycle + 2) + contentionDelayAt(cycle + 3);
+        long cycleStart = currentTState + Math.max(0, phaseTStates);
+        int delay = 0;
+
+        // A contended high address performs a C:1 early phase. The ULA wait
+        // stretches that phase, so the following contention point must use
+        // the already-delayed time rather than the original cycle offsets.
+        if (highByteContended) {
+            delay = contentionDelayAt(cycleStart);
         }
-        return contentionDelayAt(cycle) + contentionDelayAt(cycle + 1)
-                + contentionDelayAt(cycle + 2) + contentionDelayAt(cycle + 3);
+
+        // An even (ULA-decoded) port performs one late contention check and
+        // then two free t-states.
+        if (lowBitReset) {
+            delay += contentionDelayAt(cycleStart + 1L + delay);
+            return delay;
+        }
+
+        // An odd port whose high address is contended performs three distinct
+        // late checks. Each intervening t-state, including all earlier waits,
+        // shifts the next point on the contention pattern.
+        if (highByteContended) {
+            for (int nominalOffset = 1; nominalOffset <= 3; nominalOffset++) {
+                delay += contentionDelayAt(cycleStart + nominalOffset + delay);
+            }
+        }
+        return delay;
     }
 
     public int memoryDelay(long currentTState, int phaseTStates, boolean contended) {
@@ -43,6 +72,24 @@ public final class SpectrumContentionModel {
             return 0;
         }
         return contentionDelayAt(currentTState + Math.max(0, phaseTStates));
+    }
+
+    public int internalMemoryDelay(
+            long currentTState,
+            int phaseTStates,
+            boolean contended,
+            int tStates
+    ) {
+        if (!contended || tStates <= 0) {
+            return 0;
+        }
+
+        long cycleStart = currentTState + Math.max(0, phaseTStates);
+        int delay = 0;
+        for (int nominalOffset = 0; nominalOffset < tStates; nominalOffset++) {
+            delay += contentionDelayAt(cycleStart + nominalOffset + delay);
+        }
+        return delay;
     }
 
     private int contentionDelayAt(long absoluteTState) {

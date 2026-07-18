@@ -57,7 +57,7 @@ class SpectrumPagingControllerTest {
     }
 
     @Test
-    void mirrorsPagingValueIntoBankmSystemVariable() {
+    void doesNotOverwriteRomOwnedBankmSystemVariable() {
         SpectrumModelConfig config = SpectrumModelConfig.spectrum128();
         SpectrumMachineState state = new SpectrumMachineState(config);
         Spectrum48kMemoryMap memory = new Spectrum48kMemoryMap(
@@ -67,9 +67,10 @@ class SpectrumPagingControllerTest {
                 new byte[Spectrum48kMemoryMap.ROM_SIZE]
         );
         SpectrumPagingController controller = new SpectrumPagingController(config, state, memory);
+        memory.write(0x5B5C, 0xA5);
 
         controller.handlePortWrite(0x7FFD, 0x1B);
 
-        assertEquals(0x1B, memory.read(0x5B5C));
+        assertEquals(0xA5, memory.read(0x5B5C));
     }
 }

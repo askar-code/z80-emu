@@ -1,10 +1,19 @@
 package dev.z8emu.app.desktop;
 
 import dev.z8emu.machine.spectrum.SpectrumMachine;
+import dev.z8emu.machine.spectrum.snapshot.SpectrumSnapshot;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 import static dev.z8emu.app.desktop.ProbeOutput.hex16;
 import static dev.z8emu.app.desktop.ProbeOutput.hex8;
@@ -24,9 +33,15 @@ final class SpectrumDesktopRunner {
         private final SpectrumMachine machine;
         private final DesktopLaunchConfig config;
         private final HostKeyTyper hostKeyTyper;
+        private final SpectrumDesktopPreferences preferences;
+        private volatile SpectrumJoystickProfile joystickProfile;
+        private final Queue<SnapshotCommand> snapshotCommands = new ConcurrentLinkedQueue<>();
+        private final SpectrumRuntimeTapeController runtimeTape;
 
         private SpectrumKeyboardController keyboardController;
         private final SpectrumStartupTapeAutoplay startupTapeAutoplay;
+        private JFrame frame;
+        private volatile String snapshotStatus;
 
         private Session(SpectrumMachine machine, DesktopLaunchConfig config) {
             super(
@@ -39,17 +54,33 @@ final class SpectrumDesktopRunner {
             this.machine = machine;
             this.config = config;
             this.hostKeyTyper = new HostKeyTyper(machine);
-            this.startupTapeAutoplay = new SpectrumStartupTapeAutoplay(machine, config, hostKeyTyper);
+            this.preferences = SpectrumDesktopPreferences.userPreferences();
+            this.joystickProfile = preferences.initialJoystickProfile();
+            this.startupTapeAutoplay = new SpectrumStartupTapeAutoplay(machine, hostKeyTyper);
+            this.runtimeTape = new SpectrumRuntimeTapeController(
+                    machine.board().tape(),
+                    config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class)
+                            .map(DesktopLaunchConfig.LoadedSpectrumTape::sourceLabel)
+                            .orElse(null),
+                    this::cancelTapeAutomation,
+                    this::showTapeError
+            );
+            this.snapshotStatus = config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumSnapshot.class)
+                    .map(loaded -> "loaded:" + Path.of(loaded.sourceLabel()).getFileName())
+                    .orElse("ready");
         }
 
         @Override
         protected void attachMachine(JFrame frame) {
+            this.frame = frame;
             config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class)
                     .ifPresent(loadedTape -> machine.board().tape().load(loadedTape.tapeFile()));
             keyboardController = SpectrumKeyboardController.bind(
                     frame,
                     displayComponent(),
                     machine.board().keyboard(),
+                    machine.board().kempstonJoystick(),
+                    joystickProfile,
                     new SpectrumKeyboardController.HostActions() {
                         @Override
                         public boolean typeHostCharacter(char character) {
@@ -58,27 +89,52 @@ final class SpectrumDesktopRunner {
 
                         @Override
                         public void toggleTapePlayback() {
-                            if (!machine.board().tape().isLoaded()) {
-                                return;
-                            }
-                            startupTapeAutoplay.cancel();
-                            if (machine.board().tape().isPlaying()) {
-                                machine.board().tape().stop();
-                            } else {
-                                machine.board().tape().play();
-                            }
+                            runtimeTape.togglePlayback();
                         }
 
                         @Override
                         public void rewindTape() {
-                            startupTapeAutoplay.cancel();
-                            machine.board().tape().rewind();
+                            runtimeTape.rewind();
                         }
 
                         @Override
                         public void stopTape() {
-                            startupTapeAutoplay.cancel();
-                            machine.board().tape().stop();
+                            runtimeTape.stop();
+                        }
+
+                        @Override
+                        public void openTape() {
+                            chooseTapeToOpen();
+                        }
+
+                        @Override
+                        public void ejectTape() {
+                            runtimeTape.eject();
+                        }
+
+                        @Override
+                        public void previousTapeBlock() {
+                            runtimeTape.previousBlock();
+                        }
+
+                        @Override
+                        public void nextTapeBlock() {
+                            runtimeTape.nextBlock();
+                        }
+
+                        @Override
+                        public void cycleJoystickProfile() {
+                            SpectrumDesktopRunner.Session.this.cycleJoystickProfile();
+                        }
+
+                        @Override
+                        public void loadSnapshot() {
+                            chooseSnapshotToLoad();
+                        }
+
+                        @Override
+                        public void saveSnapshot() {
+                            chooseSnapshotToSave();
                         }
                     }
             );
@@ -93,13 +149,18 @@ final class SpectrumDesktopRunner {
                     + "  pc=0x" + hex16(machine.cpu().registers().pc())
                     + "  t=" + machine.currentTState()
                     + "  frame=" + machine.board().ula().frameCounter()
-                    + "  tape=" + tapeStatus(machine, config)
+                    + "  tape=" + runtimeTape.statusText()
                     + "  rom=" + machine.board().machineState().selectedRomIndex()
                     + "  bank=" + machine.board().machineState().topRamBankIndex()
                     + "  screen=" + machine.board().machineState().activeScreenBankIndex()
+                    + "  joy=" + joystickProfile.settingValue()
+                    + "  snapshot=" + snapshotStatus
                     + "  " + loaderStatus(machine)
                     + "  key=" + keyboardController.lastEvent()
-                    + "  host=[symbols direct, Cmd+P play/pause, Cmd+R rewind, Cmd+S stop]";
+                    + "  host=[arrows, fire=" + joystickProfile.fireKeyHint()
+                    + ", symbols direct, Cmd+J joystick, Cmd+O open tape, Cmd+E eject"
+                    + ", Cmd+P play/pause, Cmd+R rewind, Cmd+S stop, Cmd+[ / ] block"
+                    + ", Cmd+Shift+O load snapshot, Cmd+Shift+S save snapshot]";
             return base + "  " + status;
         }
 
@@ -110,19 +171,36 @@ final class SpectrumDesktopRunner {
 
         @Override
         public void runSlice() {
+            runtimeTape.processPending();
+            processSnapshotCommands();
+            synchronizeTurboAudio();
             if (config.demoMode()) {
                 return;
             }
 
             int framesPerSlice = machine.board().tape().isPlaying() ? TAPE_FRAMES_PER_SLICE : NORMAL_FRAMES_PER_SLICE;
-            for (int frameIndex = 0; frameIndex < framesPerSlice; frameIndex++) {
-                if (frameIndex > 0 && !machine.board().tape().isPlaying()) {
-                    break;
+            try {
+                for (int frameIndex = 0; frameIndex < framesPerSlice; frameIndex++) {
+                    if (frameIndex > 0 && !machine.board().tape().isPlaying()) {
+                        break;
+                    }
+                    hostKeyTyper.tick();
+                    startupTapeAutoplay.tick();
+                    synchronizeTurboAudio();
+                    long frameBoundary = nextFrameBoundaryTState(machine, machine.board().modelConfig().frameTStates());
+                    if (startupTapeAutoplay.pending()) {
+                        runUntilTStateWithAutoplay(machine, frameBoundary, startupTapeAutoplay);
+                    } else {
+                        runUntilTState(machine, frameBoundary);
+                    }
                 }
-                hostKeyTyper.tick();
-                startupTapeAutoplay.tick();
-                runUntilTState(machine, nextFrameBoundaryTState(machine, machine.board().modelConfig().frameTStates()));
+            } finally {
+                synchronizeTurboAudio();
             }
+        }
+
+        private void synchronizeTurboAudio() {
+            setAudioMuted(turboActive());
         }
 
         @Override
@@ -147,7 +225,7 @@ final class SpectrumDesktopRunner {
                         body.append("iff2=").append(machine.cpu().registers().iff2()).append('\n');
                         body.append("im=").append(machine.cpu().registers().interruptMode()).append('\n');
                         body.append("t=").append(machine.currentTState()).append('\n');
-                        body.append("tape=").append(tapeStatus(machine, config)).append('\n');
+                        body.append("tape=").append(runtimeTape.statusText()).append('\n');
                     },
                     keyboardController.lastEvent(),
                     address -> machine.board().memory().read(address),
@@ -159,20 +237,210 @@ final class SpectrumDesktopRunner {
         public String threadName() {
             return "spectrum-video-runner";
         }
-    }
 
-    private static String tapeStatus(SpectrumMachine machine, DesktopLaunchConfig config) {
-        if (config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumTape.class).isEmpty()) {
-            return "none";
+        private void chooseTapeToOpen() {
+            JFileChooser chooser = tapeChooser();
+            if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
+                displayComponent().requestFocusInWindow();
+                return;
+            }
+
+            Path source = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+            try {
+                // Parse completely before publishing a replacement command. A malformed
+                // side therefore leaves the currently inserted tape untouched.
+                runtimeTape.replace(SpectrumTapeFiles.load(source));
+                preferences.rememberTape(source);
+            } catch (Exception failure) {
+                showTapeError("Cannot open Spectrum tape " + source + ": " + failure.getMessage());
+            } finally {
+                displayComponent().requestFocusInWindow();
+            }
         }
 
-        String state = machine.board().tape().isPlaying()
-                ? "play"
-                : (machine.board().tape().isAtEnd() ? "eof" : "stop");
-        String speed = machine.board().tape().isPlaying()
-                ? (tapeTurboEnabled() ? "turbo" : "real")
-                : "idle";
-        return state + ":" + machine.board().tape().currentBlockIndex() + "/" + machine.board().tape().totalBlocks() + ":" + speed;
+        private void chooseSnapshotToLoad() {
+            SpectrumSnapshotFiles.Model model = SpectrumSnapshotFiles.modelOf(machine);
+            JFileChooser chooser = snapshotChooser("Load " + model.displayName() + " snapshot");
+            if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
+                displayComponent().requestFocusInWindow();
+                return;
+            }
+
+            Path source = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+            try {
+                SpectrumSnapshotFiles.LoadedSnapshot loaded = SpectrumSnapshotFiles.load(source, model);
+                snapshotCommands.add(new LoadSnapshotCommand(loaded));
+                snapshotStatus = "pending-load:" + source.getFileName();
+                preferences.rememberSnapshot(source);
+            } catch (Exception failure) {
+                showSnapshotError("Cannot load " + model.displayName() + " snapshot "
+                        + source + ": " + failure.getMessage());
+            } finally {
+                displayComponent().requestFocusInWindow();
+            }
+        }
+
+        private void chooseSnapshotToSave() {
+            SpectrumSnapshotFiles.Model model = SpectrumSnapshotFiles.modelOf(machine);
+            JFileChooser chooser = snapshotChooser("Save " + model.displayName() + " snapshot");
+            chooser.setSelectedFile(new File("spectrum.z80"));
+            if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION) {
+                displayComponent().requestFocusInWindow();
+                return;
+            }
+
+            Path target = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+            if (!SpectrumSnapshotFiles.hasSnapshotExtension(target)) {
+                showSnapshotError("Snapshot filename must end in .sna or .z80; .z80 saves are compressed.");
+                return;
+            }
+            String warning = SpectrumSnapshotFiles.warning(target, model);
+            if (warning != null) {
+                int continueWithLoss = JOptionPane.showConfirmDialog(
+                        frame,
+                        warning + "\nContinue with .sna?",
+                        "128K SNA limitation",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE
+                );
+                if (continueWithLoss != JOptionPane.YES_OPTION) {
+                    displayComponent().requestFocusInWindow();
+                    return;
+                }
+            }
+            if (Files.exists(target)) {
+                int overwrite = JOptionPane.showConfirmDialog(
+                        frame,
+                        "Replace existing snapshot?\n" + target,
+                        "Save Spectrum snapshot",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE
+                );
+                if (overwrite != JOptionPane.YES_OPTION) {
+                    displayComponent().requestFocusInWindow();
+                    return;
+                }
+            }
+
+            snapshotCommands.add(new SaveSnapshotCommand(target));
+            snapshotStatus = "pending-save:" + target.getFileName();
+            preferences.rememberSnapshot(target);
+            displayComponent().requestFocusInWindow();
+        }
+
+        private void cycleJoystickProfile() {
+            SpectrumJoystickProfile nextProfile = joystickProfile.next();
+            keyboardController.setJoystickProfile(nextProfile);
+            joystickProfile = nextProfile;
+            preferences.rememberJoystickProfile(nextProfile);
+        }
+
+        private void processSnapshotCommands() {
+            SnapshotCommand command;
+            while ((command = snapshotCommands.poll()) != null) {
+                try {
+                    switch (command) {
+                        case LoadSnapshotCommand load -> applySnapshot(load.loaded());
+                        case SaveSnapshotCommand save -> saveSnapshot(save.target());
+                    }
+                } catch (Exception failure) {
+                    snapshotStatus = "error:" + failure.getClass().getSimpleName();
+                    showSnapshotError("Spectrum snapshot operation failed: " + failure.getMessage());
+                }
+            }
+        }
+
+        private void applySnapshot(SpectrumSnapshotFiles.LoadedSnapshot loaded) {
+            // This is intentionally first: even a stale or forged command with
+            // the wrong model must not stop tape playback or release host keys.
+            SpectrumSnapshotFiles.requireCompatible(
+                    SpectrumSnapshotFiles.modelOf(machine),
+                    loaded.snapshot(),
+                    loaded.source()
+            );
+            startupTapeAutoplay.cancel();
+            machine.board().tape().stop();
+            hostKeyTyper.clear();
+            keyboardController.releaseAllKeys();
+            SpectrumSnapshotFiles.restore(machine, loaded.snapshot());
+            snapshotStatus = "loaded:" + loaded.source().getFileName();
+        }
+
+        private void saveSnapshot(Path target) throws Exception {
+            SpectrumSnapshot snapshot = SpectrumSnapshotFiles.capture(machine);
+            SpectrumSnapshotFiles.SaveResult result = SpectrumSnapshotFiles.save(target, snapshot);
+            snapshotStatus = "saved:" + target.getFileName();
+            String message = "Saved " + result.model().displayName() + " "
+                    + result.format().name().toLowerCase() + " snapshot:\n" + target;
+            if (result.warning() != null) {
+                message += "\n\n" + result.warning();
+            }
+            showSnapshotMessage(message);
+        }
+
+        private void showSnapshotError(String message) {
+            showSnapshotDialog(message, "Spectrum snapshot error", JOptionPane.ERROR_MESSAGE);
+        }
+
+        private void showTapeError(String message) {
+            showSnapshotDialog(message, "Spectrum tape error", JOptionPane.ERROR_MESSAGE);
+        }
+
+        private void showSnapshotMessage(String message) {
+            showSnapshotDialog(message, "Spectrum snapshot", JOptionPane.INFORMATION_MESSAGE);
+        }
+
+        private void showSnapshotDialog(String message, String title, int messageType) {
+            Runnable show = () -> {
+                JOptionPane.showMessageDialog(frame, message, title, messageType);
+                displayComponent().requestFocusInWindow();
+            };
+            if (SwingUtilities.isEventDispatchThread()) {
+                show.run();
+            } else {
+                SwingUtilities.invokeLater(show);
+            }
+        }
+
+        private JFileChooser snapshotChooser(String title) {
+            JFileChooser chooser = new JFileChooser();
+            preferences.snapshotDirectory().ifPresent(path -> chooser.setCurrentDirectory(path.toFile()));
+            chooser.setDialogTitle(title);
+            chooser.setAcceptAllFileFilterUsed(false);
+            chooser.setFileFilter(new FileNameExtensionFilter(
+                    "Spectrum snapshots (*.sna, *.z80)",
+                    "sna",
+                    "z80"
+            ));
+            return chooser;
+        }
+
+        private JFileChooser tapeChooser() {
+            JFileChooser chooser = new JFileChooser();
+            preferences.tapeDirectory().ifPresent(path -> chooser.setCurrentDirectory(path.toFile()));
+            chooser.setDialogTitle("Open or replace Spectrum tape");
+            chooser.setAcceptAllFileFilterUsed(false);
+            chooser.setFileFilter(new FileNameExtensionFilter(
+                    "Spectrum tapes (*.tap, *.tzx)",
+                    "tap",
+                    "tzx"
+            ));
+            return chooser;
+        }
+
+        private void cancelTapeAutomation() {
+            startupTapeAutoplay.cancel();
+            hostKeyTyper.clear();
+        }
+
+        private sealed interface SnapshotCommand permits LoadSnapshotCommand, SaveSnapshotCommand {
+        }
+
+        private record LoadSnapshotCommand(SpectrumSnapshotFiles.LoadedSnapshot loaded) implements SnapshotCommand {
+        }
+
+        private record SaveSnapshotCommand(Path target) implements SnapshotCommand {
+        }
     }
 
     private static String loaderStatus(SpectrumMachine machine) {
@@ -233,7 +501,7 @@ final class SpectrumDesktopRunner {
         return true;
     }
 
-    private static boolean tapeTurboEnabled() {
+    static boolean tapeTurboEnabled() {
         return TAPE_FRAMES_PER_SLICE > 1;
     }
 
@@ -247,7 +515,7 @@ final class SpectrumDesktopRunner {
         private int framesRemaining;
         private boolean pressPhase = true;
 
-        private HostKeyTyper(SpectrumMachine machine) {
+        HostKeyTyper(SpectrumMachine machine) {
             this.machine = machine;
         }
 
@@ -257,6 +525,26 @@ final class SpectrumDesktopRunner {
 
         synchronized void queueChord(int[][] keys, int pressFrames, int gapFrames) {
             queue.add(new QueuedChord(keys, Math.max(1, pressFrames), Math.max(0, gapFrames)));
+        }
+
+        synchronized void queuePause(int frames) {
+            if (frames > 0) {
+                queue.add(new QueuedChord(new int[0][], frames, 0));
+            }
+        }
+
+        synchronized boolean isIdle() {
+            return activeKey == null && queue.isEmpty();
+        }
+
+        synchronized void clear() {
+            queue.clear();
+            if (activeKey != null && pressPhase) {
+                setChordState(activeKey, false);
+            }
+            activeKey = null;
+            framesRemaining = 0;
+            pressPhase = true;
         }
 
         synchronized void tick() {
@@ -293,6 +581,17 @@ final class SpectrumDesktopRunner {
         }
 
         private record QueuedChord(int[][] keys, int pressFrames, int gapFrames) {
+        }
+    }
+
+    private static void runUntilTStateWithAutoplay(
+            SpectrumMachine machine,
+            long targetTState,
+            SpectrumStartupTapeAutoplay autoplay
+    ) {
+        while (machine.currentTState() < targetTState) {
+            autoplay.tick();
+            machine.runInstruction();
         }
     }
 }

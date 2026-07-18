@@ -5,6 +5,7 @@ import dev.z8emu.machine.spectrum.model.SpectrumMachineState;
 import dev.z8emu.machine.spectrum.model.SpectrumModelConfig;
 import dev.z8emu.machine.spectrum48k.device.BeeperDevice;
 import dev.z8emu.machine.spectrum48k.device.KeyboardMatrixDevice;
+import dev.z8emu.machine.spectrum48k.device.KempstonJoystickDevice;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
 import dev.z8emu.machine.spectrum48k.device.TapeDevice;
 import dev.z8emu.machine.spectrum48k.memory.Spectrum48kMemoryMap;
@@ -19,6 +20,7 @@ public final class Spectrum48kBoard implements SpectrumBoard {
     private final SpectrumMachineState machineState;
     private final Spectrum48kMemoryMap memory;
     private final KeyboardMatrixDevice keyboard;
+    private final KempstonJoystickDevice kempstonJoystick;
     private final BeeperDevice beeper;
     private final TapeDevice tape;
     private final SpectrumUlaDevice ula;
@@ -30,14 +32,25 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         this.machineState = new SpectrumMachineState(modelConfig);
         this.memory = new Spectrum48kMemoryMap(modelConfig, machineState, romImage);
         this.keyboard = new KeyboardMatrixDevice();
+        this.kempstonJoystick = new KempstonJoystickDevice();
         this.beeper = new BeeperDevice(modelConfig.cpuClockHz());
         this.tape = new TapeDevice(modelConfig.cpuClockHz(), true);
         this.ula = new SpectrumUlaDevice(
                 modelConfig.frameTStates(),
                 modelConfig.scanlinesPerFrame(),
-                modelConfig.floatingBusDisplayStartTState()
+                modelConfig.floatingBusDisplayStartTState(),
+                modelConfig.firstDisplayPixelTState()
         );
-        this.bus = new Spectrum48kBus(clock, memory, ula, keyboard, beeper, tape, modelConfig);
+        this.bus = new Spectrum48kBus(
+                clock,
+                memory,
+                ula,
+                keyboard,
+                kempstonJoystick,
+                beeper,
+                tape,
+                modelConfig
+        );
     }
 
     @Override
@@ -50,17 +63,19 @@ public final class Spectrum48kBoard implements SpectrumBoard {
         machineState.reset();
         memory.reset();
         keyboard.reset();
+        kempstonJoystick.reset();
         beeper.reset();
         tape.reset();
         ula.reset();
+        bus.resetAudioTiming();
     }
 
     @Override
     public void onTStatesElapsed(int tStates, long currentTState) {
         keyboard.onTStatesElapsed(tStates);
-        beeper.onTStatesElapsed(tStates);
+        bus.syncAudioTo(currentTState);
         beeper.setTapeInputLevel(tape.syncAndReadEarLevel(currentTState));
-        ula.onTStatesElapsed(tStates, memory);
+        ula.syncToTState(currentTState, memory);
     }
 
     @Override
@@ -70,6 +85,11 @@ public final class Spectrum48kBoard implements SpectrumBoard {
 
     public KeyboardMatrixDevice keyboard() {
         return keyboard;
+    }
+
+    @Override
+    public KempstonJoystickDevice kempstonJoystick() {
+        return kempstonJoystick;
     }
 
     public BeeperDevice beeper() {

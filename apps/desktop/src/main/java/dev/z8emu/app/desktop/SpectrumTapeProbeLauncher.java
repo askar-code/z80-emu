@@ -14,16 +14,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import static dev.z8emu.app.desktop.ProbeOutput.crc32Hex;
+import static dev.z8emu.app.desktop.ProbeOutput.frameCrc32;
 import static dev.z8emu.app.desktop.ProbeOutput.hex16;
 import static dev.z8emu.app.desktop.ProbeOutput.hex8;
 import static dev.z8emu.app.desktop.ProbeOutput.writePng;
 
 public final class SpectrumTapeProbeLauncher {
-    private static final int TAPE_LOADER_MENU_PC = 0x3685;
     private static final long MENU_TIMEOUT_TSTATES = 20_000_000L;
     private static final long DEFAULT_MAX_TSTATES = 2_000_000_000L;
-    private static final int ENTER_ROW = 6;
-    private static final int ENTER_COLUMN = 0;
     private static final boolean AUTOSTART =
             Boolean.parseBoolean(System.getProperty("z8emu.probeAutostart", "true"));
     private static final int MENU_PRESS_FRAMES =
@@ -53,6 +52,7 @@ public final class SpectrumTapeProbeLauncher {
     );
     private static final long POST_EOF_TSTATES =
             Long.getLong("z8emu.probePostEofTStates", 0L);
+    private static final ExpectedState EXPECTED_STATE = readExpectedState();
     private static final long[] DEFAULT_MILESTONES = {
             20_000_000L,
             80_000_000L,
@@ -141,12 +141,31 @@ public final class SpectrumTapeProbeLauncher {
             }
         }
         summary.add(saveSnapshot(machine, outputDir, machine.board().tape().isAtEnd() ? "eof" : "max"));
+        long finalFrameCrc32 = frameCrc32(machine.board().renderVideoFrame());
+        ActualState actualState = new ActualState(
+                machine.cpu().registers().pc(),
+                machine.board().tape().isAtEnd(),
+                machine.board().tape().currentBlockIndex(),
+                machine.board().tape().totalBlocks(),
+                finalFrameCrc32
+        );
+        List<String> expectationFailures = expectationFailures(EXPECTED_STATE, actualState);
+        summary.add(resultLine(actualState));
+        expectationFailures.forEach(failure -> summary.add("expectationFailure " + failure));
         Files.write(outputDir.resolve("summary.txt"), summary);
 
         for (String line : summary) {
             System.out.println(line);
         }
         System.out.println("outputDir=" + outputDir);
+        if (!EXPECTED_STATE.hasExpectations()) {
+            System.out.println("status=unverified");
+        } else if (expectationFailures.isEmpty()) {
+            System.out.println("status=success");
+        } else {
+            System.out.println("status=failure");
+            System.exit(1);
+        }
     }
 
     private static SpectrumMachine createMachine(byte[] romImage, Path romPath) {
@@ -160,31 +179,39 @@ public final class SpectrumTapeProbeLauncher {
     }
 
     private static void startTapePlayback(SpectrumMachine machine) {
-        if (!machine.board().modelConfig().pagingSupported()) {
-            machine.board().tape().play();
-            return;
-        }
-
-        waitForPc(machine, TAPE_LOADER_MENU_PC, MENU_TIMEOUT_TSTATES);
-        press(machine, ENTER_ROW, ENTER_COLUMN, MENU_PRESS_FRAMES);
-        if (PLAY_DELAY_FRAMES > 0) {
-            runFrames(machine, PLAY_DELAY_FRAMES);
-        }
-        SpectrumTapeAutostartSupport.waitForLoaderReadyForPlayback(
+        SpectrumDesktopRunner.HostKeyTyper hostKeyTyper = new SpectrumDesktopRunner.HostKeyTyper(machine);
+        SpectrumStartupTapeAutoplay autoplay = new SpectrumStartupTapeAutoplay(
                 machine,
-                machine.currentTState() + MENU_TIMEOUT_TSTATES
+                hostKeyTyper,
+                MENU_PRESS_FRAMES,
+                6,
+                PLAY_DELAY_FRAMES
         );
-        machine.board().tape().play();
-    }
+        autoplay.armIfNeeded();
 
-    private static void waitForPc(SpectrumMachine machine, int targetPc, long maxTStates) {
-        while (machine.currentTState() < maxTStates) {
-            if (machine.cpu().registers().pc() == targetPc) {
-                return;
+        long deadlineTState = machine.currentTState() + MENU_TIMEOUT_TSTATES;
+        long frameTStates = machine.board().modelConfig().frameTStates();
+        long nextHostKeyTick = machine.currentTState();
+        while (autoplay.pending() && machine.currentTState() < deadlineTState) {
+            while (machine.currentTState() >= nextHostKeyTick) {
+                hostKeyTyper.tick();
+                nextHostKeyTick += frameTStates;
+            }
+            autoplay.tick();
+            if (!autoplay.pending()) {
+                break;
             }
             machine.runInstruction();
         }
-        throw new IllegalStateException("Timed out waiting for PC=0x" + hex16(targetPc));
+
+        if (autoplay.pending()) {
+            throw new IllegalStateException(
+                    "Timed out autostarting Spectrum tape; phase=" + autoplay.phase()
+                            + " pc=0x" + hex16(machine.cpu().registers().pc())
+                            + " rom=" + machine.board().machineState().selectedRomIndex()
+                            + " t=" + machine.currentTState()
+            );
+        }
     }
 
     private static void press(SpectrumMachine machine, int row, int column, int frames) {
@@ -228,7 +255,53 @@ public final class SpectrumTapeProbeLauncher {
         );
         Path imagePath = outputDir.resolve(fileName);
         writePng(frame, imagePath);
-        return statusLine(machine, label, imagePath);
+        return statusLine(machine, label, imagePath)
+                + " frameCrc32=0x" + crc32Hex(frameCrc32(frame));
+    }
+
+    static List<String> expectationFailures(ExpectedState expected, ActualState actual) {
+        List<String> failures = new ArrayList<>();
+        if (expected.pc() != null && !expected.pc().equals(actual.pc())) {
+            failures.add("pc expected=0x%s actual=0x%s".formatted(hex16(expected.pc()), hex16(actual.pc())));
+        }
+        if (expected.eof() != null && !expected.eof().equals(actual.eof())) {
+            failures.add("eof expected=%s actual=%s".formatted(expected.eof(), actual.eof()));
+        }
+        if (expected.blockIndex() != null && !expected.blockIndex().equals(actual.blockIndex())) {
+            failures.add("block expected=%d actual=%d".formatted(expected.blockIndex(), actual.blockIndex()));
+        }
+        if (expected.totalBlocks() != null && !expected.totalBlocks().equals(actual.totalBlocks())) {
+            failures.add("totalBlocks expected=%d actual=%d".formatted(expected.totalBlocks(), actual.totalBlocks()));
+        }
+        if (expected.frameCrc32() != null && !expected.frameCrc32().equals(actual.frameCrc32())) {
+            failures.add(
+                    "frameCrc32 expected=0x%s actual=0x%s".formatted(
+                            crc32Hex(expected.frameCrc32()),
+                            crc32Hex(actual.frameCrc32())
+                    )
+            );
+        }
+        return failures;
+    }
+
+    private static String resultLine(ActualState state) {
+        return "result pc=0x%s eof=%s blk=%d/%d frameCrc32=0x%s".formatted(
+                hex16(state.pc()),
+                state.eof(),
+                state.blockIndex(),
+                state.totalBlocks(),
+                crc32Hex(state.frameCrc32())
+        );
+    }
+
+    private static ExpectedState readExpectedState() {
+        return new ExpectedState(
+                parseOptionalAddress(System.getProperty("z8emu.probeExpectPc")),
+                parseOptionalBoolean(System.getProperty("z8emu.probeExpectEof")),
+                parseOptionalInteger(System.getProperty("z8emu.probeExpectBlock")),
+                parseOptionalInteger(System.getProperty("z8emu.probeExpectTotalBlocks")),
+                parseOptionalCrc32(System.getProperty("z8emu.probeExpectFrameCrc"))
+        );
     }
 
     private static String statusLine(SpectrumMachine machine, String label, Path imagePath) {
@@ -447,6 +520,42 @@ public final class SpectrumTapeProbeLauncher {
         return Integer.decode(raw.trim()) & 0xFFFF;
     }
 
+    private static Integer parseOptionalAddress(String raw) {
+        return raw == null || raw.isBlank() ? null : parseAddress(raw, 0);
+    }
+
+    private static Integer parseOptionalInteger(String raw) {
+        return raw == null || raw.isBlank() ? null : Integer.decode(raw.trim());
+    }
+
+    private static Boolean parseOptionalBoolean(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        if (raw.equalsIgnoreCase("true")) {
+            return true;
+        }
+        if (raw.equalsIgnoreCase("false")) {
+            return false;
+        }
+        throw new IllegalArgumentException("Expected boolean value, got: " + raw);
+    }
+
+    private static Long parseOptionalCrc32(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().replace("_", "");
+        if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
+            normalized = normalized.substring(2);
+        }
+        long value = Long.parseUnsignedLong(normalized, 16);
+        if ((value & ~0xFFFF_FFFFL) != 0) {
+            throw new IllegalArgumentException("CRC32 out of range: " + raw);
+        }
+        return value;
+    }
+
     private static int[][] parsePokes(String raw) {
         if (raw == null || raw.isBlank()) {
             return new int[0][];
@@ -493,5 +602,26 @@ public final class SpectrumTapeProbeLauncher {
                 Integer.parseInt(parts[1].trim()),
                 Integer.parseInt(parts[2].trim())
         };
+    }
+
+    record ExpectedState(
+            Integer pc,
+            Boolean eof,
+            Integer blockIndex,
+            Integer totalBlocks,
+            Long frameCrc32
+    ) {
+        boolean hasExpectations() {
+            return pc != null || eof != null || blockIndex != null || totalBlocks != null || frameCrc32 != null;
+        }
+    }
+
+    record ActualState(
+            int pc,
+            boolean eof,
+            int blockIndex,
+            int totalBlocks,
+            long frameCrc32
+    ) {
     }
 }

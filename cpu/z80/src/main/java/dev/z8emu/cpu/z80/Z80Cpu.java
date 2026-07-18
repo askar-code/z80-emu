@@ -1,6 +1,7 @@
 package dev.z8emu.cpu.z80;
 
 import dev.z8emu.platform.bus.CpuBus;
+import dev.z8emu.platform.bus.CpuBus.InternalCycleType;
 import dev.z8emu.platform.cpu.Cpu;
 import java.util.Objects;
 
@@ -27,6 +28,9 @@ public final class Z80Cpu implements Cpu {
     private int interruptEnableDelay;
     private int extraTStatesThisInstruction;
     private int instructionPhaseTStates;
+    private int memptr;
+    private int q;
+    private int lastQ;
 
     public Z80Cpu(CpuBus bus) {
         this.bus = Objects.requireNonNull(bus, "bus");
@@ -44,6 +48,9 @@ public final class Z80Cpu implements Cpu {
         pendingInterrupt = false;
         pendingNmi = false;
         interruptEnableDelay = 0;
+        memptr = 0;
+        q = 0;
+        lastQ = 0;
     }
 
     @Override
@@ -69,6 +76,8 @@ public final class Z80Cpu implements Cpu {
     public int runInstruction() {
         extraTStatesThisInstruction = 0;
         instructionPhaseTStates = 0;
+        lastQ = q;
+        q = 0;
         int tStates;
 
         try {
@@ -76,8 +85,6 @@ public final class Z80Cpu implements Cpu {
                 tStates = serviceNonMaskableInterrupt();
             } else if (pendingInterrupt && registers.iff1() && interruptEnableDelay == 0) {
                 tStates = serviceMaskableInterrupt();
-            } else if (halted && pendingInterrupt) {
-                tStates = releaseHaltOnIgnoredMaskableInterrupt();
             } else if (halted) {
                 tStates = executeHaltCycle();
             } else {
@@ -105,16 +112,14 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int executeHaltCycle() {
-        bus.fetchOpcode(registers.pc());
+        int haltOpcodeAddress = (registers.pc() - 1) & 0xFFFF;
+        int waitStates = bus.fetchOpcodeWaitStates(haltOpcodeAddress, instructionPhaseTStates);
+        extraTStatesThisInstruction += waitStates;
+        instructionPhaseTStates += 4 + waitStates;
+        bus.fetchOpcode(haltOpcodeAddress);
         registers.onInstructionFetch();
         bus.onRefresh(registers.ir());
         return 4;
-    }
-
-    private int releaseHaltOnIgnoredMaskableInterrupt() {
-        pendingInterrupt = false;
-        halted = false;
-        return executeHaltCycle();
     }
 
     private int serviceNonMaskableInterrupt() {
@@ -126,6 +131,11 @@ public final class Z80Cpu implements Cpu {
 
         registers.onInstructionFetch();
         bus.onRefresh(registers.ir());
+        internalCycles(
+                CpuBus.NO_ADDRESS,
+                5,
+                InternalCycleType.NON_MASKABLE_INTERRUPT_ACKNOWLEDGE
+        );
         pushWord(returnAddress);
         registers.setIff1(false);
         registers.setIff2(previousIff1);
@@ -143,6 +153,7 @@ public final class Z80Cpu implements Cpu {
 
         registers.onInstructionFetch();
         bus.onRefresh(registers.ir());
+        internalCycles(CpuBus.NO_ADDRESS, 7, InternalCycleType.INTERRUPT_ACKNOWLEDGE);
         registers.setIff1(false);
         registers.setIff2(false);
         interruptEnableDelay = 0;
@@ -297,7 +308,9 @@ public final class Z80Cpu implements Cpu {
 
         if (opcode == 0xCB) {
             int displacement = relativeOffset(fetchImmediate8());
-            int cbOpcode = readMemory8(registers.pc());
+            int cbOpcodeAddress = registers.pc();
+            int cbOpcode = readMemory8(cbOpcodeAddress);
+            readNoMreq(cbOpcodeAddress, 2);
             registers.incrementPc(1);
             return prefixCost + executeIndexedCbPrefix(indexMode, displacement, cbOpcode);
         }
@@ -373,7 +386,7 @@ public final class Z80Cpu implements Cpu {
             return (destination == 6 || source == 6) ? 7 : 4;
         }
 
-        int displacement = indexedMemory ? relativeOffset(fetchImmediate8()) : 0;
+        int displacement = indexedMemory ? fetchIndexedDisplacement() : 0;
         boolean substituteHighLow = !indexedMemory;
         int value = read8BitOperandIndexed(source, indexMode, displacement, substituteHighLow);
         write8BitOperandIndexed(destination, indexMode, displacement, value, substituteHighLow);
@@ -395,7 +408,7 @@ public final class Z80Cpu implements Cpu {
             return executeAluOperation(operation, read8BitOperand(source), source == 6 ? 7 : 4);
         }
 
-        int displacement = source == 6 ? relativeOffset(fetchImmediate8()) : 0;
+        int displacement = source == 6 ? fetchIndexedDisplacement() : 0;
         int value = read8BitOperandIndexed(source, indexMode, displacement, source != 6);
         return executeAluOperation(operation, value, source == 6 ? 15 : 4);
     }
@@ -405,6 +418,9 @@ public final class Z80Cpu implements Cpu {
         int operation = (opcode >>> 3) & 0x07;
         int operandCode = opcode & 0x07;
         int value = read8BitOperand(operandCode);
+        if (operandCode == 6) {
+            readNoMreq(registers.hl(), 1);
+        }
 
         return switch (group) {
             case 0 -> {
@@ -413,7 +429,8 @@ public final class Z80Cpu implements Cpu {
                 yield operandCode == 6 ? 15 : 8;
             }
             case 1 -> {
-                bit(operation, value);
+                int undocumentedFlagSource = operandCode == 6 ? memptr >>> 8 : value;
+                bit(operation, value, undocumentedFlagSource);
                 yield operandCode == 6 ? 12 : 8;
             }
             case 2 -> {
@@ -434,6 +451,7 @@ public final class Z80Cpu implements Cpu {
         int destination = opcode & 0x07;
         int address = indexedAddress(indexMode, displacement);
         int value = readMemory8(address);
+        readNoMreq(address, 1);
 
         return switch (group) {
             case 0 -> {
@@ -441,7 +459,7 @@ public final class Z80Cpu implements Cpu {
                 yield writeIndexedCbResult(address, destination, result);
             }
             case 1 -> {
-                bit(operation, value);
+                bit(operation, value, memptr >>> 8);
                 yield 16;
             }
             case 2 -> {
@@ -543,47 +561,56 @@ public final class Z80Cpu implements Cpu {
 
     private int loadIndexFromImmediateAddress(int indexMode) {
         int address = fetchImmediate16();
+        memptr = (address + 1) & 0xFFFF;
         setIndexValue(indexMode, readMemory16(address));
         return 16;
     }
 
     private int incrementRegisterPair(int pairCode) {
+        readNoMreq(registers.ir(), 2);
         setRegisterPair(pairCode, getRegisterPair(pairCode) + 1);
         return 6;
     }
 
     private int decrementRegisterPair(int pairCode) {
+        readNoMreq(registers.ir(), 2);
         setRegisterPair(pairCode, getRegisterPair(pairCode) - 1);
         return 6;
     }
 
     private int incrementIndex(int indexMode) {
+        readNoMreq(registers.ir(), 2);
         setIndexValue(indexMode, indexValue(indexMode) + 1);
         return 6;
     }
 
     private int decrementIndex(int indexMode) {
+        readNoMreq(registers.ir(), 2);
         setIndexValue(indexMode, indexValue(indexMode) - 1);
         return 6;
     }
 
     private int addHl(int value) {
+        readNoMreq(registers.ir(), 7);
         registers.setHl(add16PreserveSzpv(registers.hl(), value));
         return 11;
     }
 
     private int addIndex(int indexMode, int value) {
+        readNoMreq(registers.ir(), 7);
         setIndexValue(indexMode, add16PreserveSzpv(indexValue(indexMode), value));
         return 11;
     }
 
     private int loadIndirectFromAccumulator(int address) {
         writeMemory8(address, registers.a());
+        memptr = ((registers.a() & 0xFF) << 8) | ((address + 1) & 0xFF);
         return 7;
     }
 
     private int loadAccumulatorFromIndirect(int address) {
         registers.setA(readMemory8(address));
+        memptr = (address + 1) & 0xFFFF;
         return 7;
     }
 
@@ -605,13 +632,18 @@ public final class Z80Cpu implements Cpu {
 
     private int loadIndexedMemoryImmediate(int indexMode) {
         int displacement = relativeOffset(fetchImmediate8());
+        int immediateAddress = registers.pc();
         int value = fetchImmediate8();
+        readNoMreq(immediateAddress, 2);
         writeMemory8(indexedAddress(indexMode, displacement), value);
         return 15;
     }
 
     private int increment8BitOperand(int operandCode) {
         int original = read8BitOperand(operandCode);
+        if (operandCode == 6) {
+            readNoMreq(registers.hl(), 1);
+        }
         int updated = (original + 1) & 0xFF;
         write8BitOperand(operandCode, updated);
         updateIncFlags(original, updated);
@@ -620,6 +652,9 @@ public final class Z80Cpu implements Cpu {
 
     private int decrement8BitOperand(int operandCode) {
         int original = read8BitOperand(operandCode);
+        if (operandCode == 6) {
+            readNoMreq(registers.hl(), 1);
+        }
         int updated = (original - 1) & 0xFF;
         write8BitOperand(operandCode, updated);
         updateDecFlags(original, updated);
@@ -655,9 +690,10 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int incrementIndexedMemory(int indexMode) {
-        int displacement = relativeOffset(fetchImmediate8());
+        int displacement = fetchIndexedDisplacement();
         int address = indexedAddress(indexMode, displacement);
         int original = readMemory8(address);
+        readNoMreq(address, 1);
         int updated = (original + 1) & 0xFF;
         writeMemory8(address, updated);
         updateIncFlags(original, updated);
@@ -665,9 +701,10 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int decrementIndexedMemory(int indexMode) {
-        int displacement = relativeOffset(fetchImmediate8());
+        int displacement = fetchIndexedDisplacement();
         int address = indexedAddress(indexMode, displacement);
         int original = readMemory8(address);
+        readNoMreq(address, 1);
         int updated = (original - 1) & 0xFF;
         writeMemory8(address, updated);
         updateDecFlags(original, updated);
@@ -675,26 +712,37 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int jr() {
-        registers.incrementPc(relativeOffset(fetchImmediate8()));
+        int displacementAddress = registers.pc();
+        int displacement = relativeOffset(fetchImmediate8());
+        readNoMreq(displacementAddress, 5);
+        registers.incrementPc(displacement);
+        memptr = registers.pc();
         return 12;
     }
 
     private int jrConditional(boolean condition) {
+        int displacementAddress = registers.pc();
         int offset = fetchImmediate8();
         if (condition) {
+            readNoMreq(displacementAddress, 5);
             registers.incrementPc(relativeOffset(offset));
+            memptr = registers.pc();
             return 12;
         }
         return 7;
     }
 
     private int djnz() {
+        readNoMreq(registers.ir(), 1);
+        int displacementAddress = registers.pc();
         int offset = fetchImmediate8();
         int result = (registers.b() - 1) & 0xFF;
         registers.setB(result);
 
         if (result != 0) {
+            readNoMreq(displacementAddress, 5);
             registers.incrementPc(relativeOffset(offset));
+            memptr = registers.pc();
             return 13;
         }
         return 8;
@@ -702,30 +750,35 @@ public final class Z80Cpu implements Cpu {
 
     private int storeWordImmediateAddress(int value) {
         int address = fetchImmediate16();
+        memptr = (address + 1) & 0xFFFF;
         writeMemory16(address, value);
         return 16;
     }
 
     private int loadHlFromImmediateAddress() {
         int address = fetchImmediate16();
+        memptr = (address + 1) & 0xFFFF;
         registers.setHl(readMemory16(address));
         return 16;
     }
 
     private int loadRegisterPairFromImmediateAddress(int pairCode) {
         int address = fetchImmediate16();
+        memptr = (address + 1) & 0xFFFF;
         setRegisterPair(pairCode, readMemory16(address));
         return 20;
     }
 
     private int storeByteImmediateAddress(int value) {
         int address = fetchImmediate16();
+        memptr = ((value & 0xFF) << 8) | ((address + 1) & 0xFF);
         writeMemory8(address, value);
         return 13;
     }
 
     private int storeRegisterPairImmediateAddress(int pairCode) {
         int address = fetchImmediate16();
+        memptr = (address + 1) & 0xFFFF;
         writeMemory16(address, getRegisterPair(pairCode));
         return 20;
     }
@@ -733,6 +786,7 @@ public final class Z80Cpu implements Cpu {
     private int loadAccumulatorFromImmediateAddress() {
         int address = fetchImmediate16();
         registers.setA(readMemory8(address));
+        memptr = (address + 1) & 0xFFFF;
         return 13;
     }
 
@@ -743,6 +797,7 @@ public final class Z80Cpu implements Cpu {
 
     private int jpConditional(boolean condition) {
         int target = fetchImmediate16();
+        memptr = target;
         if (condition) {
             registers.setPc(target);
         }
@@ -750,7 +805,8 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int jpImmediate() {
-        registers.setPc(fetchImmediate16());
+        memptr = fetchImmediate16();
+        registers.setPc(memptr);
         return 10;
     }
 
@@ -766,7 +822,9 @@ public final class Z80Cpu implements Cpu {
 
     private int callConditional(boolean condition) {
         int target = fetchImmediate16();
+        memptr = target;
         if (condition) {
+            readNoMreq(registers.pc() - 1, 1);
             pushWord(registers.pc());
             registers.setPc(target);
             return 17;
@@ -776,36 +834,45 @@ public final class Z80Cpu implements Cpu {
 
     private int callImmediate() {
         int target = fetchImmediate16();
+        memptr = target;
+        readNoMreq(registers.pc() - 1, 1);
         pushWord(registers.pc());
         registers.setPc(target);
         return 17;
     }
 
     private int retConditional(boolean condition) {
+        readNoMreq(registers.ir(), 1);
         if (condition) {
-            registers.setPc(popWord());
+            memptr = popWord();
+            registers.setPc(memptr);
             return 11;
         }
         return 5;
     }
 
     private int ret() {
-        registers.setPc(popWord());
+        memptr = popWord();
+        registers.setPc(memptr);
         return 10;
     }
 
     private int rst(int vector) {
+        readNoMreq(registers.ir(), 1);
         pushWord(registers.pc());
         registers.setPc(vector & 0x0038);
+        memptr = registers.pc();
         return 11;
     }
 
     private int pushRegisterPair(int pairCode) {
+        readNoMreq(registers.ir(), 1);
         pushWord(getStackRegisterPair(pairCode));
         return 11;
     }
 
     private int pushIndex(int indexMode) {
+        readNoMreq(registers.ir(), 1);
         pushWord(indexValue(indexMode));
         return 11;
     }
@@ -838,16 +905,31 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int exSpHl() {
-        int valueAtSp = readMemory16(registers.sp());
-        writeMemory16(registers.sp(), registers.hl());
+        int stackAddress = registers.sp();
+        int low = readMemory8(stackAddress);
+        int high = readMemory8(stackAddress + 1);
+        int valueAtSp = low | (high << 8);
+        readNoMreq(stackAddress + 1, 1);
+        writeMemory8(stackAddress + 1, registers.h());
+        writeMemory8(stackAddress, registers.l());
+        writeNoMreq(stackAddress, 2);
         registers.setHl(valueAtSp);
+        memptr = valueAtSp;
         return 19;
     }
 
     private int exSpIndex(int indexMode) {
-        int valueAtSp = readMemory16(registers.sp());
-        writeMemory16(registers.sp(), indexValue(indexMode));
+        int stackAddress = registers.sp();
+        int low = readMemory8(stackAddress);
+        int high = readMemory8(stackAddress + 1);
+        int valueAtSp = low | (high << 8);
+        int index = indexValue(indexMode);
+        readNoMreq(stackAddress + 1, 1);
+        writeMemory8(stackAddress + 1, index >>> 8);
+        writeMemory8(stackAddress, index);
+        writeNoMreq(stackAddress, 2);
         setIndexValue(indexMode, valueAtSp);
+        memptr = valueAtSp;
         return 19;
     }
 
@@ -866,11 +948,13 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int ldSpHl() {
+        readNoMreq(registers.ir(), 2);
         registers.setSp(registers.hl());
         return 6;
     }
 
     private int ldSpIndex(int indexMode) {
+        readNoMreq(registers.ir(), 2);
         registers.setSp(indexValue(indexMode));
         return 6;
     }
@@ -880,12 +964,14 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int adcHl(int value) {
+        readNoMreq(registers.ir(), 7);
         int carryIn = registers.flagSet(Z80Registers.FLAG_C) ? 1 : 0;
         registers.setHl(add16WithCarry(registers.hl(), value, carryIn));
         return 15;
     }
 
     private int sbcHl(int value) {
+        readNoMreq(registers.ir(), 7);
         int carryIn = registers.flagSet(Z80Registers.FLAG_C) ? 1 : 0;
         registers.setHl(subtract16WithCarry(registers.hl(), value, carryIn));
         return 15;
@@ -936,25 +1022,20 @@ public final class Z80Cpu implements Cpu {
         boolean previousCarry = (flagsBefore & Z80Registers.FLAG_C) != 0;
         boolean previousHalfCarry = (flagsBefore & Z80Registers.FLAG_H) != 0;
 
+        // NMOS Z80 evaluates both correction conditions before choosing add or subtract.
+        // The distinction is observable for otherwise-unreachable A/flag combinations.
         int correction = 0;
-        boolean carryOut = previousCarry;
+        if (previousHalfCarry || (original & 0x0F) > 0x09) {
+            correction |= 0x06;
+        }
+        if (previousCarry || original > 0x99) {
+            correction |= 0x60;
+        }
 
+        boolean carryOut = previousCarry || original > 0x99;
         if (!subtraction) {
-            if (previousHalfCarry || (original & 0x0F) > 0x09) {
-                correction |= 0x06;
-            }
-            if (previousCarry || original > 0x99) {
-                correction |= 0x60;
-                carryOut = true;
-            }
             original = (original + correction) & 0xFF;
         } else {
-            if (previousHalfCarry) {
-                correction |= 0x06;
-            }
-            if (previousCarry) {
-                correction |= 0x60;
-            }
             original = (original - correction) & 0xFF;
         }
 
@@ -976,7 +1057,7 @@ public final class Z80Cpu implements Cpu {
         }
 
         registers.setA(original);
-        registers.setF(flags);
+        setFlags(flags);
         return 4;
     }
 
@@ -986,28 +1067,28 @@ public final class Z80Cpu implements Cpu {
         int flags = registers.f() & (Z80Registers.FLAG_S | Z80Registers.FLAG_Z | Z80Registers.FLAG_PV | Z80Registers.FLAG_C);
         flags |= Z80Registers.FLAG_H | Z80Registers.FLAG_N;
         flags |= result & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
-        registers.setF(flags);
+        setFlags(flags);
         return 4;
     }
 
     private int scf() {
         int flags = registers.f() & (Z80Registers.FLAG_S | Z80Registers.FLAG_Z | Z80Registers.FLAG_PV);
-        flags |= registers.a() & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+        flags |= undocumentedScfCcfFlags();
         flags |= Z80Registers.FLAG_C;
-        registers.setF(flags);
+        setFlags(flags);
         return 4;
     }
 
     private int ccf() {
         boolean previousCarry = registers.flagSet(Z80Registers.FLAG_C);
         int flags = registers.f() & (Z80Registers.FLAG_S | Z80Registers.FLAG_Z | Z80Registers.FLAG_PV);
-        flags |= registers.a() & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+        flags |= undocumentedScfCcfFlags();
         if (previousCarry) {
             flags |= Z80Registers.FLAG_H;
         } else {
             flags |= Z80Registers.FLAG_C;
         }
-        registers.setF(flags);
+        setFlags(flags);
         return 4;
     }
 
@@ -1015,6 +1096,7 @@ public final class Z80Cpu implements Cpu {
         int portLow = fetchImmediate8();
         int port = ((registers.a() & 0xFF) << 8) | portLow;
         registers.setA(readPort8(port));
+        memptr = (port + 1) & 0xFFFF;
         return 11;
     }
 
@@ -1022,11 +1104,13 @@ public final class Z80Cpu implements Cpu {
         int portLow = fetchImmediate8();
         int port = ((registers.a() & 0xFF) << 8) | portLow;
         writePort8(port, registers.a());
+        memptr = ((registers.a() & 0xFF) << 8) | ((portLow + 1) & 0xFF);
         return 11;
     }
 
     private int inRegisterFromPortC(int registerCode) {
         int value = readPort8(registers.bc());
+        memptr = (registers.bc() + 1) & 0xFFFF;
         writeRegisterOperand(registerCode, value);
         setSzp53FlagsPreserveCarry(value);
         return 12;
@@ -1035,6 +1119,7 @@ public final class Z80Cpu implements Cpu {
     private int outRegisterToPortC(int registerCode) {
         int value = registerCode == 6 ? 0 : readRegisterOperand(registerCode);
         writePort8(registers.bc(), value);
+        memptr = (registers.bc() + 1) & 0xFFFF;
         return 12;
     }
 
@@ -1044,8 +1129,12 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int ldir() {
-        blockTransfer(true);
-        return finishRepeatingBlockOp(registers.bc() != 0);
+        int destinationAddress = blockTransfer(true);
+        boolean repeat = registers.bc() != 0;
+        if (repeat) {
+            writeNoMreq(destinationAddress, 5);
+        }
+        return finishRepeatingBlockOp(repeat, true);
     }
 
     private int ldd() {
@@ -1054,8 +1143,12 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int lddr() {
-        blockTransfer(false);
-        return finishRepeatingBlockOp(registers.bc() != 0);
+        int destinationAddress = blockTransfer(false);
+        boolean repeat = registers.bc() != 0;
+        if (repeat) {
+            writeNoMreq(destinationAddress, 5);
+        }
+        return finishRepeatingBlockOp(repeat, true);
     }
 
     private int cpi() {
@@ -1064,8 +1157,13 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int cpir() {
+        int compareAddress = registers.hl();
         boolean matched = blockCompare(true);
-        return finishRepeatingBlockOp(!matched && registers.bc() != 0);
+        boolean repeat = !matched && registers.bc() != 0;
+        if (repeat) {
+            readNoMreq(compareAddress, 5);
+        }
+        return finishRepeatingBlockOp(repeat, true);
     }
 
     private int cpd() {
@@ -1074,8 +1172,13 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int cpdr() {
+        int compareAddress = registers.hl();
         boolean matched = blockCompare(false);
-        return finishRepeatingBlockOp(!matched && registers.bc() != 0);
+        boolean repeat = !matched && registers.bc() != 0;
+        if (repeat) {
+            readNoMreq(compareAddress, 5);
+        }
+        return finishRepeatingBlockOp(repeat, true);
     }
 
     private int ini() {
@@ -1099,28 +1202,49 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int inir() {
+        int destinationAddress = registers.hl();
         blockInput(true);
-        return finishRepeatingBlockOp(registers.b() != 0);
+        boolean repeat = registers.b() != 0;
+        if (repeat) {
+            writeNoMreq(destinationAddress, 5);
+        }
+        return finishRepeatingBlockOp(repeat, false);
     }
 
     private int indr() {
+        int destinationAddress = registers.hl();
         blockInput(false);
-        return finishRepeatingBlockOp(registers.b() != 0);
+        boolean repeat = registers.b() != 0;
+        if (repeat) {
+            writeNoMreq(destinationAddress, 5);
+        }
+        return finishRepeatingBlockOp(repeat, false);
     }
 
     private int otir() {
         blockOutput(true);
-        return finishRepeatingBlockOp(registers.b() != 0);
+        boolean repeat = registers.b() != 0;
+        if (repeat) {
+            readNoMreq(registers.bc(), 5);
+        }
+        return finishRepeatingBlockOp(repeat, false);
     }
 
     private int otdr() {
         blockOutput(false);
-        return finishRepeatingBlockOp(registers.b() != 0);
+        boolean repeat = registers.b() != 0;
+        if (repeat) {
+            readNoMreq(registers.bc(), 5);
+        }
+        return finishRepeatingBlockOp(repeat, false);
     }
 
-    private int finishRepeatingBlockOp(boolean repeat) {
+    private int finishRepeatingBlockOp(boolean repeat, boolean memptrTracksPc) {
         if (repeat) {
             registers.incrementPc(-2);
+            if (memptrTracksPc) {
+                memptr = (registers.pc() + 1) & 0xFFFF;
+            }
             return 21;
         }
         return 16;
@@ -1288,6 +1412,13 @@ public final class Z80Cpu implements Cpu {
         return value;
     }
 
+    private int fetchIndexedDisplacement() {
+        int displacementAddress = registers.pc();
+        int displacement = relativeOffset(fetchImmediate8());
+        readNoMreq(displacementAddress, 5);
+        return displacement;
+    }
+
     private int fetchImmediate16() {
         int low = fetchImmediate8();
         int high = fetchImmediate8();
@@ -1318,6 +1449,28 @@ public final class Z80Cpu implements Cpu {
     private void writeMemory16(int address, int value) {
         writeMemory8(address, value);
         writeMemory8(address + 1, value >>> 8);
+    }
+
+    private void readNoMreq(int address, int tStates) {
+        internalCycles(address, tStates, InternalCycleType.READ_NO_MREQ);
+    }
+
+    private void writeNoMreq(int address, int tStates) {
+        internalCycles(address, tStates, InternalCycleType.WRITE_NO_MREQ);
+    }
+
+    private void internalCycles(int address, int tStates, InternalCycleType type) {
+        if (tStates <= 0) {
+            return;
+        }
+        int waitStates = bus.internalCycleWaitStates(
+                address == CpuBus.NO_ADDRESS ? CpuBus.NO_ADDRESS : address & 0xFFFF,
+                instructionPhaseTStates,
+                tStates,
+                type
+        );
+        extraTStatesThisInstruction += waitStates;
+        instructionPhaseTStates += tStates + waitStates;
     }
 
     private void logUnsupportedOpcode(UnsupportedOperationException unsupported) {
@@ -1393,7 +1546,7 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_PV;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private void updateDecFlags(int original, int updated) {
@@ -1411,7 +1564,7 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_PV;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private int add8(int left, int right, int carryIn) {
@@ -1432,7 +1585,7 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_C;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
         return result;
     }
 
@@ -1455,12 +1608,15 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_C;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
         return result;
     }
 
     private void compare8(int left, int right) {
         subtract8(left, right, 0);
+        int flags = registers.f() & ~(Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+        flags |= right & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+        setFlags(flags);
     }
 
     private void setLogicFlags(int result, boolean halfCarry) {
@@ -1476,12 +1632,13 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_H;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private int add16PreserveSzpv(int left, int right) {
         int raw = left + right;
         int result = raw & 0xFFFF;
+        memptr = (left + 1) & 0xFFFF;
         int flags = registers.f() & (Z80Registers.FLAG_S | Z80Registers.FLAG_Z | Z80Registers.FLAG_PV);
         flags |= (result >>> 8) & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
 
@@ -1492,13 +1649,14 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_C;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
         return result;
     }
 
     private int add16WithCarry(int left, int right, int carryIn) {
         int raw = left + right + carryIn;
         int result = raw & 0xFFFF;
+        memptr = (left + 1) & 0xFFFF;
         int flags = ((result >>> 8) & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3))
                 | ((result & 0xFFFF) == 0 ? Z80Registers.FLAG_Z : 0);
 
@@ -1512,13 +1670,14 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_C;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
         return result;
     }
 
     private int subtract16WithCarry(int left, int right, int carryIn) {
         int raw = left - right - carryIn;
         int result = raw & 0xFFFF;
+        memptr = (left + 1) & 0xFFFF;
         int flags = ((result >>> 8) & (Z80Registers.FLAG_S | Z80Registers.FLAG_5 | Z80Registers.FLAG_3))
                 | Z80Registers.FLAG_N
                 | ((result & 0xFFFF) == 0 ? Z80Registers.FLAG_Z : 0);
@@ -1533,7 +1692,7 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_C;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
         return result;
     }
 
@@ -1582,7 +1741,7 @@ public final class Z80Cpu implements Cpu {
         return result;
     }
 
-    private void bit(int bitIndex, int value) {
+    private void bit(int bitIndex, int value, int undocumentedFlagSource) {
         int flags = registers.f() & Z80Registers.FLAG_C;
         int mask = 1 << (bitIndex & 0x07);
         boolean bitSet = (value & mask) != 0;
@@ -1594,9 +1753,9 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_Z | Z80Registers.FLAG_PV;
         }
         flags |= Z80Registers.FLAG_H;
-        flags |= value & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+        flags |= undocumentedFlagSource & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
 
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private void setRotateShiftFlags(int result, boolean carry) {
@@ -1612,7 +1771,7 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_C;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private void setAccumulatorRotateFlags(int result, boolean carry) {
@@ -1621,7 +1780,7 @@ public final class Z80Cpu implements Cpu {
         if (carry) {
             flags |= Z80Registers.FLAG_C;
         }
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private int neg() {
@@ -1630,7 +1789,8 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int retn() {
-        registers.setPc(popWord());
+        memptr = popWord();
+        registers.setPc(memptr);
         registers.setIff1(registers.iff2());
         return 14;
     }
@@ -1641,13 +1801,14 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int ldIFromA() {
+        readNoMreq(registers.ir(), 1);
         registers.setI(registers.a());
         return 9;
     }
 
     private int ldRFromA() {
-        int preservedTopBit = registers.r() & 0x80;
-        registers.setR((registers.a() & 0x7F) | preservedTopBit);
+        readNoMreq(registers.ir(), 1);
+        registers.setR(registers.a());
         return 9;
     }
 
@@ -1660,6 +1821,7 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int loadAWithIrFlags(int value) {
+        readNoMreq(registers.ir(), 1);
         registers.setA(value);
 
         int flags = registers.f() & Z80Registers.FLAG_C;
@@ -1671,12 +1833,13 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_PV;
         }
 
-        registers.setF(flags);
+        setFlags(flags);
         return 9;
     }
 
     private int rrd() {
         int value = readMemory8(registers.hl());
+        readNoMreq(registers.hl(), 4);
         int accumulator = registers.a();
         int updatedMemory = ((accumulator & 0x0F) << 4) | ((value >>> 4) & 0x0F);
         int updatedAccumulator = (accumulator & 0xF0) | (value & 0x0F);
@@ -1684,11 +1847,13 @@ public final class Z80Cpu implements Cpu {
         writeMemory8(registers.hl(), updatedMemory);
         registers.setA(updatedAccumulator);
         setSzp53FlagsPreserveCarry(updatedAccumulator);
+        memptr = (registers.hl() + 1) & 0xFFFF;
         return 18;
     }
 
     private int rld() {
         int value = readMemory8(registers.hl());
+        readNoMreq(registers.hl(), 4);
         int accumulator = registers.a();
         int updatedMemory = ((value << 4) | (accumulator & 0x0F)) & 0xFF;
         int updatedAccumulator = (accumulator & 0xF0) | ((value >>> 4) & 0x0F);
@@ -1696,6 +1861,7 @@ public final class Z80Cpu implements Cpu {
         writeMemory8(registers.hl(), updatedMemory);
         registers.setA(updatedAccumulator);
         setSzp53FlagsPreserveCarry(updatedAccumulator);
+        memptr = (registers.hl() + 1) & 0xFFFF;
         return 18;
     }
 
@@ -1708,12 +1874,14 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_PV;
         }
         flags |= registers.f() & Z80Registers.FLAG_C;
-        registers.setF(flags);
+        setFlags(flags);
     }
 
-    private void blockTransfer(boolean increment) {
+    private int blockTransfer(boolean increment) {
+        int destinationAddress = registers.de();
         int value = readMemory8(registers.hl());
-        writeMemory8(registers.de(), value);
+        writeMemory8(destinationAddress, value);
+        writeNoMreq(destinationAddress, 2);
         registers.setHl(registers.hl() + (increment ? 1 : -1));
         registers.setDe(registers.de() + (increment ? 1 : -1));
         registers.setBc(registers.bc() - 1);
@@ -1723,35 +1891,43 @@ public final class Z80Cpu implements Cpu {
             flags |= Z80Registers.FLAG_PV;
         }
         int sum = registers.a() + value;
-        flags |= sum & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
-        registers.setF(flags);
+        flags |= sum & Z80Registers.FLAG_3;
+        flags |= (sum & 0x02) << 4;
+        setFlags(flags);
+        return destinationAddress;
     }
 
     private void blockInput(boolean increment) {
+        readNoMreq(registers.ir(), 1);
         int port = registers.bc();
         int value = readPort8(port);
         writeMemory8(registers.hl(), value);
+        memptr = (port + (increment ? 1 : -1)) & 0xFFFF;
         registers.setHl(registers.hl() + (increment ? 1 : -1));
         registers.setB(registers.b() - 1);
         setBlockIoFlags(value);
     }
 
     private void blockOutput(boolean increment) {
-        int port = registers.bc();
+        readNoMreq(registers.ir(), 1);
         int value = readMemory8(registers.hl());
-        writePort8(port, value);
-        registers.setHl(registers.hl() + (increment ? 1 : -1));
         registers.setB(registers.b() - 1);
+        writePort8(registers.bc(), value);
+        registers.setHl(registers.hl() + (increment ? 1 : -1));
+        memptr = (registers.bc() + (increment ? 1 : -1)) & 0xFFFF;
         setBlockIoFlags(value);
     }
 
     private boolean blockCompare(boolean increment) {
-        int memoryValue = readMemory8(registers.hl());
+        int compareAddress = registers.hl();
+        int memoryValue = readMemory8(compareAddress);
+        readNoMreq(compareAddress, 5);
         int raw = registers.a() - memoryValue;
         int result = raw & 0xFF;
 
         registers.setHl(registers.hl() + (increment ? 1 : -1));
         registers.setBc(registers.bc() - 1);
+        memptr = (memptr + (increment ? 1 : -1)) & 0xFFFF;
 
         int flags = result & Z80Registers.FLAG_S;
         if (result == 0) {
@@ -1765,8 +1941,21 @@ public final class Z80Cpu implements Cpu {
         }
         flags |= Z80Registers.FLAG_N;
         flags |= registers.f() & Z80Registers.FLAG_C;
-        registers.setF(flags);
+        int adjustedResult = result - ((flags & Z80Registers.FLAG_H) != 0 ? 1 : 0);
+        flags |= adjustedResult & Z80Registers.FLAG_3;
+        flags |= (adjustedResult & 0x02) << 4;
+        setFlags(flags);
         return result == 0;
+    }
+
+    private int undocumentedScfCcfFlags() {
+        return ((lastQ ^ registers.f()) | registers.a())
+                & (Z80Registers.FLAG_5 | Z80Registers.FLAG_3);
+    }
+
+    private void setFlags(int flags) {
+        registers.setF(flags);
+        q = registers.f();
     }
 
     private void setBlockIoFlags(int value) {
@@ -1778,7 +1967,7 @@ public final class Z80Cpu implements Cpu {
         if ((value & 0x80) != 0) {
             flags |= Z80Registers.FLAG_N;
         }
-        registers.setF(flags);
+        setFlags(flags);
     }
 
     private int readPort8(int port) {
@@ -1837,7 +2026,8 @@ public final class Z80Cpu implements Cpu {
     }
 
     private int indexedAddress(int indexMode, int displacement) {
-        return (indexValue(indexMode) + displacement) & 0xFFFF;
+        memptr = (indexValue(indexMode) + displacement) & 0xFFFF;
+        return memptr;
     }
 
     private boolean conditionCode(int code) {

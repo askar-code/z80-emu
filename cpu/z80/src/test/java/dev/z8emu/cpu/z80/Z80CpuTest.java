@@ -170,7 +170,7 @@ class Z80CpuTest {
     }
 
     @Test
-    void haltReleasesOnMaskableInterruptEvenWhenInterruptsAreDisabled() {
+    void haltContinuesWhileMaskableInterruptsAreDisabled() {
         TestBus bus = new TestBus();
         bus.load(0x0000, 0x76, 0x00);
 
@@ -183,9 +183,17 @@ class Z80CpuTest {
         cpu.requestMaskableInterrupt();
 
         assertEquals(4, cpu.runInstruction());
-        assertFalse(cpu.isHalted());
+        assertTrue(cpu.isHalted());
         assertEquals(0x0001, cpu.registers().pc());
+        assertEquals(2, cpu.registers().r());
         assertFalse(cpu.registers().iff1());
+
+        cpu.clearMaskableInterrupt();
+
+        assertEquals(4, cpu.runInstruction());
+        assertTrue(cpu.isHalted());
+        assertEquals(0x0001, cpu.registers().pc());
+        assertEquals(3, cpu.registers().r());
     }
 
     @Test
@@ -419,13 +427,47 @@ class Z80CpuTest {
 
         assertEquals(7, cpu.runInstruction());
         assertEquals(9, cpu.runInstruction());
-        assertEquals(0xCF, cpu.registers().r());
+        assertEquals(0x4F, cpu.registers().r());
 
         assertEquals(4, cpu.runInstruction());
         assertEquals(9, cpu.runInstruction());
-        assertEquals(0xD2, cpu.registers().a());
-        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_S));
+        assertEquals(0x52, cpu.registers().a());
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_S));
         assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
+    }
+
+    @Test
+    void ldRFromACopiesSetBitSevenToo() {
+        TestBus bus = new TestBus();
+        bus.load(
+                0x0000,
+                0x3E, 0xCF,
+                0xED, 0x4F
+        );
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setR(0x00);
+
+        assertEquals(7, cpu.runInstruction());
+        assertEquals(9, cpu.runInstruction());
+        assertEquals(0xCF, cpu.registers().r());
+    }
+
+    @Test
+    void daaAppliesNmosCorrectionConditionsAfterSubtraction() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0x27, 0x27);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setAf(0x0A02);
+
+        assertEquals(4, cpu.runInstruction());
+        assertEquals(0x0402, cpu.registers().af());
+
+        cpu.registers().setAf(0xA002);
+
+        assertEquals(4, cpu.runInstruction());
+        assertEquals(0x4003, cpu.registers().af());
     }
 
     @Test
@@ -581,7 +623,7 @@ class Z80CpuTest {
         assertEquals(10, cpu.runInstruction());
 
         assertEquals(16, cpu.runInstruction());
-        assertEquals(0x1003, bus.lastPortWritePort());
+        assertEquals(0x0F03, bus.lastPortWritePort());
         assertEquals(0x33, bus.lastPortWriteValue());
         assertEquals(0x4001, cpu.registers().hl());
         assertEquals(0x0F03, cpu.registers().bc());
@@ -592,7 +634,7 @@ class Z80CpuTest {
         }
 
         assertEquals(16, cpu.runInstruction());
-        assertEquals(0x0103, bus.lastPortWritePort());
+        assertEquals(0x0003, bus.lastPortWritePort());
         assertEquals(0x00, bus.lastPortWriteValue());
         assertEquals(0x3FF2, cpu.registers().hl());
         assertEquals(0x0003, cpu.registers().bc());
@@ -788,6 +830,108 @@ class Z80CpuTest {
         assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_PV));
         assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_5), "Bit 5 should come from A + transferred byte");
         assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_3), "Bit 3 should come from A + transferred byte");
+    }
+
+    @Test
+    void cpCopiesUndocumentedFlagsFromOperandInsteadOfSubtractionResult() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xFE, 0x08, 0xFE, 0x20);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setA(0x00);
+
+        assertEquals(7, cpu.runInstruction());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_3));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_5));
+
+        assertEquals(7, cpu.runInstruction());
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_3));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_5));
+    }
+
+    @Test
+    void ldiMapsBitOneOfAccumulatorSumToUndocumentedFlagFive() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xED, 0xA0);
+        bus.writeMemory(0x4000, 0x02);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setA(0x00);
+        cpu.registers().setHl(0x4000);
+        cpu.registers().setDe(0x5000);
+        cpu.registers().setBc(0x0001);
+
+        assertEquals(16, cpu.runInstruction());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_5));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_3));
+    }
+
+    @Test
+    void cpiDerivesUndocumentedFlagsFromHalfCarryAdjustedResult() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xED, 0xA1);
+        bus.writeMemory(0x4000, 0x08);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setA(0x10);
+        cpu.registers().setHl(0x4000);
+        cpu.registers().setBc(0x0001);
+
+        assertEquals(16, cpu.runInstruction());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_H));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_5));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_3));
+    }
+
+    @Test
+    void indexedBitCopiesUndocumentedFlagsFromEffectiveAddressHighByte() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xFD, 0xCB, 0x01, 0x46);
+        bus.writeMemory(0x2801, 0x00);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setIy(0x2800);
+
+        assertEquals(20, cpu.runInstruction());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_5));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_3));
+    }
+
+    @Test
+    void bitAtHlCopiesUndocumentedFlagsFromMemptrHighByte() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xED, 0x4B, 0xFF, 0x27, 0xCB, 0x46);
+        bus.writeMemory(0x27FF, 0x34);
+        bus.writeMemory(0x2800, 0x12);
+        bus.writeMemory(0x4000, 0x00);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setHl(0x4000);
+
+        assertEquals(20, cpu.runInstruction());
+        assertEquals(12, cpu.runInstruction());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_5));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_3));
+    }
+
+    @Test
+    void scfUsesQToDistinguishImmediatelyChangedAndPreservedFlags() {
+        TestBus bus = new TestBus();
+        bus.load(0x0000, 0xFE, 0x28, 0x37, 0xFE, 0x28, 0x00, 0x37);
+
+        Z80Cpu cpu = new Z80Cpu(bus);
+        cpu.registers().setA(0x00);
+
+        assertEquals(7, cpu.runInstruction());
+        assertEquals(4, cpu.runInstruction());
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_5));
+        assertFalse(cpu.registers().flagSet(Z80Registers.FLAG_3));
+
+        assertEquals(7, cpu.runInstruction());
+        assertEquals(4, cpu.runInstruction());
+        assertEquals(4, cpu.runInstruction());
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_5));
+        assertTrue(cpu.registers().flagSet(Z80Registers.FLAG_3));
     }
 
     @Test

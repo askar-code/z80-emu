@@ -19,6 +19,7 @@ import dev.z8emu.machine.radio86rk.Radio86Machine;
 import dev.z8emu.machine.radio86rk.memory.Radio86Memory;
 import dev.z8emu.machine.radio86rk.tape.Radio86TapeLoaders;
 import dev.z8emu.machine.spectrum.SpectrumMachine;
+import dev.z8emu.machine.spectrum.snapshot.SpectrumSnapshotException;
 import dev.z8emu.machine.spectrum128k.Spectrum128Machine;
 import dev.z8emu.machine.spectrum48k.Spectrum48kMachine;
 import dev.z8emu.machine.spectrum48k.device.SpectrumUlaDevice;
@@ -152,16 +153,37 @@ final class DesktopMachineDefinitions {
 
         @Override
         public DesktopLaunchConfig.LoadedMedia loadMedia(String rawPath) throws IOException {
-            Path tapePath = Path.of(rawPath).toAbsolutePath().normalize();
+            Path mediaPath = Path.of(rawPath).toAbsolutePath().normalize();
+            if (SpectrumSnapshotFiles.hasSnapshotExtension(mediaPath)) {
+                try {
+                    SpectrumSnapshotFiles.LoadedSnapshot loaded = SpectrumSnapshotFiles.load(
+                            mediaPath,
+                            SpectrumSnapshotFiles.modelOf(kind)
+                    );
+                    return new DesktopLaunchConfig.LoadedSpectrumSnapshot(
+                            loaded.source().toString(),
+                            loaded.format(),
+                            loaded.snapshot()
+                    );
+                } catch (SpectrumSnapshotException invalidSnapshot) {
+                    throw new IllegalArgumentException(
+                            "Cannot load " + SpectrumSnapshotFiles.modelOf(kind).displayName()
+                                    + " snapshot " + mediaPath + ": " + invalidSnapshot.getMessage(),
+                            invalidSnapshot
+                    );
+                }
+            }
             return new DesktopLaunchConfig.LoadedSpectrumTape(
-                    tapePath.toString(),
-                    TapeLoaders.load(tapePath)
+                    mediaPath.toString(),
+                    TapeLoaders.load(mediaPath)
             );
         }
 
         @Override
         public void open(DesktopLaunchConfig config) {
             SpectrumMachine machine = createMachine(config);
+            config.loadedMedia(DesktopLaunchConfig.LoadedSpectrumSnapshot.class)
+                    .ifPresent(loaded -> SpectrumSnapshotFiles.restore(machine, loaded.snapshot()));
             if (config.demoMode()) {
                 seedDemoScreen(machine);
             }
@@ -170,7 +192,7 @@ final class DesktopMachineDefinitions {
 
         @Override
         public String usage() {
-            return "--machine=48|128 <rom> [tape.tap|tape.tzx]";
+            return "--machine=48|128 <rom> [tape.tap|tape.tzx|matching-state.sna|matching-state.z80]";
         }
 
         private SpectrumMachine createMachine(DesktopLaunchConfig config) {

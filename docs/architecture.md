@@ -2,15 +2,10 @@
 
 ## Purpose
 
-This repository will host a reusable emulator platform for 8-bit machines.
-
-The first machine is:
-
-- `ZX Spectrum 48K`
-
-The next planned machine is:
-
-- `Radio-86RK`
+This repository hosts a reusable emulator platform for 8-bit machines. The
+current tree contains ZX Spectrum 48K/128K, Radio-86RK, Amstrad CPC, Commodore
+64 and Apple II-family boards on shared CPU, runtime, memory, video and audio
+contracts.
 
 The design goal is to keep CPU, bus, memory, timing, and peripherals replaceable without rebuilding the whole emulator around each new machine.
 
@@ -19,7 +14,7 @@ The design goal is to keep CPU, bus, memory, timing, and peripherals replaceable
 - Language: `Java 21 LTS`
 - Build: `Gradle`
 - Tests: `JUnit 5`
-- Desktop shell later: `JavaFX`
+- Desktop shell: `Swing` / `AWT`
 - Logging: `SLF4J` + `Logback`
 
 This choice is intentionally pragmatic: the architecture carries the timing discipline, while Java gives us fast iteration, strong tooling, and enough performance headroom for this class of emulator.
@@ -30,16 +25,17 @@ This choice is intentionally pragmatic: the architecture carries the timing disc
 - Keep CPU cores independent from concrete memory and I/O devices.
 - Support machine-specific timing, contention, interrupts, and wait states.
 - Make board composition explicit and testable.
-- Allow a future `Radio-86RK` machine to reuse the same runtime model.
+- Let machines such as `Radio-86RK` reuse the same runtime model.
 
-## Non-Goals For The First Milestone
+## Cross-Platform Non-Goals
 
-- `ZX Spectrum 128K`
-- `AY-3-8912`
-- disk subsystems
 - transistor-level simulation
 - JIT or native code generation
 - browser deployment
+
+Machine-specific expansion hardware is scoped by each machine's plan rather
+than treated as a platform feature. For Spectrum, +2A/+3, Beta Disk/TR-DOS and
+Interface 1 are outside the stock 48K/original-128K target.
 
 ## Architectural Principles
 
@@ -279,6 +275,8 @@ Examples:
 - `BeeperDevice`
 - `TapeDevice`
 - `SpectrumUlaDevice`
+- `Ay38912Device`
+- `KempstonJoystickDevice`
 
 ## Execution Model
 
@@ -299,46 +297,46 @@ For `ZX Spectrum 48K`, contention must be modeled at the machine level. The CPU 
 
 That keeps the Z80 core reusable for machines that do not share Spectrum timing rules.
 
-## ZX Spectrum 48K Board
+## ZX Spectrum 48K / Original 128K Boards
 
-### Required MVP Characteristics
-
-- `Z80A`-compatible CPU behavior
-- `16 KB ROM`
-- `48 KB RAM`
-- `ULA`-driven display behavior
-- keyboard matrix
-- port `0xFE`
-- beeper
-- tape input/output
-- 50 Hz frame-based interrupt behavior
+The implemented scope, outstanding accuracy work and evidence required to call
+the machines complete live in the
+[`Spectrum completion plan`](spectrum-completion-plan.md). Executable tape and
+snapshot coverage is listed separately in the
+[`Spectrum media support matrix`](spectrum-media-support.md); real cold-start
+and gameplay probes are documented in the
+[`headless Spectrum runbook`](headless-spectrum-probe.md).
 
 ### Board-Level Responsibilities
 
 The Spectrum board owns:
 
 - memory map
+- eight-bank 128K paging, ROM and shadow-screen selection
 - port decoding
 - contention rules
 - screen memory interpretation
 - border color state
-- floating-bus behavior later in the roadmap
+- floating-bus behavior
+- keyboard, Kempston/Sinclair input and tape transport
+- beeper and 128K AY audio
 
 ### Spectrum-Specific Timing Notes
 
-The architecture must allow the board to model known Spectrum details such as:
+The board models Spectrum-specific details such as:
 
 - contended memory in `0x4000` to `0x7FFF`
 - ULA-driven delays on reads and writes
 - ULA interaction with port `0xFE`
 - line timing based on fixed `t-state` counts
+- model-specific 48K/128K frame origins and floating-bus fetch slots
 - refresh-visible behavior important for edge cases
 
 Those machine rules belong in `:machine-spectrum`, not in `:cpu-z80`.
 
 ## Radio-86RK Compatibility Impact
 
-The future `Radio-86RK` target changes several fundamental pieces:
+The implemented `Radio-86RK` target changes several fundamental pieces:
 
 - CPU family changes from `Z80` to `8080`-compatible `KR580VM80A`
 - video subsystem changes significantly
@@ -390,63 +388,12 @@ Testing is part of the architecture, not an afterthought.
 - framebuffer checksum or screenshot tests
 - audio edge tests for beeper/tape transitions
 
-## Implementation Phases
+## Implementation Status
 
-### Phase 0: Documentation
-
-- accept Java-based architecture
-- document module boundaries
-- document MVP scope
-
-### Phase 1: Platform Skeleton
-
-- create Gradle multi-project layout
-- add `:emu-platform`
-- add base runtime, bus contracts, and common test helpers
-
-### Phase 2: Z80 Core
-
-- registers, flags, and instruction decode
-- `CB`, `ED`, `DD`, `FD` prefixes
-- interrupt handling
-- refresh behavior
-- timing tables
-
-### Phase 3: CPU Validation
-
-- unit tests
-- timing tests
-- test ROM integration
-
-### Phase 4: Spectrum Board MVP
-
-- ROM and RAM
-- memory map
-- keyboard matrix
-- port `0xFE`
-- border and basic beeper
-- boot to ROM and BASIC prompt
-
-### Phase 5: Spectrum Timing Accuracy
-
-- ULA contention
-- interrupt cadence
-- screen timing
-- floating bus
-- tape edge timing
-
-### Phase 6: Desktop Shell
-
-- window and scaling
-- keyboard mapping
-- audio output
-- ROM and snapshot loading
-
-### Phase 7: Second Machine
-
-- add `:cpu-i8080`
-- add `:machine-radio86rk`
-- reuse shared runtime and app shell
+The original numbered bring-up roadmap is complete and no longer serves as a
+status checklist. Current Spectrum work is tracked only in
+[`docs/spectrum-completion-plan.md`](spectrum-completion-plan.md), so status
+does not drift between two checklists.
 
 ## Coding Rules For The Core
 

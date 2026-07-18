@@ -7,6 +7,7 @@ import dev.z8emu.machine.apple2.disk.Apple2WozDiskImage;
 import dev.z8emu.machine.c64.media.C64CrtImage;
 import dev.z8emu.machine.c64.media.C64PrgImage;
 import dev.z8emu.machine.radio86rk.tape.Radio86TapeFile;
+import dev.z8emu.machine.spectrum.snapshot.SpectrumSnapshot;
 import dev.z8emu.machine.spectrum48k.tape.TapeFile;
 import java.util.Optional;
 
@@ -24,11 +25,18 @@ record DesktopLaunchConfig(
                 : Optional.empty();
     }
 
-    sealed interface LoadedMedia permits LoadedSpectrumTape, LoadedRadioTape, LoadedCpcDisk, LoadedC64Prg, LoadedC64Crt, LoadedApple2Program, LoadedApple2Disk, LoadedApple2WozDisk, LoadedApple2BlockDevice {
+    sealed interface LoadedMedia permits LoadedSpectrumTape, LoadedSpectrumSnapshot, LoadedRadioTape, LoadedCpcDisk, LoadedC64Prg, LoadedC64Crt, LoadedApple2Program, LoadedApple2Disk, LoadedApple2WozDisk, LoadedApple2BlockDevice {
         String sourceLabel();
     }
 
     record LoadedSpectrumTape(String sourceLabel, TapeFile tapeFile) implements LoadedMedia {
+    }
+
+    record LoadedSpectrumSnapshot(
+            String sourceLabel,
+            SpectrumSnapshotFiles.Format format,
+            SpectrumSnapshot snapshot
+    ) implements LoadedMedia {
     }
 
     record LoadedRadioTape(String sourceLabel, Radio86TapeFile tapeFile) implements LoadedMedia {
