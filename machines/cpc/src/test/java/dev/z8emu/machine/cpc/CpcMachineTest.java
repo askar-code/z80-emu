@@ -195,7 +195,7 @@ class CpcMachineTest {
         CpcMachine machine = CpcMachine.withBlankRom();
         int hudDisplayLine = 193;
         int hudFrameLine = 72 + hudDisplayLine;
-        int hudByteColumn = 30;
+        int hudByteColumn = 78;
 
         machine.board().cpuBus().writeMemory(
                 machine.board().crtc().displayMemoryAddress(hudDisplayLine, hudByteColumn),
@@ -227,7 +227,7 @@ class CpcMachineTest {
         setPen(upperSideMachine, 0, 20);
         setPen(upperSideMachine, 1, 20);
         setMode(upperSideMachine, 1);
-        long rowZeroFirstSample = (72 * 256L) + 112;
+        long rowZeroFirstSample = (72 * 256L) + 16;
         upperSideMachine.board().gateArray().writeRegister(0x01, upperSideMachine.board().memory(), rowZeroFirstSample);
         upperSideMachine.board().gateArray().writeRegister(0x4B, upperSideMachine.board().memory(), rowZeroFirstSample);
         advanceGateArray(upperSideMachine, rowZeroFirstSample, upperSideMachine.frameTStates());
@@ -263,7 +263,7 @@ class CpcMachineTest {
         setPen(machine, 1, 20);
         setMode(machine, 1);
 
-        long transitionalProbe = (72 * 256L) + 112;
+        long transitionalProbe = (72 * 256L) + 16;
         advanceGateArray(machine, 0, transitionalProbe);
         machine.board().gateArray().writeRegister(0x01, machine.board().memory(), transitionalProbe);
         machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), transitionalProbe);
@@ -285,7 +285,7 @@ class CpcMachineTest {
         machine.board().gateArray().writeRegister(0x01, machine.board().memory(), transitionalPassEnd);
         machine.board().gateArray().writeRegister(0x54, machine.board().memory(), transitionalPassEnd);
 
-        long secondPassProbe = transitionalPassEnd + (88 * 256L) + 112;
+        long secondPassProbe = transitionalPassEnd + (88 * 256L) + 16;
         machine.board().gateArray().writeRegister(0x01, machine.board().memory(), secondPassProbe);
         machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), secondPassProbe);
         long secondPassEnd = transitionalPassEnd + machine.frameTStates();
@@ -325,7 +325,7 @@ class CpcMachineTest {
         CpcMachine machine = CpcMachine.withBlankRom();
         setBorder(machine, 20);
         int changedFrameBufferRow = 10;
-        long borderInkTState = ((36 + changedFrameBufferRow) * 256L) + 80;
+        long borderInkTState = ((36 + changedFrameBufferRow) * 256L) + 8;
         machine.board().gateArray().writeRegister(0x10, machine.board().memory(), borderInkTState);
         machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), borderInkTState);
         advanceGateArray(machine, borderInkTState, machine.frameTStates());
@@ -345,10 +345,10 @@ class CpcMachineTest {
         setPen(machine, 1, 20);
         setMode(machine, 1);
 
-        long firstWrapProbe = (72 * 256L) + 112;
+        long firstWrapProbe = (72 * 256L) + 16;
         machine.board().gateArray().writeRegister(0x01, machine.board().memory(), firstWrapProbe);
         machine.board().gateArray().writeRegister(0x4B, machine.board().memory(), firstWrapProbe);
-        long secondWrapProbe = (384 * 256L) + 112;
+        long secondWrapProbe = (384 * 256L) + 16;
         machine.board().gateArray().writeRegister(0x01, machine.board().memory(), secondWrapProbe);
         machine.board().gateArray().writeRegister(0x4C, machine.board().memory(), secondWrapProbe);
 
