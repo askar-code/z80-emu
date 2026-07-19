@@ -388,10 +388,16 @@ public final class C64VideoDevice implements TimedDevice {
         int maskIndex = y * WINDOW_WIDTH + x;
         int spriteBit = 1 << sprite;
         if (spriteMask[maskIndex] != 0) {
+            if (spriteSpriteLatch == 0) {
+                interruptLatch |= 0x04;
+            }
             spriteSpriteLatch |= spriteMask[maskIndex] | spriteBit;
         }
         spriteMask[maskIndex] |= spriteBit;
         if (foregroundMask[maskIndex]) {
+            if (spriteDataLatch == 0) {
+                interruptLatch |= 0x02;
+            }
             spriteDataLatch |= spriteBit;
         }
         if ((registers[0x1B] & spriteBit) == 0 || !foregroundMask[maskIndex]) {

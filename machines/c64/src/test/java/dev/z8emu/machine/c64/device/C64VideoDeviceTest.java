@@ -308,6 +308,58 @@ class C64VideoDeviceTest {
     }
 
     @Test
+    void spriteSpriteCollisionInterruptLatchesAndUsesItsMask() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteSpriteCollision(memory);
+
+        video.renderFrame(0x00);
+
+        assertEquals(0x04, video.readRegister(0x19) & 0x04);
+        assertFalse(video.interruptLineActive());
+        assertEquals(0x00, video.readRegister(0x19) & 0x80);
+
+        video.writeRegister(0x1A, 0x04);
+
+        assertTrue(video.interruptLineActive());
+        assertEquals(0x80, video.readRegister(0x19) & 0x80);
+    }
+
+    @Test
+    void spriteSpriteValueReadDoesNotAcknowledgeItsInterrupt() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteSpriteCollision(memory);
+        video.writeRegister(0x1A, 0x04);
+        video.renderFrame(0x00);
+
+        assertEquals(0x03, video.readRegister(0x1E));
+        assertEquals(0x00, video.readRegister(0x1E));
+        assertEquals(0x04, video.readRegister(0x19) & 0x04);
+        assertTrue(video.interruptLineActive());
+
+        video.writeRegister(0x19, 0x04);
+
+        assertEquals(0x00, video.readRegister(0x19) & 0x04);
+        assertFalse(video.interruptLineActive());
+    }
+
+    @Test
+    void spriteSpriteCollisionInterruptRequiresValueLatchRearm() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteSpriteCollision(memory);
+        video.renderFrame(0x00);
+        video.writeRegister(0x19, 0x04);
+
+        video.renderFrame(0x00);
+
+        assertEquals(0x00, video.readRegister(0x19) & 0x04);
+        assertEquals(0x03, video.readRegister(0x1E));
+
+        video.renderFrame(0x00);
+
+        assertEquals(0x04, video.readRegister(0x19) & 0x04);
+    }
+
+    @Test
     void disabledDisplaySuppressesSpritesAndTheirCollisions() {
         C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
         C64VideoDevice video = bankThreeVideo(memory);
@@ -353,6 +405,81 @@ class C64VideoDeviceTest {
         memory.writeRam(VIC_BANK_BASE + 0x08, 0x80);
         video.renderFrame(0x00);
         assertEquals(0x01, video.readRegister(0x1F));
+    }
+
+    @Test
+    void spriteDataCollisionInterruptLatchesAndUsesItsMask() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteDataCollision(memory);
+
+        video.renderFrame(0x00);
+
+        assertEquals(0x02, video.readRegister(0x19) & 0x02);
+        assertFalse(video.interruptLineActive());
+        assertEquals(0x00, video.readRegister(0x19) & 0x80);
+
+        video.writeRegister(0x1A, 0x02);
+
+        assertTrue(video.interruptLineActive());
+        assertEquals(0x80, video.readRegister(0x19) & 0x80);
+    }
+
+    @Test
+    void spriteDataValueReadDoesNotAcknowledgeItsInterrupt() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteDataCollision(memory);
+        video.writeRegister(0x1A, 0x02);
+        video.renderFrame(0x00);
+
+        assertEquals(0x01, video.readRegister(0x1F));
+        assertEquals(0x00, video.readRegister(0x1F));
+        assertEquals(0x02, video.readRegister(0x19) & 0x02);
+        assertTrue(video.interruptLineActive());
+
+        video.writeRegister(0x19, 0x02);
+
+        assertEquals(0x00, video.readRegister(0x19) & 0x02);
+        assertFalse(video.interruptLineActive());
+    }
+
+    @Test
+    void spriteDataCollisionInterruptRequiresValueLatchRearm() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteDataCollision(memory);
+        video.renderFrame(0x00);
+        video.writeRegister(0x19, 0x02);
+
+        video.renderFrame(0x00);
+
+        assertEquals(0x00, video.readRegister(0x19) & 0x02);
+        assertEquals(0x01, video.readRegister(0x1F));
+
+        video.renderFrame(0x00);
+
+        assertEquals(0x02, video.readRegister(0x19) & 0x02);
+    }
+
+    @Test
+    void acknowledgingCollisionInterruptPreservesPendingRasterInterrupt() {
+        C64Memory memory = memoryWithChargen(new byte[C64Memory.CHAR_ROM_SIZE]);
+        C64VideoDevice video = configuredSpriteDataCollision(memory);
+        video.renderFrame(0x00);
+        video.writeRegister(0x12, 0x01);
+        video.writeRegister(0x1A, 0x03);
+        video.onTStatesElapsed(C64VideoDevice.CYCLES_PER_LINE);
+
+        assertEquals(0x03, video.readRegister(0x19) & 0x0F);
+        assertTrue(video.interruptLineActive());
+
+        video.writeRegister(0x19, 0x02);
+
+        assertEquals(0x01, video.readRegister(0x19) & 0x0F);
+        assertTrue(video.interruptLineActive());
+
+        video.writeRegister(0x19, 0x01);
+
+        assertEquals(0x00, video.readRegister(0x19) & 0x0F);
+        assertFalse(video.interruptLineActive());
     }
 
     @Test
@@ -803,6 +930,27 @@ class C64VideoDeviceTest {
         video.writeRegister(0x18, 0x10);
         video.writeRegister(0x20, 0x02);
         video.writeRegister(0x21, 0x06);
+        return video;
+    }
+
+    private static C64VideoDevice configuredSpriteSpriteCollision(C64Memory memory) {
+        C64VideoDevice video = bankThreeVideo(memory);
+        configureSprite(memory, video, 0, 24, 50, 0x20, 2);
+        configureSprite(memory, video, 1, 24, 50, 0x21, 5);
+        writeSpriteByte(memory, 0x20, 0, 0xC0);
+        writeSpriteByte(memory, 0x21, 0, 0xC0);
+        video.writeRegister(0x15, 0x03);
+        return video;
+    }
+
+    private static C64VideoDevice configuredSpriteDataCollision(C64Memory memory) {
+        C64VideoDevice video = bankThreeVideo(memory);
+        memory.writeRam(MATRIX_ADDRESS, 0x01);
+        memory.writeRam(VIC_BANK_BASE + 0x08, 0xC0);
+        memory.writeColorRam(0, 0x01);
+        configureSprite(memory, video, 0, 24, 50, 0x20, 2);
+        writeSpriteByte(memory, 0x20, 0, 0xC0);
+        video.writeRegister(0x15, 0x01);
         return video;
     }
 

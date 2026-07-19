@@ -1665,6 +1665,89 @@ class Mos6502CpuTest {
     }
 
     @Test
+    void nmosAslWritesOriginalThenModifiedForEveryMemoryAddressingMode() {
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x02, 0, 0, 0x06, 0x40);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x02, 2, 0, 0x16, 0x3E);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x02, 0, 0, 0x0E, 0x40, 0x00);
+        assertNmosRmwWrites(7, 0x0040, 0x81, 0x02, 2, 0, 0x1E, 0x3E, 0x00);
+    }
+
+    @Test
+    void nmosDocumentedRmwFamiliesWriteOriginalThenModifiedAndKeepCycleCounts() {
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x02, 0, 0, 0x06, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x40, 0, 0, 0x46, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x02, 0, 0, 0x26, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x40, 0, 0, 0x66, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x82, 0, 0, 0xE6, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x80, 0, 0, 0xC6, 0x40);
+        // LSR/ROL/ROR use one inline implementation per addressing mode, so
+        // every mode needs its own ordered-write assertion (ASL already has all
+        // four above in its dedicated test).
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x40, 2, 0, 0x56, 0x3E);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x40, 0, 0, 0x4E, 0x40, 0x00);
+        assertNmosRmwWrites(7, 0x0040, 0x81, 0x40, 2, 0, 0x5E, 0x3E, 0x00);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x02, 2, 0, 0x36, 0x3E);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x02, 0, 0, 0x2E, 0x40, 0x00);
+        assertNmosRmwWrites(7, 0x0040, 0x81, 0x02, 2, 0, 0x3E, 0x3E, 0x00);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x40, 2, 0, 0x76, 0x3E);
+        assertNmosRmwWrites(6, 0x0040, 0x81, 0x40, 0, 0, 0x6E, 0x40, 0x00);
+        assertNmosRmwWrites(7, 0x0040, 0x81, 0x40, 2, 0, 0x7E, 0x3E, 0x00);
+    }
+
+    @Test
+    void nmosUndocumentedRmwFamiliesWriteOriginalThenModifiedAndKeepCycleCounts() {
+        assertNmosRmwWrites(7, 0x0040, 0x81, 0x02, 0, 1, 0x1B, 0x3F, 0x00);
+        assertNmosRmwWrites(8, 0x0040, 0x81, 0x02, 0, 1, 0x33, 0x20);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x40, 0, 0, 0x47, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x40, 0, 0, 0x67, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x80, 0, 0, 0xC7, 0x40);
+        assertNmosRmwWrites(5, 0x0040, 0x81, 0x82, 0, 0, 0xE7, 0x40);
+    }
+
+    @Test
+    void accumulatorShiftsAndRotatesDoNotWriteMemory() {
+        RecordingBus bus = new RecordingBus();
+        Mos6502Cpu cpu = boot(bus, 0x2000, 0x0A, 0x4A, 0x2A, 0x6A);
+        bus.startRecording();
+
+        assertEquals(2, cpu.runInstruction());
+        assertEquals(2, cpu.runInstruction());
+        assertEquals(2, cpu.runInstruction());
+        assertEquals(2, cpu.runInstruction());
+
+        assertEquals(0, bus.writeCount());
+    }
+
+    @Test
+    void cmosDocumentedRmwInstructionsKeepSingleFinalWrite() {
+        RecordingBus incrementBus = new RecordingBus();
+        Mos6502Cpu incrementCpu = boot(
+                incrementBus,
+                Mos6502Variant.CMOS_65C02,
+                0x2000,
+                0xE6, 0x40
+        );
+        incrementBus.writeMemory(0x0040, 0x81);
+        incrementBus.startRecording();
+
+        assertEquals(5, incrementCpu.runInstruction());
+        assertRecordedWrites(incrementBus, 0x0040, 0x82);
+
+        RecordingBus shiftBus = new RecordingBus();
+        Mos6502Cpu shiftCpu = boot(
+                shiftBus,
+                Mos6502Variant.CMOS_65C02,
+                0x2000,
+                0x0E, 0x00, 0x40
+        );
+        shiftBus.writeMemory(0x4000, 0x81);
+        shiftBus.startRecording();
+
+        assertEquals(6, shiftCpu.runInstruction());
+        assertRecordedWrites(shiftBus, 0x4000, 0x02);
+    }
+
+    @Test
     void indexedReadModifyWriteOpcodesUseAbsoluteXAndZeroPageX() {
         TestBus bus = new TestBus();
         bus.writeMemory(0x4102, 0x10);
@@ -1882,6 +1965,38 @@ class Mos6502CpuTest {
         }
     }
 
+    private static void assertNmosRmwWrites(
+            int expectedCycles,
+            int effectiveAddress,
+            int original,
+            int modified,
+            int x,
+            int y,
+            int... instruction
+    ) {
+        RecordingBus bus = new RecordingBus();
+        Mos6502Cpu cpu = boot(bus, 0x2000, instruction);
+        cpu.registers().setX(x);
+        cpu.registers().setY(y);
+        bus.writeMemory(effectiveAddress, original);
+        int indirectBase = (effectiveAddress - y) & 0xFFFF;
+        bus.writeMemory(0x0020, indirectBase & 0xFF);
+        bus.writeMemory(0x0021, indirectBase >>> 8);
+        bus.startRecording();
+
+        assertEquals(expectedCycles, cpu.runInstruction());
+
+        assertRecordedWrites(bus, effectiveAddress, original, modified);
+    }
+
+    private static void assertRecordedWrites(RecordingBus bus, int address, int... values) {
+        assertEquals(values.length, bus.writeCount());
+        for (int index = 0; index < values.length; index++) {
+            assertEquals(address, bus.writeAddress(index));
+            assertEquals(values[index], bus.writeValue(index));
+        }
+    }
+
     private static Mos6502Cpu boot(TestBus bus, int start, int... program) {
         bus.load(start, program);
         bus.writeVector(0xFFFC, start);
@@ -1925,7 +2040,7 @@ class Mos6502CpuTest {
         }
     }
 
-    private static final class TestBus implements CpuBus {
+    private static class TestBus implements CpuBus {
         private final byte[] memory = new byte[0x10000];
 
         void load(int startAddress, int... values) {
@@ -1947,6 +2062,40 @@ class Mos6502CpuTest {
         @Override
         public void writeMemory(int address, int value) {
             memory[address & 0xFFFF] = (byte) value;
+        }
+    }
+
+    private static final class RecordingBus extends TestBus {
+        private final int[] writeAddresses = new int[16];
+        private final int[] writeValues = new int[16];
+        private boolean recording;
+        private int writeCount;
+
+        void startRecording() {
+            writeCount = 0;
+            recording = true;
+        }
+
+        int writeCount() {
+            return writeCount;
+        }
+
+        int writeAddress(int index) {
+            return writeAddresses[index];
+        }
+
+        int writeValue(int index) {
+            return writeValues[index];
+        }
+
+        @Override
+        public void writeMemory(int address, int value) {
+            super.writeMemory(address, value);
+            if (recording) {
+                writeAddresses[writeCount] = address & 0xFFFF;
+                writeValues[writeCount] = value & 0xFF;
+                writeCount++;
+            }
         }
     }
 }

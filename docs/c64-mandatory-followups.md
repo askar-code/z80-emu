@@ -13,7 +13,7 @@ Status: `[ ]` open · `[~]` in progress · `[x]` complete
 
 ## Confirmed correctness defects
 
-### [ ] C64-F01 — NMOS memory RMW must perform the old-value dummy write (P0)
+### [x] C64-F01 — NMOS memory RMW must perform the old-value dummy write (P0)
 
 Current `Mos6502Cpu` memory read-modify-write helpers perform:
 
@@ -53,6 +53,20 @@ Acceptance gates:
   that the VIC IRQ line is released.
 - Existing MOS 6502, 65C02/Apple II, Klaus, and C64 gates remain green.
 
+Completion record:
+
+- Implementation commit: this change.
+- Frozen behavior: every NMOS documented and stable undocumented memory RMW
+  path performs `read -> write original -> write modified` without changing
+  opcode cycle totals. The 65C02 remains on its existing single-read,
+  single-write path; its missing dummy read remains out of scope.
+- Gate results: rerun-forced MOS 6502 tests passed; Klaus executed to
+  `trapPc=0x3469` after `30646177` instructions; rerun-forced C64 tests passed
+  twice; full `build` passed. C64 CRT/joystick/Boulder Dash CRCs remained
+  `81533B92`/`C793420B`/`B96BF819`; Apple II BASIC and both SuperDrive text
+  gates passed, with POP CRC `54BCF7D0`; CPC CRCs remained
+  `2A1A5DBE`/`02B6C0E7`.
+
 References:
 
 - `cpu/mos6502/.../Mos6502Cpu.java` (`incrementMemory`, `decrementMemory`,
@@ -61,7 +75,7 @@ References:
 - [MOS MCS6500 single-cycle execution tables](https://xotmatrix.com/6502/6502-single-cycle-execution.html)
 - [NMOS 6510: Unintended Opcodes — dummy writes and `INC $D019`](https://c64.cz/data2/download/x20/206881/NoMoreSecrets-NMOS6510UnintendedOpcodes-20202412.pdf)
 
-### [ ] C64-F02 — VIC-II collision sources must raise `$D019` IRQ bits (P0)
+### [x] C64-F02 — VIC-II collision sources must raise `$D019` IRQ bits (P0)
 
 Sprite-sprite and sprite-data collision values are latched in `$D01E/$D01F`,
 but the collision path never sets the corresponding VIC interrupt latch. Only
@@ -87,6 +101,20 @@ Acceptance gates:
   clearing, and write-one-to-clear behavior.
 - A combined-source test proves that acknowledging one VIC source preserves
   the others.
+
+Completion record:
+
+- Implementation commit: this change.
+- Frozen behavior: a sprite-data or sprite-sprite IRQ source latches only when
+  its collision-value register was zero before the collision. Reading
+  `$D01E/$D01F` clears only the value latch and re-arms that edge; `$D019`
+  remains independently write-one-to-clear. Re-render re-detection and
+  collisions outside the modeled display window remain accepted limitations;
+  lightpen bit 3 remains unmodeled.
+- Gate results: separate source tests cover latch, mask, bit 7, value-read,
+  acknowledgement, and re-arm behavior; a raster-plus-collision test passed;
+  rerun-forced C64 tests passed twice and full `build` passed. All C64, Apple
+  II, and CPC smoke expectations passed with no CRC changes.
 
 Reference: [Commodore 64 Programmer's Reference Guide — `$D019/$D01A`](https://www.devili.iki.fi/Computers/Commodore/C64/Programmers_Reference/Chapter_3/page_151.html)
 
