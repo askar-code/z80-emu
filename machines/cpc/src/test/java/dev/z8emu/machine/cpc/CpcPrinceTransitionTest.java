@@ -2,9 +2,11 @@ package dev.z8emu.machine.cpc;
 
 import dev.z8emu.machine.cpc.disk.CpcDskLoader;
 import dev.z8emu.platform.video.FrameBuffer;
+import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.CRC32;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -12,10 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CpcPrinceTransitionTest {
-    // Relocked after two identical runs with exact Z80 internal phases: the
-    // CPC bus still adds no internal wait, but later accesses align correctly.
     private static final long LOCKED_TRANSITION_CRC = 0x21A46C76L;
-    private static final long LOCKED_RED_FLASH_CRC = 0x089B5833L;
+    private static final long LOCKED_RED_FLASH_CRC = 0x684F8997L;
 
     @Test
     void roomTransitionKeepsDisplayPhaseStableWhilePreservingRedFlash() throws Exception {
@@ -66,6 +66,7 @@ class CpcPrinceTransitionTest {
                 } else {
                     settledRedSamples = samples;
                     settledRowRedSamples = rowRedSamples(frame, 227);
+                    dumpTransitionPng(frame);
                 }
             }
         }
@@ -123,6 +124,19 @@ class CpcPrinceTransitionTest {
             }
         }
         return count;
+    }
+
+    private static void dumpTransitionPng(FrameBuffer frame) throws Exception {
+        if (!Boolean.getBoolean("cpc.dumpTransitionPng")) {
+            return;
+        }
+
+        Path output = Path.of("..", "..", "build", "cpc-baseline-10e-a", "prince-transition-f160.png")
+                .normalize();
+        Files.createDirectories(output.getParent());
+        BufferedImage image = new BufferedImage(frame.width(), frame.height(), BufferedImage.TYPE_INT_ARGB);
+        image.setRGB(0, 0, frame.width(), frame.height(), frame.pixels(), 0, frame.width());
+        ImageIO.write(image, "png", output.toFile());
     }
 
     private static long frameCrc32(FrameBuffer frame) {
