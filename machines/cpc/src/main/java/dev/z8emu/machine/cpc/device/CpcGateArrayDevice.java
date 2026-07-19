@@ -179,6 +179,14 @@ public final class CpcGateArrayDevice {
         int startAddr = crtc.startAddress();
         for (int y = 0; y < visibleLines; y++) {
             int frameLine = completedDisplayStartLine + y;
+            // The gate array latches MODE at HSYNC: a mode write takes effect from
+            // the next line's origin, never mid-line. Inks apply immediately.
+            int lineMode = completedFrameEventModes[eventIndexAt(
+                    completedFrameEventTimes,
+                    completedFrameEventCount,
+                    0,
+                    frameLine * T_STATES_PER_HSYNC
+            )];
             int eventIndex = eventIndexAt(
                     completedFrameEventTimes,
                     completedFrameEventCount,
@@ -201,9 +209,8 @@ public final class CpcGateArrayDevice {
                         startAddr
                 );
                 int value = memory.readDisplayMemory(address);
-                int mode = completedFrameEventModes[eventIndex];
                 int[] lineInks = completedFrameEventInks[eventIndex];
-                renderDisplayByte(mode, value, byteColumn, y, lineInks);
+                renderDisplayByte(lineMode, value, byteColumn, y, lineInks);
             }
         }
     }

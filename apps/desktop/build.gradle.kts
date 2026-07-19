@@ -228,7 +228,7 @@ tasks.register<JavaExec>("cpcPrinceSmoke") {
         "--disk=" + providers.gradleProperty("cpc.prince").orElse("media/prinpere.dsk").get(),
         "--keys=RUN\"PRINCE<CR>",
         "--press-key-after-frames=1500:<SP>",
-        "--expect-frame-crc=8ECD0EB7",
+        "--expect-frame-crc=02B6C0E7",
         "--dump-frame=build/cpc/prince.png"
     )
 }

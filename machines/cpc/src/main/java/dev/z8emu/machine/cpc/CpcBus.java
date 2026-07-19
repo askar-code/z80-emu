@@ -179,7 +179,9 @@ public final class CpcBus extends ClockedCpuBus {
                 70
         );
         portMap.mapWrite("cpc.gate-array", IoSelector.mask(GATE_ARRAY_PORT_MASK, GATE_ARRAY_PORT_VALUE),
-                (access, value) -> gateArray.writeRegister(value, memory, access.effectiveTState()),
+                // The gate array latches the write on its 1MHz slot at the END of the aligned
+                // 4t I/O cycle; access.effectiveTState() is the cycle start.
+                (access, value) -> gateArray.writeRegister(value, memory, access.effectiveTState() + 4),
                 60
         );
         return portMap;
