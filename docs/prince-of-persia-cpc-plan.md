@@ -186,6 +186,32 @@ testable.
 
 ## Progress Log
 
+- 2026-07-19: Phase 10e batch A' (`cpc-p10e-a-prime`, merged 249724d): CPC half
+  of "honest time", ported onto the internal-cycle Z80 core that landed with
+  the Spectrum completion commit (b7a885b). Two independent implementations of
+  honest internal phases (the Codex batch A on `codex/cpc-p10e-honest-time`,
+  commit a874cfc, now superseded and unmerged, and b7a885b's richer
+  `internalCycleWaitStates` bus hook) produced the identical CALL pin (19) and
+  the byte-identical Prince transition CRC `21A46C76` — mutual validation.
+  A' adds what b7a885b lacked on CPC: I/O and INTA cycles sample WAIT one
+  t-state later than M1/memory cycles (`ioAlignWaits = (3-((clock+phase)&3))&3`,
+  access completes on `%4==3`), fixing OUT (C),r / IN r,(C) from 12t to the
+  measured 16t and OTIR/OTDR repeat from a would-be 28t regression to 24t, and
+  reproducing IM1 accept latency 20t (cpctech instrtim: "interrupt latency
+  Mode 1 = 5 NOPs" — supersedes the ~16t rough estimate in the 10c log below)
+  via `InternalCycleType.INTERRUPT_ACKNOWLEDGE`. New executable NOP table in
+  `CpcWaitStatesTest` pins all 34 measured CPC instruction timings; every row
+  passed without model adjustments. Fault-injection: io-rule revert, INTA-zero,
+  and align-everything mutants all killed by the table; scope note — trailing
+  internal cycles (after the last bus access) are structurally CPC-unobservable
+  (next-fetch alignment absorbs them) and are guarded by `Z80InternalCycleTest`
+  in `:cpu-z80` instead. Locks: Prince smoke `EB264C63`, transition `21A46C76`,
+  red flash `684F8997`, BASIC unchanged `2A1A5DBE`; row-227 seam 42 -> 26
+  (< 50). Full matrix green: 736 tests / 0 skipped incl. the new 170-test
+  Spectrum suite, all C64/Apple smokes byte-identical, klaus baseline intact.
+  Remaining for 10e batch B: display-window geometry (INT checkpoint at
+  intra-line t=240, DISPLAY_START_TSTATES 112 -> 16, CpcMachineTest probe
+  migrations, final relocks, acceptance vs the 10a benchmark).
 - 2026-07-17: Phase 10d HYPOTHESIS FALSIFIED by prototypes (no batch):
   bumping ALL −4t instruction classes in a scratch core (ED OUT/IN 16t,
   PUSH/RST 16t, IM1 16t, block I/O and LDI/LDD +4) moves the seam's
