@@ -1044,25 +1044,37 @@ public final class Mos6502Cpu implements Cpu {
 
     private int shiftRightZeroPage() {
         int address = fetchImmediate8();
-        bus.writeMemory(address, shiftRight(bus.readMemory(address)));
+        int original = bus.readMemory(address);
+        int result = shiftRight(original);
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 5;
     }
 
     private int shiftRightZeroPageX() {
         int address = fetchZeroPageXAddress();
-        bus.writeMemory(address, shiftRight(bus.readMemory(address)));
+        int original = bus.readMemory(address);
+        int result = shiftRight(original);
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 6;
     }
 
     private int shiftRightAbsolute() {
         int address = fetchImmediate16();
-        bus.writeMemory(address, shiftRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = shiftRight(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 6;
     }
 
     private int shiftRightAbsoluteX() {
         int address = indexedValue(fetchAbsoluteXAddress());
-        bus.writeMemory(address, shiftRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = shiftRight(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 7;
     }
 
@@ -1076,27 +1088,37 @@ public final class Mos6502Cpu implements Cpu {
 
     private int shiftLeftZeroPage() {
         int address = fetchImmediate8();
-        int result = shiftLeft(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = shiftLeft(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return 5;
     }
 
     private int shiftLeftZeroPageX() {
         int address = fetchZeroPageXAddress();
-        int result = shiftLeft(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = shiftLeft(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return 6;
     }
 
     private int shiftLeftAbsolute() {
         int address = fetchImmediate16();
-        bus.writeMemory(address, shiftLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = shiftLeft(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 6;
     }
 
     private int shiftLeftAbsoluteX() {
         int address = indexedValue(fetchAbsoluteXAddress());
-        bus.writeMemory(address, shiftLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = shiftLeft(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 7;
     }
 
@@ -1107,27 +1129,37 @@ public final class Mos6502Cpu implements Cpu {
 
     private int rotateLeftZeroPage() {
         int address = fetchImmediate8();
-        int result = rotateLeft(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = rotateLeft(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return 5;
     }
 
     private int rotateLeftZeroPageX() {
         int address = fetchZeroPageXAddress();
-        int result = rotateLeft(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = rotateLeft(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return 6;
     }
 
     private int rotateLeftAbsolute() {
         int address = fetchImmediate16();
-        bus.writeMemory(address, rotateLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = rotateLeft(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 6;
     }
 
     private int rotateLeftAbsoluteX() {
         int address = indexedValue(fetchAbsoluteXAddress());
-        bus.writeMemory(address, rotateLeft(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = rotateLeft(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 7;
     }
 
@@ -1138,27 +1170,37 @@ public final class Mos6502Cpu implements Cpu {
 
     private int rotateRightZeroPage() {
         int address = fetchImmediate8();
-        int result = rotateRight(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = rotateRight(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return 5;
     }
 
     private int rotateRightZeroPageX() {
         int address = fetchZeroPageXAddress();
-        int result = rotateRight(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = rotateRight(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return 6;
     }
 
     private int rotateRightAbsolute() {
         int address = fetchImmediate16();
-        bus.writeMemory(address, rotateRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = rotateRight(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 6;
     }
 
     private int rotateRightAbsoluteX() {
         int address = indexedValue(fetchAbsoluteXAddress());
-        bus.writeMemory(address, rotateRight(bus.readMemory(address) & 0xFF) & 0xFF);
+        int original = bus.readMemory(address) & 0xFF;
+        int result = rotateRight(original) & 0xFF;
+        nmosRmwDummyWrite(address, original);
+        bus.writeMemory(address, result);
         return 7;
     }
 
@@ -1221,7 +1263,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int shiftLeftOrMemory(int address, int cycles) {
-        int result = shiftLeft(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = shiftLeft(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return orAccumulator(result, cycles);
     }
@@ -1255,7 +1299,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int rotateLeftAndMemory(int address, int cycles) {
-        int result = rotateLeft(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = rotateLeft(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return andAccumulator(result, cycles);
     }
@@ -1289,7 +1335,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int shiftRightExclusiveOrMemory(int address, int cycles) {
-        int result = shiftRight(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = shiftRight(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         return exclusiveOr(result, cycles);
     }
@@ -1323,7 +1371,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int rotateRightAddMemory(int address, int cycles) {
-        int result = rotateRight(bus.readMemory(address));
+        int original = bus.readMemory(address);
+        int result = rotateRight(original);
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, result);
         addWithCarry(result);
         return cycles;
@@ -1358,7 +1408,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int decrementCompareMemory(int address, int cycles) {
-        int value = (bus.readMemory(address) - 1) & 0xFF;
+        int original = bus.readMemory(address);
+        int value = (original - 1) & 0xFF;
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, value);
         compare(registers.a(), value);
         return cycles;
@@ -1393,7 +1445,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int incrementSubtractMemory(int address, int cycles) {
-        int value = (bus.readMemory(address) + 1) & 0xFF;
+        int original = bus.readMemory(address);
+        int value = (original + 1) & 0xFF;
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, value);
         subtractWithCarry(value);
         return cycles;
@@ -1416,7 +1470,9 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int decrementMemory(int address, int cycles) {
-        int value = (bus.readMemory(address) - 1) & 0xFF;
+        int original = bus.readMemory(address);
+        int value = (original - 1) & 0xFF;
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, value);
         registers.updateZeroAndNegative(value);
         return cycles;
@@ -1446,10 +1502,18 @@ public final class Mos6502Cpu implements Cpu {
     }
 
     private int incrementMemory(int address, int cycles) {
-        int value = (bus.readMemory(address) + 1) & 0xFF;
+        int original = bus.readMemory(address);
+        int value = (original + 1) & 0xFF;
+        nmosRmwDummyWrite(address, original);
         bus.writeMemory(address, value);
         registers.updateZeroAndNegative(value);
         return cycles;
+    }
+
+    private void nmosRmwDummyWrite(int address, int original) {
+        if (variant == Mos6502Variant.NMOS_6502) {
+            bus.writeMemory(address, original);
+        }
     }
 
     private int incrementAccumulator65C02(int opcodeAddress) {

@@ -67,6 +67,24 @@ class C64MachineTest {
     }
 
     @Test
+    void incD019AtIrqHandlerEntryAcknowledgesTheRasterInterrupt() {
+        C64Machine machine = bootableMachineWithIrqHandler(0xEE, 0x19, 0xD0);
+        CpuBus bus = machine.board().cpuBus();
+        bus.writeMemory(0xD012, 0x05);
+        bus.writeMemory(0xD01A, 0x01);
+
+        assertTrue(runUntilProgramCounter(machine, 0xE800, 400));
+        assertTrue(machine.board().video().interruptLineActive());
+        assertEquals(0xF1, bus.readMemory(0xD019));
+
+        assertEquals(6, machine.runInstruction());
+
+        assertEquals(0xE803, machine.cpu().registers().pc());
+        assertFalse(machine.board().video().interruptLineActive());
+        assertEquals(0, bus.readMemory(0xD019) & 0x80);
+    }
+
+    @Test
     void ciaTwoTimerUnderflowDeliversNonMaskableInterrupt() {
         C64Machine machine = bootableMachine();
         armCiaTwoTimer(machine);
@@ -137,6 +155,16 @@ class C64MachineTest {
         byte[] basicRom = new byte[C64Memory.BASIC_ROM_SIZE];
         byte[] kernalRom = bootableKernalRom();
         byte[] chargenRom = new byte[C64Memory.CHAR_ROM_SIZE];
+        return new C64Machine(basicRom, kernalRom, chargenRom);
+    }
+
+    private static C64Machine bootableMachineWithIrqHandler(int... handler) {
+        byte[] basicRom = new byte[C64Memory.BASIC_ROM_SIZE];
+        byte[] kernalRom = bootableKernalRom();
+        byte[] chargenRom = new byte[C64Memory.CHAR_ROM_SIZE];
+        for (int offset = 0; offset < handler.length; offset++) {
+            kernalRom[0x0800 + offset] = (byte) handler[offset];
+        }
         return new C64Machine(basicRom, kernalRom, chargenRom);
     }
 
