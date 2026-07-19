@@ -8,6 +8,12 @@ phases land. (Rewritten 2026-07-14 after a foundation audit; the original
 checklist predated the `cpu-mos6502` module, which now exists and is
 battle-tested by the Apple II machines.)
 
+Mandatory correctness findings and required scope discovered by the
+2026-07-18 implementation review are tracked in
+[`c64-mandatory-followups.md`](c64-mandatory-followups.md). That queue is part
+of this working contract until its items are folded into the phase sections
+below.
+
 ## Status Legend
 
 `[ ]` not started · `[~]` in progress · `[x]` done
