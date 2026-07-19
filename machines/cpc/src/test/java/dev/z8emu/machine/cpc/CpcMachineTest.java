@@ -163,7 +163,9 @@ class CpcMachineTest {
         CpcMachine machine = CpcMachine.withBlankRom();
         int splitDisplayLine = 4;
         int splitFrameLine = 72 + splitDisplayLine;
-        int hudOnTState = (splitFrameLine * 256) + 16;
+        // Mode latches at HSYNC (line origin); write at the boundary so the mode
+        // applies to this line while the pen write stays mid-line-captured.
+        int hudOnTState = splitFrameLine * 256;
         int hudOffTState = (splitFrameLine * 256) + 200;
 
         machine.board().cpuBus().writeMemory(machine.board().crtc().displayMemoryAddress(0, 0), 0x80);
