@@ -102,12 +102,20 @@ public final class CpcBus extends ClockedCpuBus {
 
     @Override
     public int readPortWaitStates(int port, int phaseTStates) {
-        return gridAlignWaits(phaseTStates);
+        return ioAlignWaits(phaseTStates);
     }
 
     @Override
     public int writePortWaitStates(int port, int value, int phaseTStates) {
-        return gridAlignWaits(phaseTStates);
+        return ioAlignWaits(phaseTStates);
+    }
+
+    @Override
+    public int internalCycleWaitStates(int address, int phaseTStates, int tStates, InternalCycleType type) {
+        if (type == InternalCycleType.INTERRUPT_ACKNOWLEDGE) {
+            return ioAlignWaits(phaseTStates);
+        }
+        return 0;
     }
 
     @Override
@@ -122,6 +130,12 @@ public final class CpcBus extends ClockedCpuBus {
 
     private int gridAlignWaits(int phaseTStates) {
         return (4 - (int) ((clockValue() + phaseTStates) & 3)) & 3;
+    }
+
+    // I/O and INTA cycles sample WAIT one t-state later than M1/memory cycles,
+    // so their access completes on (clock + phase + waits) % 4 == 3.
+    private int ioAlignWaits(int phaseTStates) {
+        return (3 - (int) ((clockValue() + phaseTStates) & 3)) & 3;
     }
 
     private IoAddressSpace buildPortMap() {
