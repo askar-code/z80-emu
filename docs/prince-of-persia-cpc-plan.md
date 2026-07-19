@@ -186,6 +186,25 @@ testable.
 
 ## Progress Log
 
+- 2026-07-19: Phase 10e batch C (`cpc-p10e-c-intphase`, merged 8a4f536) — live-check
+  fix. The user spotted the last artifact by eye: a flickering discolored dash
+  line, bottom-right ~1/5 width — display row 191's MODE split (ev#5 mid-row
+  with 12t jitter), invisible to the red-count oracles because the wrong-color
+  pixels are cyan, not red. Root cause is hardware physics we had not modeled:
+  the gate array latches MODE changes at HSYNC (line-quantized; pens apply
+  immediately), so mid-line mode splits are structurally impossible on real
+  hardware. Renderer now takes each line's mode from the event governing the
+  line origin, per-byte ink governance unchanged; GA port-write stamps moved
+  to the END of the aligned 4t I/O cycle (+4t — where the GA latches them).
+  The INT-checkpoint layer stays cancelled: after DISPLAY_START=16 the line
+  boundary already corresponds to hardware char 60. Test migration:
+  gateArrayCapturesRasterModeAndPaletteChangesPerFrameLine mode write +16 ->
+  +0 (line boundary). Relocks: red flash `649867C3`, Prince smoke `02B6C0E7`;
+  transition `21A46C76` survives a FOURTH timing configuration; BASIC
+  `2A1A5DBE` untouched. Row 227 renders uniformly with its neighbors (dark
+  status-frame edge, full width) matching the cpcpower reference; 900-frame
+  transition scan clean (baseline 108 = health triangles; only the game's
+  damage flash at ~f154).
 - 2026-07-19: Phase 10e batch B (`cpc-p10e-b-geometry`, merged f4d7407) — CAMPAIGN
   GOAL REACHED. `DISPLAY_START_TSTATES` 112 -> 16: the April calibration was an
   artifact (under 112 the visible window overran the 256t line — col 79 sampled
