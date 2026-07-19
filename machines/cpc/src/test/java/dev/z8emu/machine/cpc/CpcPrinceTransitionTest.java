@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CpcPrinceTransitionTest {
     private static final long LOCKED_TRANSITION_CRC = 0x21A46C76L;
-    private static final long LOCKED_RED_FLASH_CRC = 0x684F8997L;
+    private static final long LOCKED_RED_FLASH_CRC = 0x9CCD7C0FL;
 
     @Test
     void roomTransitionKeepsDisplayPhaseStableWhilePreservingRedFlash() throws Exception {

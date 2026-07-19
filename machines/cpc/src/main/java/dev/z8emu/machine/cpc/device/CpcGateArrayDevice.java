@@ -19,7 +19,7 @@ public final class CpcGateArrayDevice {
 
     private static final int INTERRUPT_HSYNC_PERIOD = 52;
     public static final int FRAME_TSTATES = T_STATES_PER_HSYNC * INTERRUPT_HSYNC_PERIOD * 6;
-    private static final int DISPLAY_START_TSTATES = 112;
+    private static final int DISPLAY_START_TSTATES = 16;
     private static final int DISPLAY_BYTE_TSTATES = 2;
     private static final int INTERRUPT_COUNTER_MASK = 0x3F;
     private static final int INTERRUPT_ACK_CLEAR_MASK = 0x1F;
