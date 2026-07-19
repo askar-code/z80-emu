@@ -186,6 +186,24 @@ testable.
 
 ## Progress Log
 
+- 2026-07-19: Phase 10e batch B (`cpc-p10e-b-geometry`, merged f4d7407) — CAMPAIGN
+  GOAL REACHED. `DISPLAY_START_TSTATES` 112 -> 16: the April calibration was an
+  artifact (under 112 the visible window overran the 256t line — col 79 sampled
+  at t=270 — which is why the frame-line-263 palette burst painted display row
+  191). Post-A' the red burst (ev#6, intra t=179) sits past the hardware window
+  [16,176), so the calibration alone clears the seam. Prototype-first (throwaway
+  worktree, SeamEventDump + 900-frame StripeRepro scan): settled row-227 red
+  158 -> 0, stable, zero jitter; transition route has zero artifact blinks —
+  the only red events are game content (health triangles = the constant 108
+  band samples; damage flash moved f148 -> ~f154, resolving the batch-A
+  verification question). The INT-at-t240 checkpoint layer proved empirically
+  unnecessary and stays deferred. CpcMachineTest +112 probes migrated (+16;
+  HUD late-write column 30 -> 78 preserves the same absolute sample time t+172;
+  border event +80 -> +8). Locks: red flash `9CCD7C0F`, Prince smoke
+  `8ECD0EB7`; transition `21A46C76` and BASIC `2A1A5DBE` unchanged across
+  THREE independent timing implementations; row-227 oracle actual 0. Full
+  matrix green (62 tasks, 736 tests, all smokes). Result is strictly better
+  than the 10a benchmark on both scenes.
 - 2026-07-19: Phase 10e batch A' (`cpc-p10e-a-prime`, merged 249724d): CPC half
   of "honest time", ported onto the internal-cycle Z80 core that landed with
   the Spectrum completion commit (b7a885b). Two independent implementations of
